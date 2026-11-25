@@ -21,22 +21,22 @@ int right = 0, asked = 0;
 
 <!-- sample: samples/QuizStep2.cs ask -->
 ```csharp
-// In.ReadLine flushes Out first, so the prompt shows before the
-// program waits for the answer.
-Out.Write($"Q{i}: {a} + {b} = ");
+// Console.Write holds the prompt in a buffer; In.ReadLine writes it
+// out first, so it shows before the program waits for the answer.
+Console.Write($"Q{i}: {a} + {b} = ");
 int length = In.ReadLine(buffer);
 if (length < 0)
 {
-    Out.Line();
-    Out.Line("(end of input)");
+    Console.WriteLine();
+    Console.WriteLine("(end of input)");
     break;
 }
 asked++;
 ```
 
-`Out.Write` writes the prompt without ending the line. `Out` sends its buffer to the terminal only when
-a line ends, so a prompt would normally sit in the buffer while the program waits. `In.ReadLine`
-flushes `Out` before it reads, so the prompt shows.
+`Console.Write` writes the prompt without ending the line. `Console` sends its buffer to the terminal
+only when a line ends, so a prompt would normally sit in the buffer while the program waits.
+`In.ReadLine` writes the buffer out before it reads, so the prompt shows.
 
 `In.ReadLine(buffer)` reads one line into the buffer and returns its length. The line ending (`\n` or
 `\r\n`) isn't included, and the input is decoded as UTF-8. At the end of input it returns -1: when a
@@ -50,11 +50,11 @@ ReadOnlySpan<char> answer = buffer.Slice(0, Math.Min(length, buffer.Length));
 if (Str.TryParse(answer.Trim(), out long value) && value == a + b)
 {
     right++;
-    Out.Line("right");
+    Console.WriteLine("right");
 }
 else
 {
-    Out.Line($"no, it's {a + b}");
+    Console.WriteLine($"no, it's {a + b}");
 }
 ```
 

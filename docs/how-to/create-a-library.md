@@ -55,7 +55,7 @@ public record struct Rect(double Width, double Height) : IShape
 }
 ```
 
-A library can use everything a program can: zerocore, `lib/` (`Arena`, `List`, `Out` and the rest),
+A library can use everything a program can: zerocore, `lib/` (`Arena`, `List`, `Console` and the rest),
 and other zero libraries it references. `dotnet build` checks it and makes `Geometry.dll`, optimized:
 programs compile from its IL, so the SDK always optimizes a library, in Debug too. Whether the
 native code made from it is optimized is up to the program's build: not in Debug, yes in Release.
@@ -83,15 +83,16 @@ Span<Rect> rooms = stackalloc Rect[]
 {
     new Rect(4, 3), new Rect(2.5, 2), new Rect(5, 4),
 };
-Out.Line($"Floor area: {Measure.TotalArea<Rect>(rooms):F2}");
+Console.WriteLine($"Floor area: {Measure.TotalArea<Rect>(rooms):F2}");
 
 var table = new Circle(0.5);
-Out.Line($"Table: area {table.Area:F2}, perimeter {table.Perimeter:F2}");
+Console.WriteLine($"Table: area {table.Area:F2}, "
+    + $"perimeter {table.Perimeter:F2}");
 
 Arena arena = Arena.Create(1024, "shapes");
 List<Point> corners = Measure.Corners(rooms[0], arena);
 for (int i = 0; i < corners.Count; i++)
-    Out.Line(corners.Get(i).ToString());
+    Console.WriteLine(corners.Get(i).ToString());
 unsafe { arena.Destroy(); } // SAFETY: corners isn't used after this.
 ```
 

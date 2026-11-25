@@ -16,7 +16,7 @@ public static class Program
 
     static void End(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_failures += s_sectionFailures;
         s_sectionChecks = 0;
         s_sectionFailures = 0;
@@ -28,7 +28,7 @@ public static class Program
         if (!ok)
         {
             s_sectionFailures++;
-            Out.Line($"  failed: {name}");
+            Console.WriteLine($"  failed: {name}");
         }
     }
 
@@ -38,8 +38,14 @@ public static class Program
         if (!got.SequenceEqual(want))
         {
             s_sectionFailures++;
-            Out.Line($"  failed: {name}: got \"{got}\", want \"{want}\"");
+            Console.WriteLine($"  failed: {name}: got \"{got}\", want \"{want}\"");
         }
+    }
+
+    // Where a span's chars are, as a number: enough to compare two of them.
+    static nint Address(ReadOnlySpan<char> span)
+    {
+        unsafe { fixed (char* p = span) return (nint)p; } // SAFETY: the address is only compared.
     }
 
     static bool Parses(string text, long want) => Str.TryParse(text, out long value) && value == want;
@@ -90,7 +96,7 @@ public static class Program
         s_arena = Arena.Create(1 << 16);
         if (!s_arena.IsCreated)
         {
-            Out.Line("Arena.Create failed");
+            Console.WriteLine("Arena.Create failed");
             return 1;
         }
 
@@ -302,18 +308,21 @@ public static class Program
         Check("Save/Restore frees temporary strings", temporaryOk && s_arena.Used == usedBefore);
         Check("earlier strings survive Restore", s == "n=5");
 
-        // docs:scratch
-        // Or build in a scratch arena and copy only the result out.
-        Arena scratch = Arena.Create(256);
-        StrBuilder draft = StrBuilder.Create(scratch);
-        for (int i = 0; i < 50; i++)
-            draft.Append($"{i} ");
         usedBefore = s_arena.Used;
-        string kept = draft.ToArenaString(s_arena);
+        // docs:scratch
+        // Or build in scratch memory and copy only the result out: the
+        // draft goes when the callback returns, the copy stays in s_arena.
+        string kept = Arena.Scratch(ref s_arena,
+            static (scoped ScratchScope scratch, scoped ref Arena keep) =>
+            {
+                ScratchText draft = scratch.Text();
+                for (int i = 0; i < 50; i++)
+                    draft.Append($"{i} ");
+                return draft.ToArenaString(keep);
+            });
         // docs:end
-        unsafe { scratch.Destroy(); } // SAFETY: draft is not used below; kept lives in s_arena.
-        Check("scratch arena: result copied out", kept.StartsWith("0 1 2 ") && kept.EndsWith("48 49 "));
-        Check("scratch arena: only the result is kept", s_arena.Used - usedBefore == (nuint)(System.Runtime.CompilerServices.RuntimeHelpers.OffsetToStringData + (kept.Length + 1) * 2));
+        Check("scratch: result copied out", kept.StartsWith("0 1 2 ") && kept.EndsWith("48 49 "));
+        Check("scratch: only the result is kept", s_arena.Used - usedBefore == (nuint)(System.Runtime.CompilerServices.RuntimeHelpers.OffsetToStringData + (kept.Length + 1) * 2));
 
         End("arena strings");
 
@@ -336,18 +345,82 @@ public static class Program
         sb.Clear();
         Check("Clear", sb.Length == 0 && sb.IsCreated);
 
+        // docs:builder-edit
+        StrBuilder text = StrBuilder.Create(s_arena);
+        text.Append("the cat sat on the mat");
+        text.Replace("at", "og");           // "the cog sog on the mog"
+        text.Insert(0, "Look: ");           // "Look: the cog sog on the mog"
+        text.Remove(10, 4);                 // "Look: the sog on the mog"
+        text[6] = 'T';                      // "Look: The sog on the mog"
+        // docs:end
+        Expect("Replace, Insert, Remove, indexer", text.AsSpan(),
+            "Look: The sog on the mog");
+
+        // The expected results come from .NET's StringBuilder.
+        StrBuilder edit = StrBuilder.Create(s_arena, 16);
+        edit.Append("world");
+        edit.Insert(0, "hello ");
+        edit.Insert(5, ',');
+        edit.Insert(12, "!");
+        Expect("Insert at the start, middle and end", edit.AsSpan(), "hello, world!");
+        edit.Clear();
+        edit.Append("x=");
+        edit.Insert(2, -42);
+        Expect("Insert a number", edit.AsSpan(), "x=-42");
+        edit.Clear();
+        edit.Append("hello, world");
+        edit.Remove(5, 7);
+        Expect("Remove", edit.AsSpan(), "hello");
+        edit.Clear();
+        edit.Append("a-b-c");
+        // Something allocated after the buffer, so it can't grow in place.
+        s_arena.AllocArray<byte>(8);
+        edit.Replace("-", "=========>");     // 23 chars: past the 16 it has
+        Expect("Replace that grows into a new buffer", edit.AsSpan(), "a=========>b=========>c");
+        edit.Replace("=========>", "-");
+        Expect("Replace that shrinks", edit.AsSpan(), "a-b-c");
+        edit.Clear();
+        edit.Append("aaaa");
+        edit.Replace("aa", "a");
+        Expect("Replace left to right, without overlaps", edit.AsSpan(), "aa");
+        edit.Clear();
+        edit.Append("one two two two");
+        edit.Replace("two", "2", 4, 7);
+        Expect("Replace within a range", edit.AsSpan(), "one 2 2 two");
+        edit.Replace('o', '0');
+        Expect("Replace a char", edit.AsSpan(), "0ne 2 2 tw0");
+        Check("Replace with no match", edit.Replace("xyz", "!") && edit.AsSpan().SequenceEqual("0ne 2 2 tw0"));
+        StrBuilder many = StrBuilder.Create(s_arena, 16);
+        for (int i = 0; i < 100; i++)
+            many.Append('a');
+        nint before = Address(many.AsSpan());
+        many.Replace("a", "bcd");
+        bool allBcd = many.Length == 300;
+        for (int i = 0; allBcd && i < 300; i += 3)
+            allBcd = many.AsSpan().Slice(i, 3).SequenceEqual("bcd");
+        Check("Replace that grows in place", allBcd && Address(many.AsSpan()) == before);
+        edit.Clear();
+        edit.Append("abc");
+        edit.Insert(1, edit.AsSpan());
+        Expect("Insert the builder's own text", edit.AsSpan(), "aabcbc");
+        edit.Clear();
+        edit.Append("x-y");
+        edit.Replace("-", edit.AsSpan());
+        Expect("Replace with the builder's own text", edit.AsSpan(), "xx-yy");
+        Check("Insert into a not-created builder", !default(StrBuilder).Insert(0, "x"));
+
         End("StrBuilder");
 
         // ---- Out: $"..." straight to stdout ----
-        Out.Line();
+        Console.WriteLine();
         // docs:table
-        Out.Line($"{"item",-8}|{"qty",5}|{"price",9}");
-        Out.Line($"{"apple",-8}|{3,5}|{1.25,9:F2}");
-        Out.Line($"{"melon",-8}|{12,5}|{0.5,9:F2}");
+        Console.WriteLine($"{"item",-8}|{"qty",5}|{"price",9}");
+        Console.WriteLine($"{"apple",-8}|{3,5}|{1.25,9:F2}");
+        Console.WriteLine($"{"melon",-8}|{12,5}|{0.5,9:F2}");
         // docs:end
-        Out.Line($"UTF-8: héllo wörld, 世界, 🎉 ({"🎉".Length} UTF-16 chars)");
-        Out.Line();
-        Out.Line($"failures: {s_failures}");
+        Console.WriteLine($"UTF-8: héllo wörld, 世界, 🎉 ({"🎉".Length} UTF-16 chars)");
+        Console.WriteLine();
+        Console.WriteLine($"failures: {s_failures}");
         return s_failures;
     }
 

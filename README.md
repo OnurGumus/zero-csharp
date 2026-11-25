@@ -27,7 +27,9 @@ dotnet build
 That gives you a native program in `bin/Debug/zero03/`. The template's `Program.cs`:
 
 ```csharp
-Out.Write("What's your name? ");
+using System;
+
+Console.Write("What's your name? ");
 Span<char> buffer = stackalloc char[64];
 int length = In.ReadLine(buffer);
 ReadOnlySpan<char> name = length switch
@@ -36,9 +38,9 @@ ReadOnlySpan<char> name = length switch
     _ when length > buffer.Length => buffer,
     _ => buffer.Slice(0, length),
 };
-Out.Write("Hello, ");
-Out.Write(name);
-Out.Line("!");
+Console.Write("Hello, ");
+Console.Write(name);
+Console.WriteLine("!");
 ```
 
 Add `-p:ZeroTarget=win-x64` (or `linux-x64`, `linux-arm64`, `osx-arm64`, `uefi-x64`, `uefi-arm64`) to
@@ -150,6 +152,7 @@ nothing AGPL is linked into them.
 |---|---|---|
 | `Tiny` | The smallest program (`-Os`) | 12 KB |
 | `Minimal` | Hello world through `puts` | 12 KB |
+| `Hello` | Hello world through `Console.WriteLine` | 13 KB |
 | `Arena` | The arena allocator: growth, alignment, `Save`/`Restore`, scopes, objects in an arena, debug checks | 35 KB |
 | `Collections` | `List`, `Dict`, `RefList`, `StrDict`, `RefDict`: word counts, sorting, `foreach`, `Clone` | 84 KB |
 | `VirtualTest` | Polymorphism three ways: function-pointer vtables, static abstract interfaces, virtual methods | 15 KB |
@@ -165,17 +168,18 @@ nothing AGPL is linked into them.
 | `Fibers` | `lib/Fibers.cs`: green threads taking turns, channels, sleeping, 2,000 fibers at once (6 on DOS or a microcontroller), and the cost of a switch | 52 KB |
 | `Files` | `lib/File.cs`: whole files, and an open file read, written and moved through | 31 KB |
 | `Dice` | `lib/Random.cs` and `lib/Clock.cs`: seeded dice rolls that match on every target, durations, the date | 29 KB |
-| `Env` | `System.Environment`: variables, `Exit` from anywhere (writing what `Out` holds), the processor count | 20 KB |
+| `Env` | `System.Environment`: variables, `Exit` from anywhere (writing what `Console` holds), the processor count | 20 KB |
 | `Pipe` | `In.Read`: standard input as bytes, checked byte for byte through a pipe | 19 KB |
 | `Records` | `record struct` and `record class`, `with`, `ToString`, `typeof`, anonymous types | 34 KB |
 | `Refs` | Structs in an arena passed and returned by `ref` | 24 KB |
+| `TensorTypes` | `Tensor<T>` and `TensorSpan<T>` as in .NET: broadcasting, views, a matrix product from `Dot`, SoftMax per row, temporaries freed with an arena | 105 KB |
 | `Llama` | Karpathy's stories260K language model, compiled into the program; it tells the same story on every target, DOS and UEFI included | 1.1 MB |
 | `Vga` | DOS and UEFI only: a small game in 320x200 with 256 colors | 36 KB |
 | `SmallFibers`, `SmallChannels` | Fibers and channels sized for a small machine, the Commodore 64 included: taking turns, sleeping, two fibers waiting inside the same function, a pipeline | 27 KB |
 | `SmallStrings`, `SmallIntegers`, `SmallObjects` and seven more | Tests sized for a small machine: what Strings, Casts, Collections and the others check, in pieces that each fit in a Commodore 64 | 17 to 36 KB |
 | `C64Demo` | Commodore 64 only: text, a sprite and raster bars, with objects, a list and a lambda behind them | 36 KB |
 | `Paddles` | Commodore 64 only: a paddle-and-ball game against the computer, with sprites, SID sound, records and unions | 34 KB |
-| `Gpu` | GPU only (`--gpu`): kernels for adding, Collatz, SAXPY, a reduction, matrix multiply (plain and tiled), histograms and float atomics, each checked against the CPU and timed against a plain C# loop on one core | 118 KB (macOS) |
+| `Gpu` | GPU only (`--gpu`): kernels for adding, Collatz, SAXPY, a reduction, matrix multiply (plain and tiled, and on tensors), histograms and float atomics, each checked against the CPU and timed against a plain C# loop on one core | 118 KB (macOS) |
 | `Blink` | Microcontrollers only: the board's LED, blinked by a C# interrupt handler, and a check that a busy handler leaves the interrupted code's references alone | 18 KB of flash |
 
 Sizes are for Linux arm64. `build.sh` leaves out debug information and the symbol table and turns off
@@ -197,8 +201,9 @@ To build them, clone this repository and build the bflat fork next to it
 ## License
 
 MIT ([`LICENSE`](LICENSE)), including `zerocore/` and the `ZeroCSharp.Sdk` and `ZeroCSharp.Templates`
-packages. zerocore wasn't written in a clean room: read [its README](zerocore/README.md) before
-shipping a commercial product on it.
+packages. zerocore holds code from .NET (MIT) and, in three tensor functions, from AMD (BSD 3-Clause):
+[`zerocore/THIRD-PARTY-NOTICES.txt`](zerocore/THIRD-PARTY-NOTICES.txt). zerocore wasn't written in a clean
+room: read [its README](zerocore/README.md) before shipping a commercial product on it.
 
 bflat and [the fork](https://github.com/OnurGumus/bflat) are AGPL-3.0, and so are the
 `ZeroCSharp.Bflat.*` packages that carry it. They are used as a compiler, and nothing from them is

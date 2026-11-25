@@ -80,6 +80,36 @@ namespace System.Diagnostics.CodeAnalysis
     // own fields. The compiler looks for it here, in this namespace.
     [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Parameter)]
     public sealed class UnscopedRefAttribute : Attribute { }
+
+    // For .NET's analyzers; nothing reads it here.
+    [AttributeUsage(AttributeTargets.Parameter)]
+    public sealed class ConstantExpectedAttribute : Attribute
+    {
+        public object Min { get; set; }
+        public object Max { get; set; }
+    }
+}
+
+namespace System.Runtime.Versioning
+{
+    // For .NET's analyzers; nothing reads them here.
+    [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Module | AttributeTargets.Class | AttributeTargets.Struct
+        | AttributeTargets.Enum | AttributeTargets.Constructor | AttributeTargets.Method | AttributeTargets.Property
+        | AttributeTargets.Field | AttributeTargets.Event | AttributeTargets.Interface, AllowMultiple = true, Inherited = false)]
+    public sealed class SupportedOSPlatformAttribute : Attribute
+    {
+        public SupportedOSPlatformAttribute(string platformName) => PlatformName = platformName;
+        public string PlatformName { get; }
+    }
+
+    [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Module | AttributeTargets.Class | AttributeTargets.Struct
+        | AttributeTargets.Enum | AttributeTargets.Constructor | AttributeTargets.Method | AttributeTargets.Property
+        | AttributeTargets.Field | AttributeTargets.Event | AttributeTargets.Interface, AllowMultiple = true, Inherited = false)]
+    public sealed class UnsupportedOSPlatformAttribute : Attribute
+    {
+        public UnsupportedOSPlatformAttribute(string platformName) => PlatformName = platformName;
+        public string PlatformName { get; }
+    }
 }
 
 namespace System.Runtime

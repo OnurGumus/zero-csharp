@@ -10,8 +10,8 @@ public static class Greeter
     /// <summary>Writes "Hello, name!" to standard output.</summary>
     public static void Greet(ReadOnlySpan<char> name)
     {
-        Out.Write("Hello, ");
-        Out.Write(name);
-        Out.Line("!");
+        Console.Write("Hello, ");
+        Console.Write(name);
+        Console.WriteLine("!");
     }
 }

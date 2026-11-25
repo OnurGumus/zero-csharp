@@ -9,6 +9,8 @@
 //   zero-bitcode elf2uf2 IN.elf OUT.uf2         a Pico 2 program as a UF2 file (Uf2.cs)
 //   zero-bitcode ll2air OUT.ll ASSEMBLY IN.ll... an assembly's [RuntimeExport] methods
 //                                               as Metal kernels (Air.cs)
+//   zero-bitcode ll2ptx OUT.ll ASSEMBLY IN.ll... the same as CUDA kernels, LLVM IR
+//                                               for the NVPTX backend (Ptx.cs)
 //   zero-bitcode gpu-bitcode, gpu-kernels       a program's GPU kernels (Gpu.cs)
 //
 // They began as Python scripts (c64/ll2mos.py, c64/wasm2mos.py,
@@ -50,6 +52,7 @@ static class Program
                zero-bitcode arm-link OBJDIR NAME RUNTIMEDIR pico2|r4 QEMU.elf [BOARD.elf BOARD.uf2] [--arm DIR]
                zero-bitcode tools ilc|llvm-mos|arm
                zero-bitcode ll2air OUT.ll ASSEMBLY IN.ll...
+               zero-bitcode ll2ptx OUT.ll ASSEMBLY IN.ll...
                zero-bitcode gpu-bitcode IN.dll OUTDIR CORE.dll [REF.dll...]
                zero-bitcode gpu-kernels BITCODEDIR NAME METAL.m OUTDIR
         """;
@@ -92,6 +95,9 @@ static class Program
                     return 0;
                 case "ll2air" when args.Length >= 4:
                     Air.Run(args[1], args[2], args[3..]);
+                    return 0;
+                case "ll2ptx" when args.Length >= 4:
+                    Ptx.Run(args[1], args[2], args[3..]);
                     return 0;
                 case "gpu-bitcode":
                     Gpu.Bitcode(args[1..]);

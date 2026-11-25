@@ -3,7 +3,7 @@
 //   StrBuilder sb = StrBuilder.Create(arena);
 //   sb.Append("total: ");
 //   sb.Append($"{count} items, {price:F2} each");
-//   Out.Line(sb.AsSpan());
+//   Console.WriteLine(sb.AsSpan());
 //
 // Like List<T>, a StrBuilder is a handle to a header in the arena, so copies
 // share the same contents, and default(StrBuilder) is "not created": it reads
@@ -129,6 +129,182 @@ public struct StrBuilder
             unsafe { _header->Length = 0; } // SAFETY: a live header.
     }
 
+    /// <summary>The character at <paramref name="index"/>; stops the program if it is out of range.</summary>
+    public char this[int index]
+    {
+        get
+        {
+            unsafe { return Chars()[CheckIndex(index)]; } // SAFETY: CheckIndex keeps it below Length.
+        }
+        set
+        {
+            unsafe { Chars()[CheckIndex(index)] = value; } // SAFETY: CheckIndex keeps it below Length.
+        }
+    }
+
+    /// <summary>
+    /// Puts <paramref name="text"/> before the character at <paramref name="index"/>
+    /// (at the end when it is Length). Returns false if the builder isn't created
+    /// or the arena is full, leaving the text as it was; stops the program if
+    /// the index is out of range.
+    /// </summary>
+    public bool Insert(int index, ReadOnlySpan<char> text) => Splice(index, 0, text);
+
+    public bool Insert(int index, char value)
+    {
+        Span<char> one = stackalloc char[1];
+        one[0] = value;
+        return Splice(index, 0, one);
+    }
+
+    public bool Insert(int index, long value)
+    {
+        Span<char> buffer = stackalloc char[Fmt.MaxChars];
+        return Splice(index, 0, buffer.Slice(0, Fmt.Int(value, buffer)));
+    }
+
+    public bool Insert(int index, int value) => Insert(index, (long)value);
+
+    /// <summary>Removes <paramref name="length"/> characters from <paramref name="startIndex"/>; stops the program if they aren't all there.</summary>
+    public void Remove(int startIndex, int length)
+    {
+        CheckRange(startIndex, length);
+        if (_header != null)
+            Splice(startIndex, length, default); // shrinking never allocates
+    }
+
+    /// <summary>Replaces every <paramref name="oldChar"/> with <paramref name="newChar"/>.</summary>
+    public void Replace(char oldChar, char newChar) => Replace(oldChar, newChar, 0, Length);
+
+    /// <summary>Replaces <paramref name="oldChar"/> with <paramref name="newChar"/> in the <paramref name="count"/> characters from <paramref name="startIndex"/>.</summary>
+    public void Replace(char oldChar, char newChar, int startIndex, int count)
+    {
+        CheckRange(startIndex, count);
+        if (_header == null)
+            return;
+        unsafe
+        {
+            // SAFETY: CheckRange keeps startIndex + count within Length.
+            char* chars = Chars();
+            for (int i = startIndex; i < startIndex + count; i++)
+                if (chars[i] == oldChar)
+                    chars[i] = newChar;
+        }
+    }
+
+    /// <summary>
+    /// Replaces every <paramref name="oldValue"/> with <paramref name="newValue"/>,
+    /// left to right, as .NET's StringBuilder.Replace. Returns false if the
+    /// builder isn't created or the arena is full, leaving the text as it was;
+    /// stops the program if <paramref name="oldValue"/> is empty.
+    /// </summary>
+    public bool Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue)
+        => Replace(oldValue, newValue, 0, Length);
+
+    /// <summary>Replaces the <paramref name="oldValue"/>s that lie wholly within the <paramref name="count"/> characters from <paramref name="startIndex"/>.</summary>
+    public bool Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue, int startIndex, int count)
+    {
+        if (oldValue.Length == 0)
+            Environment.FailFast("StrBuilder: Replace of an empty string");
+        CheckRange(startIndex, count);
+        if (_header == null)
+            return false;
+        DebugCheck();
+
+        int length;
+        int capacity;
+        char* chars;
+        unsafe
+        {
+            length = _header->Length; // SAFETY: a live header.
+            capacity = _header->Capacity;
+            chars = Chars();
+        }
+
+        // Count the matches first, so the result's length is known before
+        // anything moves.
+        int end = startIndex + count;
+        int matches = 0;
+        int scan = startIndex;
+        ReadOnlySpan<char> window;
+        unsafe { window = new ReadOnlySpan<char>(chars, end); } // SAFETY: end <= Length.
+        while (true)
+        {
+            int found = window.Slice(scan).IndexOf(oldValue);
+            if (found < 0)
+                break;
+            matches++;
+            scan += found + oldValue.Length;
+        }
+        if (matches == 0)
+            return true;
+
+        long resultLength = length + (long)matches * (newValue.Length - oldValue.Length);
+        if (resultLength > int.MaxValue / 2)
+            return false;
+        int newLength = (int)resultLength;
+
+        char* source;
+        char* target;
+        if (!Overlaps(oldValue) && !Overlaps(newValue)
+            && (newLength <= length || EnsureCapacityInPlace(newLength)))
+        {
+            // In place. When the text gets longer, it moves to the end of the
+            // buffer first; the result is then written from the start, and
+            // never catches up with what is still to be read.
+            int shift = newLength > length ? newLength - length : 0;
+            unsafe
+            {
+                // SAFETY: the buffer has room for newLength >= length + shift chars.
+                chars = Chars();
+                if (shift > 0)
+                    new ReadOnlySpan<char>(chars, length).CopyTo(new Span<char>(chars + shift, length));
+                source = chars + shift;
+                target = chars;
+            }
+        }
+        else
+        {
+            // A new buffer: the arguments point into this builder's text, or
+            // there's no room where it is. The old one stays allocated until the
+            // arena is reset, as when Append grows.
+            int newCapacity = newLength > capacity ? Math.Max(newLength, (int)Math.Min((long)capacity * 2, int.MaxValue / 2)) : capacity;
+            byte* obj;
+            unsafe { obj = Str.AllocStringObject(_header->Arena, newCapacity); } // SAFETY: a live header.
+            if (obj == null)
+                return false;
+            unsafe
+            {
+                // SAFETY: the old buffer is still allocated; the new one has room for newCapacity chars.
+                source = chars;
+                _header->Object = obj;
+                _header->Capacity = newCapacity;
+                target = Chars();
+            }
+        }
+
+        unsafe
+        {
+            // SAFETY: source holds length chars, target has room for newLength.
+            // Each copy is a memmove, so source and target may overlap.
+            int read = 0;
+            int written = 0;
+            scan = startIndex;
+            for (int i = 0; i < matches; i++)
+            {
+                int at = scan + new ReadOnlySpan<char>(source + scan, end - scan).IndexOf(oldValue);
+                new ReadOnlySpan<char>(source + read, at - read).CopyTo(new Span<char>(target + written, at - read));
+                written += at - read;
+                newValue.CopyTo(new Span<char>(target + written, newValue.Length));
+                written += newValue.Length;
+                read = scan = at + oldValue.Length;
+            }
+            new ReadOnlySpan<char>(source + read, length - read).CopyTo(new Span<char>(target + written, length - read));
+            _header->Length = newLength;
+        }
+        return true;
+    }
+
     /// <summary>Copies the text into a new string in the builder's own arena. Returns null if it is out of memory.</summary>
     public string ToArenaString()
     {
@@ -156,6 +332,114 @@ public struct StrBuilder
     {
         if (Arena.DebugChecks)
             unsafe { Arena.CheckLive(_header->Arena, _header->Object, Str.StringObjectSize(_header->Capacity)); } // SAFETY: callers checked _header != null.
+    }
+
+    // Replaces removeCount chars at index with text. Like Replace, it works in
+    // place unless text points into this builder or there's no room, and then
+    // builds the result in a new buffer.
+    bool Splice(int index, int removeCount, ReadOnlySpan<char> text)
+    {
+        if (index < 0 || index > Length)
+            Environment.FailFast("StrBuilder: index out of range");
+        if (_header == null)
+            return false;
+        DebugCheck();
+
+        int length;
+        int capacity;
+        char* chars;
+        unsafe
+        {
+            length = _header->Length; // SAFETY: a live header.
+            capacity = _header->Capacity;
+            chars = Chars();
+        }
+        long resultLength = (long)length - removeCount + text.Length;
+        if (resultLength > int.MaxValue / 2)
+            return false;
+        int newLength = (int)resultLength;
+        int tail = length - index - removeCount;
+
+        if (!Overlaps(text) && (newLength <= length || EnsureCapacityInPlace(newLength)))
+        {
+            unsafe
+            {
+                // SAFETY: the buffer has room for newLength chars; CopyTo is a memmove.
+                chars = Chars();
+                new ReadOnlySpan<char>(chars + index + removeCount, tail).CopyTo(new Span<char>(chars + index + text.Length, tail));
+                text.CopyTo(new Span<char>(chars + index, text.Length));
+                _header->Length = newLength;
+            }
+            return true;
+        }
+
+        int newCapacity = newLength > capacity ? Math.Max(newLength, (int)Math.Min((long)capacity * 2, int.MaxValue / 2)) : capacity;
+        byte* obj;
+        unsafe { obj = Str.AllocStringObject(_header->Arena, newCapacity); } // SAFETY: a live header.
+        if (obj == null)
+            return false;
+        unsafe
+        {
+            // SAFETY: the old buffer is still allocated; the new one has room for newLength chars.
+            char* target = (char*)(obj + RuntimeHelpers.OffsetToStringData);
+            new ReadOnlySpan<char>(chars, index).CopyTo(new Span<char>(target, index));
+            text.CopyTo(new Span<char>(target + index, text.Length));
+            new ReadOnlySpan<char>(chars + index + removeCount, tail).CopyTo(new Span<char>(target + index + text.Length, tail));
+            _header->Object = obj;
+            _header->Capacity = newCapacity;
+            _header->Length = newLength;
+        }
+        return true;
+    }
+
+    // Makes room for `needed` chars without moving the buffer: true if there
+    // already is room, or the buffer is the arena's newest allocation.
+    bool EnsureCapacityInPlace(int needed)
+    {
+        unsafe
+        {
+            // SAFETY: callers checked _header != null.
+            int capacity = _header->Capacity;
+            if (needed <= capacity)
+                return true;
+            long grown = Math.Max((long)needed, Math.Min((long)capacity * 2, int.MaxValue / 2));
+            if (_header->Arena.TryExtend(_header->Object, Str.StringObjectSize(capacity), Str.StringObjectSize((int)grown)))
+            {
+                _header->Capacity = (int)grown;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    // Whether text lies in this builder's buffer (as sb.AsSpan() does).
+    bool Overlaps(ReadOnlySpan<char> text)
+    {
+        if (text.Length == 0)
+            return false;
+        unsafe
+        {
+            // SAFETY: only compares addresses; callers checked _header != null.
+            fixed (char* p = text)
+            {
+                char* start = Chars();
+                return p < start + _header->Capacity && p + text.Length > start;
+            }
+        }
+    }
+
+    int CheckIndex(int index)
+    {
+        if ((uint)index >= (uint)Length)
+            Environment.FailFast("StrBuilder: index out of range");
+        DebugCheck();
+        return index;
+    }
+
+    void CheckRange(int startIndex, int count)
+    {
+        if (startIndex < 0 || count < 0 || startIndex > Length - count)
+            Environment.FailFast("StrBuilder: index out of range");
     }
 
     char* Chars()

@@ -38,16 +38,20 @@ of the run:
 
 <!-- sample: samples/VirtualTest.cs new-leaks -->
 ```csharp
-Out.Line("--- 3. Virtual methods on classes (each `new` leaks) ---");
+Console.WriteLine("--- 3. Virtual methods on classes (each `new` leaks) ---");
 Animal dog = new Dog();
 Animal cat = new Cat();
-Out.Line(dog.Sound());
-Out.Line(cat.Sound());
+Console.WriteLine(dog.Sound());
+Console.WriteLine(cat.Sound());
 ```
 
 Two objects allocated once are not a problem. The same two allocated per request, per frame or per
 line of input are: the program grows until memory runs out. The same goes for boxing and for `a + b` on
 strings, which also call `calloc`.
+
+`NativeMemory.Alloc` and `Free` also work, for a block you free yourself, as in C (see
+[Limits](limits.html#nativememory)). They suit code shared with .NET that already uses them;
+otherwise an arena is the better tool.
 
 ## Arenas free by lifetime
 
@@ -134,8 +138,9 @@ grow after it. Its new buffer is then allocated after the mark, so `Restore` fre
 collection still points at it. Later allocations overwrite it, and nothing reports that.
 
 The rule: between `Save()` and `Restore()`, only add to collections created after the mark. When
-temporary work has to add to long-lived collections, give it a separate **scratch arena** instead, and
-copy the result out before freeing the scratch arena. With strings that copy is
+temporary work has to add to long-lived collections, do it in **`Arena.Scratch`** instead (below),
+whose memory is separate from your arenas, or in a separate arena of your own, and copy the result
+out before that memory is freed. With strings that copy is
 `sb.ToArenaString(target)` or `Str.ToArenaString(target, s)`; with collections it is
 `list.Clone(arena)` or `dict.Clone(arena)`. Copies are always explicit: `var b = a` on a `List`, `Dict`
 or `StrBuilder` shares the contents, it doesn't copy them. [Keep a string](../how-to/keep-a-string.html)
@@ -220,6 +225,32 @@ string report = Arena.Scratch(ref keep,
         foreach (int even in evens)
             text.Append($" {even}");
         return text.ToArenaString(target);
+    });
+```
+
+`scratch.Dict<TKey, TValue>()` and `scratch.HashSet<T>()` are the dictionary and set for scratch
+work, compared as `Dict` and `HashSet` are. `Clone(arena)` copies one into an arena of yours, to keep
+after the callback:
+
+<!-- sample: samples/Scratch.cs dict -->
+```csharp
+// Count each roll and keep only the counts: the dictionary and the set
+// go with the scratch memory, the copy stays in an arena of yours.
+int[] rolls = { 3, 6, 3, 1, 6, 3 };
+var dice = new Job { Input = rolls };
+Arena results = Arena.Create(4096);
+int distinct = Arena.Scratch(ref dice,
+    static (scoped ScratchScope scratch, scoped ref Job state) =>
+    {
+        ScratchDict<int, int> counts = scratch.Dict<int, int>();
+        ScratchHashSet<int> seen = scratch.HashSet<int>();
+        foreach (int roll in state.Input)
+        {
+            counts.TryGet(roll, out int count);
+            counts.Set(roll, count + 1);
+            seen.Add(roll);
+        }
+        return seen.Count;
     });
 ```
 

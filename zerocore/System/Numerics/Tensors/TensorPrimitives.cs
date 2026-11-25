@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
@@ -761,6 +762,40 @@ namespace System.Numerics.Tensors
         public static int IndexOfMaxMagnitude(ReadOnlySpan<float> x) => IndexOf<MaxMagnitudeOperator>(x);
         public static int IndexOfMinMagnitude(ReadOnlySpan<float> x) => IndexOf<MinMagnitudeOperator>(x);
 
+        // IndexOfMax and the others on a tensor (Tensor.IndexOfMax): the same
+        // search over its elements in order, so a strided tensor gives the
+        // index a dense copy of it would. which: 0 Max, 1 MaxMagnitude, 2 Min,
+        // 3 MinMagnitude.
+        internal static nint IndexOf(in ReadOnlyTensorSpan<float> x, int which)
+        {
+            if (x.IsDense && x.FlattenedLength <= int.MaxValue)
+            {
+                ReadOnlySpan<float> span = MemoryMarshal.CreateReadOnlySpan(in x._reference, (int)x.FlattenedLength);
+                return which == 0 ? IndexOfMax(span) : which == 1 ? IndexOfMaxMagnitude(span) : which == 2 ? IndexOfMin(span) : IndexOfMinMagnitude(span);
+            }
+            return which == 0 ? IndexOf<MaxOperator>(x) : which == 1 ? IndexOf<MaxMagnitudeOperator>(x)
+                : which == 2 ? IndexOf<MinOperator>(x) : IndexOf<MinMagnitudeOperator>(x);
+        }
+
+        private static nint IndexOf<TOp>(in ReadOnlyTensorSpan<float> x) where TOp : IBinary
+        {
+            ReadOnlyTensorSpan<float>.Enumerator e = x.GetEnumerator();
+            if (!e.MoveNext())
+                return -1;
+            float result = e.Current;
+            nint index = 0;
+            for (nint i = 1; result == result && e.MoveNext(); i++)
+            {
+                float next = TOp.Invoke(result, e.Current);
+                if (!next.Equals(result) || (next == 0 && float.IsNegative(next) != float.IsNegative(result)))
+                {
+                    result = next;
+                    index = i;
+                }
+            }
+            return index;
+        }
+
         private static int IndexOf<TOp>(ReadOnlySpan<float> x) where TOp : IBinary
         {
             if (x.Length == 0)
@@ -779,6 +814,145 @@ namespace System.Numerics.Tensors
                 }
             }
             return index;
+        }
+
+        // ---- the rest of .NET's float functions ------------------------------------
+        //
+        // One element at a time, with float's own formulas (ScalarF.cs): AcosPi is
+        // Acos(x) / pi, Exp2M1 is Pow(2, x) - 1, and so on, as .NET computes them.
+
+        private struct AcosPiOperator : IUnary { public static float Invoke(float x) => ScalarF.AcosPi(x); }
+        private struct AsinPiOperator : IUnary { public static float Invoke(float x) => ScalarF.AsinPi(x); }
+        private struct AtanPiOperator : IUnary { public static float Invoke(float x) => ScalarF.AtanPi(x); }
+        private struct CosPiOperator : IUnary { public static float Invoke(float x) => ScalarF.CosPi(x); }
+        private struct SinPiOperator : IUnary { public static float Invoke(float x) => ScalarF.SinPi(x); }
+        private struct TanPiOperator : IUnary { public static float Invoke(float x) => ScalarF.TanPi(x); }
+        private struct DegreesToRadiansOperator : IUnary { public static float Invoke(float x) => ScalarF.DegreesToRadians(x); }
+        private struct RadiansToDegreesOperator : IUnary { public static float Invoke(float x) => ScalarF.RadiansToDegrees(x); }
+        private struct Exp10Operator : IUnary { public static float Invoke(float x) => ScalarF.Exp10(x); }
+        private struct Exp10M1Operator : IUnary { public static float Invoke(float x) => ScalarF.Exp10M1(x); }
+        private struct Exp2Operator : IUnary { public static float Invoke(float x) => ScalarF.Exp2(x); }
+        private struct Exp2M1Operator : IUnary { public static float Invoke(float x) => ScalarF.Exp2M1(x); }
+        private struct ExpM1Operator : IUnary { public static float Invoke(float x) => ScalarF.ExpM1(x); }
+        private struct Log10P1Operator : IUnary { public static float Invoke(float x) => ScalarF.Log10P1(x); }
+        private struct Log2P1Operator : IUnary { public static float Invoke(float x) => ScalarF.Log2P1(x); }
+        private struct LogP1Operator : IUnary { public static float Invoke(float x) => ScalarF.LogP1(x); }
+        private struct IncrementOperator : IUnary { public static float Invoke(float x) => x + 1; }
+        private struct DecrementOperator : IUnary { public static float Invoke(float x) => x - 1; }
+        private sealed class Atan2PiOperator : ScalarOnly, IBinary { public static float Invoke(float x, float y) => ScalarF.Atan2Pi(x, y); }
+        private sealed class Ieee754RemainderOperator : ScalarOnly, IBinary { public static float Invoke(float x, float y) => ScalarF.Ieee754Remainder(x, y); }
+        private sealed class MaxNumberOperator : ScalarOnly, IBinary { public static float Invoke(float x, float y) => ScalarF.MaxNumber(x, y); }
+        private sealed class MinNumberOperator : ScalarOnly, IBinary { public static float Invoke(float x, float y) => ScalarF.MinNumber(x, y); }
+        private sealed class MaxMagnitudeNumberOperator : ScalarOnly, IBinary { public static float Invoke(float x, float y) => ScalarF.MaxMagnitudeNumber(x, y); }
+        private sealed class MinMagnitudeNumberOperator : ScalarOnly, IBinary { public static float Invoke(float x, float y) => ScalarF.MinMagnitudeNumber(x, y); }
+        private sealed class LogBaseOperator : ScalarOnly, IBinary { public static float Invoke(float x, float y) => ScalarF.Log(x, y); }
+
+        public static void AcosPi(ReadOnlySpan<float> x, Span<float> destination) => Unary<AcosPiOperator>(x, destination);
+        public static void AsinPi(ReadOnlySpan<float> x, Span<float> destination) => Unary<AsinPiOperator>(x, destination);
+        public static void AtanPi(ReadOnlySpan<float> x, Span<float> destination) => Unary<AtanPiOperator>(x, destination);
+        public static void CosPi(ReadOnlySpan<float> x, Span<float> destination) => Unary<CosPiOperator>(x, destination);
+        public static void SinPi(ReadOnlySpan<float> x, Span<float> destination) => Unary<SinPiOperator>(x, destination);
+        public static void TanPi(ReadOnlySpan<float> x, Span<float> destination) => Unary<TanPiOperator>(x, destination);
+        public static void DegreesToRadians(ReadOnlySpan<float> x, Span<float> destination) => Unary<DegreesToRadiansOperator>(x, destination);
+        public static void RadiansToDegrees(ReadOnlySpan<float> x, Span<float> destination) => Unary<RadiansToDegreesOperator>(x, destination);
+        public static void Exp10(ReadOnlySpan<float> x, Span<float> destination) => Unary<Exp10Operator>(x, destination);
+        public static void Exp10M1(ReadOnlySpan<float> x, Span<float> destination) => Unary<Exp10M1Operator>(x, destination);
+        public static void Exp2(ReadOnlySpan<float> x, Span<float> destination) => Unary<Exp2Operator>(x, destination);
+        public static void Exp2M1(ReadOnlySpan<float> x, Span<float> destination) => Unary<Exp2M1Operator>(x, destination);
+        public static void ExpM1(ReadOnlySpan<float> x, Span<float> destination) => Unary<ExpM1Operator>(x, destination);
+        public static void Log10P1(ReadOnlySpan<float> x, Span<float> destination) => Unary<Log10P1Operator>(x, destination);
+        public static void Log2P1(ReadOnlySpan<float> x, Span<float> destination) => Unary<Log2P1Operator>(x, destination);
+        public static void LogP1(ReadOnlySpan<float> x, Span<float> destination) => Unary<LogP1Operator>(x, destination);
+        public static void Increment(ReadOnlySpan<float> x, Span<float> destination) => Unary<IncrementOperator>(x, destination);
+        public static void Decrement(ReadOnlySpan<float> x, Span<float> destination) => Unary<DecrementOperator>(x, destination);
+
+        public static void Atan2Pi(ReadOnlySpan<float> x, ReadOnlySpan<float> y, Span<float> destination) => Binary<Atan2PiOperator>(x, y, destination);
+        public static void Atan2Pi(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<Atan2PiOperator>(x, y, destination);
+        public static void Atan2Pi(float x, ReadOnlySpan<float> y, Span<float> destination) => Binary<Atan2PiOperator>(x, y, destination);
+        public static void Ieee754Remainder(ReadOnlySpan<float> x, ReadOnlySpan<float> y, Span<float> destination) => Binary<Ieee754RemainderOperator>(x, y, destination);
+        public static void Ieee754Remainder(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<Ieee754RemainderOperator>(x, y, destination);
+        public static void Ieee754Remainder(float x, ReadOnlySpan<float> y, Span<float> destination) => Binary<Ieee754RemainderOperator>(x, y, destination);
+        public static void Atan2(ReadOnlySpan<float> y, float x, Span<float> destination) => Binary<Atan2Operator>(y, x, destination);
+        public static void Atan2(float y, ReadOnlySpan<float> x, Span<float> destination) => Binary<Atan2Operator>(y, x, destination);
+        public static void Pow(float x, ReadOnlySpan<float> y, Span<float> destination) => Binary<PowOperator>(x, y, destination);
+        public static void CopySign(ReadOnlySpan<float> x, float sign, Span<float> destination) => Binary<CopySignOperator>(x, sign, destination);
+        public static void Log(ReadOnlySpan<float> x, ReadOnlySpan<float> y, Span<float> destination) => Binary<LogBaseOperator>(x, y, destination);
+        public static void Log(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<LogBaseOperator>(x, y, destination);
+        public static void Max(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MaxOperator>(x, y, destination);
+        public static void Min(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MinOperator>(x, y, destination);
+        public static void MaxMagnitude(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MaxMagnitudeOperator>(x, y, destination);
+        public static void MinMagnitude(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MinMagnitudeOperator>(x, y, destination);
+        public static void MaxNumber(ReadOnlySpan<float> x, ReadOnlySpan<float> y, Span<float> destination) => Binary<MaxNumberOperator>(x, y, destination);
+        public static void MaxNumber(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MaxNumberOperator>(x, y, destination);
+        public static void MinNumber(ReadOnlySpan<float> x, ReadOnlySpan<float> y, Span<float> destination) => Binary<MinNumberOperator>(x, y, destination);
+        public static void MinNumber(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MinNumberOperator>(x, y, destination);
+        public static void MaxMagnitudeNumber(ReadOnlySpan<float> x, ReadOnlySpan<float> y, Span<float> destination) => Binary<MaxMagnitudeNumberOperator>(x, y, destination);
+        public static void MaxMagnitudeNumber(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MaxMagnitudeNumberOperator>(x, y, destination);
+        public static void MinMagnitudeNumber(ReadOnlySpan<float> x, ReadOnlySpan<float> y, Span<float> destination) => Binary<MinMagnitudeNumberOperator>(x, y, destination);
+        public static void MinMagnitudeNumber(ReadOnlySpan<float> x, float y, Span<float> destination) => Binary<MinMagnitudeNumberOperator>(x, y, destination);
+
+        // The largest number, ignoring NaNs (NaN only if all are); +0 over -0.
+        // The other three likewise. The span must not be empty.
+        public static float MaxNumber(ReadOnlySpan<float> x)
+        {
+            CheckNotEmpty(x.Length);
+            float result = x[0];
+            for (int i = 1; i < x.Length; i++)
+                result = ScalarF.MaxNumber(result, x[i]);
+            return result;
+        }
+
+        public static float MinNumber(ReadOnlySpan<float> x)
+        {
+            CheckNotEmpty(x.Length);
+            float result = x[0];
+            for (int i = 1; i < x.Length; i++)
+                result = ScalarF.MinNumber(result, x[i]);
+            return result;
+        }
+
+        public static float MaxMagnitudeNumber(ReadOnlySpan<float> x)
+        {
+            CheckNotEmpty(x.Length);
+            float result = x[0];
+            for (int i = 1; i < x.Length; i++)
+                result = ScalarF.MaxMagnitudeNumber(result, x[i]);
+            return result;
+        }
+
+        public static float MinMagnitudeNumber(ReadOnlySpan<float> x)
+        {
+            CheckNotEmpty(x.Length);
+            float result = x[0];
+            for (int i = 1; i < x.Length; i++)
+                result = ScalarF.MinMagnitudeNumber(result, x[i]);
+            return result;
+        }
+
+        // x^(1/n) for each element, as .NET's float.RootN.
+        public static void RootN(ReadOnlySpan<float> x, int n, Span<float> destination)
+        {
+            CheckDestination(x.Length, destination);
+            CheckOverlap(x, destination);
+            for (int i = 0; i < x.Length; i++)
+                destination[i] = ScalarF.RootN(x[i], n);
+        }
+
+        // The exponent of each element (floor(log2 |x|)): int.MinValue for 0,
+        // int.MaxValue for infinities and NaN.
+        public static void ILogB(ReadOnlySpan<float> x, Span<int> destination)
+        {
+            if (destination.Length < x.Length)
+                throw new ArgumentException("Destination is too short.");
+            for (int i = 0; i < x.Length; i++)
+                destination[i] = ScalarF.ILogB(x[i]);
+        }
+
+        // The mean; the span must not be empty.
+        public static float Average(ReadOnlySpan<float> x)
+        {
+            CheckNotEmpty(x.Length);
+            return Sum(x) / x.Length;
         }
 
         // ---- the fast functions ----------------------------------------------------

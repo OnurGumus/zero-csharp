@@ -90,7 +90,7 @@ int wrong = 0;
 for (int i = 0; i < N; i++)
     if (y.Span[i] != 2f * (i % 100) + 1) wrong++;
 long us = (long)(ms * 1000);
-Out.Line($"Saxpy: {N} elements, {us} us on the GPU, {wrong} wrong");
+Console.WriteLine($"Saxpy: {N} elements, {us} us on the GPU, {wrong} wrong");
 ```
 
 - `GpuBuffer<T>.Allocate(n)` makes a buffer of `n` elements that the CPU and the GPU share: on Apple
@@ -218,6 +218,69 @@ Gpu.Run(nameof(Kernels.MatMul), tiledLaunch, a, b, tiled, n);
 
 On an M2 Max, at 1024 x 1024, the tiled kernel takes about 1.2 ms of GPU time, and the same multiply
 reading straight from the buffers 5.5 to 6 ms.
+
+## Matrices as tensors
+
+`GpuBuffer<T>.AsTensorSpan(rows, columns)` is the buffer as a [tensor](use-tensors.html): a view,
+not a copy, so the [Tensor methods](use-tensors.html) fill and read the very memory the GPU uses.
+Here broadcasting writes two matrices straight into the buffers, the tiled kernel multiplies them,
+and `Tensor.Dot` of a row and a column checks each element of the result:
+
+<!-- sample: samples/Gpu.cs tensors -->
+```csharp
+// Matrices as tensors over GPU buffers: the CPU fills a and b with the
+// Tensor methods, writing straight into the memory the GPU reads (no
+// copies), the tiled kernel multiplies them, and Tensor.Dot checks c.
+static int CheckTensors()
+{
+    const int n = 256;
+    var a = GpuBuffer<float>.Allocate(n * n);
+    var b = GpuBuffer<float>.Allocate(n * n);
+    var c = GpuBuffer<float>.Allocate(n * n);
+    TensorSpan<float> ta = a.AsTensorSpan(n, n), tb = b.AsTensorSpan(n, n);
+
+    // A column [n, 1] and a row [1, n], broadcast into the n x n buffers:
+    // a[i, j] = column[i] + row[j], b[i, j] = column[i] * row[j].
+    Tensor<float> column = Tensor.CreateFromShape<float>([n, 1]);
+    Tensor<float> row = Tensor.CreateFromShape<float>([1, n]);
+    for (int i = 0; i < n; i++)
+    {
+        column[i, 0] = i % 5 - 2;
+        row[0, i] = i % 3 - 1;
+    }
+    Tensor.Add(column, row, ta);
+    Tensor.Multiply(column, row, tb);
+
+    const uint tile = Kernels.Tile;
+    int sharedBytes = 2 * (int)(tile * tile) * sizeof(float);
+    var launch = GpuLaunch.Grid(n, n, tile, tile, sharedBytes);
+    Gpu.Run(nameof(Kernels.MatMul), launch, a, b, c, n);
+
+    // c[i, j] is row i of a times column j of b; a column is a view of b
+    // with stride n.
+    ReadOnlyTensorSpan<float> tc = c.AsReadOnlyTensorSpan(n, n);
+    int failures = 0;
+    for (nint i = 0; i < n; i++)
+    {
+        var rowSlice = ta.Slice([new NRange(i, i + 1), NRange.All]);
+        ReadOnlyTensorSpan<float> ai = Tensor.Reshape(rowSlice, [n]);
+        for (nint j = 0; j < n; j++)
+        {
+            var columnSlice = tb.Slice([NRange.All, new NRange(j, j + 1)]);
+            ReadOnlyTensorSpan<float> bj = Tensor.Reshape(columnSlice, [n]);
+            if (Tensor.Dot(ai, bj) != tc[i, j] && failures++ < 5)
+                Console.WriteLine($"Tensors: c[{i}, {j}] differs");
+        }
+    }
+    Console.WriteLine(
+        $"Tensors: {n} x {n} on the GPU, checked with Tensor.Dot");
+    a.Free(); b.Free(); c.Free();
+    return failures;
+}
+```
+
+A kernel still takes pointers: the tensor is for the CPU side, the lengths and strides are the
+kernel's to know.
 
 ## Atomics
 

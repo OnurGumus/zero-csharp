@@ -54,11 +54,11 @@ public static class Program
     {
         if (!Gpu.Open())
         {
-            Out.Line("No Metal GPU.");
+            Console.WriteLine("No Metal GPU.");
             return 1;
         }
         Span<char> name = stackalloc char[64];
-        Out.Line($"GPU: {Gpu.DeviceName(name)}");
+        Console.WriteLine($"GPU: {Gpu.DeviceName(name)}");
 
         // docs:run
         var x = GpuBuffer<float>.Allocate(N);
@@ -69,7 +69,7 @@ public static class Program
         for (int i = 0; i < N; i++)
             if (y.Span[i] != 2f * (i % 100) + 1) wrong++;
         long us = (long)(ms * 1000);
-        Out.Line($"Saxpy: {N} elements, {us} us on the GPU, {wrong} wrong");
+        Console.WriteLine($"Saxpy: {N} elements, {us} us on the GPU, {wrong} wrong");
         // docs:end
 
         // docs:launch
@@ -85,7 +85,7 @@ public static class Program
         int got = total.Span[0];
         // docs:end
         us = (long)(ms * 1000);
-        Out.Line($"Sum:   {got} (the CPU says {want}), {us} us on the GPU");
+        Console.WriteLine($"Sum:   {got} (the CPU says {want}), {us} us on the GPU");
 
         x.Free(); y.Free(); values.Free(); total.Free();
         return wrong == 0 && got == want ? 0 : 1;

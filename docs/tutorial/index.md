@@ -12,7 +12,7 @@ allocating, what to do with text that has to outlive the buffer it was read into
 
 Each step is a complete program, and each adds one idea:
 
-1. [Print the questions](print-questions.html): `Out` and `$"..."` formatting.
+1. [Print the questions](print-questions.html): `Console.WriteLine` and `$"..."` formatting.
 2. [Read the answers](read-answers.html): `In.ReadLine` and a buffer on the stack.
 3. [Handle bad input](handle-bad-input.html): lines that are too long, not numbers, or empty.
 4. [Keep the mistakes](keep-the-mistakes.html): an arena and a list of strings that last until the end.

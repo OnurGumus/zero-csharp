@@ -22,7 +22,7 @@ public static class Program
 
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -34,7 +34,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -54,7 +54,7 @@ public static class Program
         for (int c = 0; c <= 0xFFFF; c++)
             hash = Mix(hash, f((char)c));
         if (hash != expected)
-            Out.Line($"  {name}: {hash:x8}, .NET gives {expected:x8}");
+            Console.WriteLine($"  {name}: {hash:x8}, .NET gives {expected:x8}");
         Check(name, hash == expected);
     }
 
@@ -80,11 +80,11 @@ public static class Program
         CheckOtherEncodings();
         CheckEncodingMembers();
 
-        Out.Line();
+        Console.WriteLine();
         if (s_failures == 0)
-            Out.Line("All checks passed.");
+            Console.WriteLine("All checks passed.");
         else
-            Out.Line($"{s_failures} checks FAILED.");
+            Console.WriteLine($"{s_failures} checks FAILED.");
         return s_failures;
     }
 
@@ -139,7 +139,7 @@ public static class Program
                 hash = Mix(hash, (uint)(long)(char.GetNumericValue(char.ConvertFromUtf32(cp), 0) * 1000000));
         }
         if (hash != 0x8af2746d)
-            Out.Line($"  every code point: {hash:x8}, .NET gives 8af2746d");
+            Console.WriteLine($"  every code point: {hash:x8}, .NET gives 8af2746d");
         Check("every code point's category and numeric value", hash == 0x8af2746d);
         Section("every char, as .NET answers");
     }

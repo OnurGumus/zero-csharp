@@ -2,7 +2,7 @@
 //
 //   RefList<string> names = RefList<string>.Create(keep);
 //   names.Add(Str.ToArenaString(keep, line));   // the string itself must live on
-//   foreach (string name in names) Out.Line(name);
+//   foreach (string name in names) Console.WriteLine(name);
 //
 // List<T> takes only unmanaged types, because it stores items in arena memory
 // through a T*. A reference is just an address in zero mode (there is no GC to

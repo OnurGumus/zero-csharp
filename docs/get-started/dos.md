@@ -22,22 +22,22 @@ for both and says what's missing.
 ## Build and run
 
 ```bash
-./build.sh --dos Minimal
-./run.sh --dos Minimal
+./build.sh --dos Hello
+./run.sh --dos Hello
 ```
 
 ```text
 Hello from zero-mode!
 ```
 
-`run.sh --dos` boots FreeDOS in the emulator, runs `bin/dos/Minimal.exe` with its output redirected to
+`run.sh --dos` boots FreeDOS in the emulator, runs `bin/dos/Hello.exe` with its output redirected to
 a file, powers the machine off and prints that file. It takes a few seconds. The program is about
-16 KB.
+22 KB.
 
 To see the DOS screen, and to type at a program that reads input, open a window instead:
 
 ```bash
-./run.sh --dos --window Minimal
+./run.sh --dos --window Hello
 ```
 
 The window stays at the DOS prompt; type `PROGRAM` to run the program again.

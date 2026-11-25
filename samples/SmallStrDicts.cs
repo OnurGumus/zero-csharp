@@ -17,11 +17,11 @@ public static class Program
 
     static void End(string section)
     {
-        Out.Write(s_sectionFailures == 0 ? "PASS " : "FAIL ");
-        Out.Write(section);
-        Out.Write(" (");
-        Out.Write(s_sectionChecks);
-        Out.Line(" checks)");
+        Console.Write(s_sectionFailures == 0 ? "PASS " : "FAIL ");
+        Console.Write(section);
+        Console.Write(" (");
+        Console.Write(s_sectionChecks);
+        Console.WriteLine(" checks)");
         s_failures += s_sectionFailures;
         s_sectionChecks = 0;
         s_sectionFailures = 0;
@@ -33,8 +33,8 @@ public static class Program
         if (!ok)
         {
             s_sectionFailures++;
-            Out.Write("  failed: ");
-            Out.Line(name);
+            Console.Write("  failed: ");
+            Console.WriteLine(name);
         }
     }
 
@@ -56,13 +56,13 @@ public static class Program
         Check("a dictionary that wasn't created", none.Count == 0 && !none.Set("x", 1) && !none.ContainsKey("x"));
         End("StrDict");
 
-        Out.Line();
+        Console.WriteLine();
         if (s_failures == 0)
-            Out.Line("All checks passed.");
+            Console.WriteLine("All checks passed.");
         else
         {
-            Out.Write(s_failures);
-            Out.Line(" checks FAILED.");
+            Console.Write(s_failures);
+            Console.WriteLine(" checks FAILED.");
         }
         return s_failures;
     }

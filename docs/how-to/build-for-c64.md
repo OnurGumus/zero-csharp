@@ -130,7 +130,7 @@ What a feature costs once a program uses it, measured in these programs:
 | Feature | Cost |
 |---|---|
 | The runtime, with nothing else | 7 KB |
-| `Out` with `$"..."` formatting of whole numbers | 3 KB |
+| `Console.WriteLine` with `$"..."` formatting of whole numbers | 3 KB |
 | An arena | 4 KB |
 | `List<T>`, for two element types | 7 KB |
 | `Dict<int, int>` | 7 KB |
@@ -159,7 +159,7 @@ smaller again.
 
 ## The screen, sprites and the keyboard
 
-`lib/C64.cs` has the machine. `Out.Line` and `In.ReadLine` work as everywhere, through the C64's own
+`lib/C64.cs` has the machine. `Console.WriteLine` and `In.ReadLine` work as everywhere, through the C64's own
 screen editor; `C64.Print` puts text at a position, in a color:
 
 <!-- sample: samples/C64Demo.cs text -->

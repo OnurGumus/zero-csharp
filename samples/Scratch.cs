@@ -65,6 +65,8 @@ public struct Particle
 public ref struct Outer
 {
     public ScratchList<int> Items;
+    public ScratchDict<int, int> Counts;
+    public ScratchText Text;
 }
 
 public static class Program
@@ -75,7 +77,7 @@ public static class Program
 
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -87,7 +89,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -248,6 +250,31 @@ public static class Program
             return outer.Items[0] + outer.Items[1];
         });
         Check("an outer list in a nested call", nested == 11);
+        bool textEdited = Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            ScratchText text = scratch.Text();
+            text.Append("2026-11-25");
+            text.Replace("-", " / ");
+            text.Insert(0, "on ");
+            text.Remove(0, 3);
+            text[0] = '3';
+            return text.AsSpan().SequenceEqual("3026 / 11 / 25");
+        });
+        Check("text: Replace, Insert, Remove, indexer", textEdited);
+        // Remove and a char Replace never need more memory, so an outer text
+        // takes them in a nested call; Insert and Replace with text don't.
+        bool outerText = Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            var outer = new Outer { Text = scratch.Text() };
+            outer.Text.Append("a.b.c!");
+            Arena.Scratch(ref outer, static (scoped ScratchScope inner, scoped ref Outer state) =>
+            {
+                state.Text.Remove(5, 1);
+                state.Text.Replace('.', '/');
+            });
+            return outer.Text.AsSpan().SequenceEqual("a/b/c");
+        });
+        Check("an outer text in a nested call", outerText);
         Section("lists and text");
 
         // docs:own-types
@@ -276,11 +303,70 @@ public static class Program
         Check("a helper's scratch memory", moving == 10_003);
         Section("types of your own");
 
-        Out.Line();
+        // docs:dict
+        // Count each roll and keep only the counts: the dictionary and the set
+        // go with the scratch memory, the copy stays in an arena of yours.
+        int[] rolls = { 3, 6, 3, 1, 6, 3 };
+        var dice = new Job { Input = rolls };
+        Arena results = Arena.Create(4096);
+        int distinct = Arena.Scratch(ref dice,
+            static (scoped ScratchScope scratch, scoped ref Job state) =>
+            {
+                ScratchDict<int, int> counts = scratch.Dict<int, int>();
+                ScratchHashSet<int> seen = scratch.HashSet<int>();
+                foreach (int roll in state.Input)
+                {
+                    counts.TryGet(roll, out int count);
+                    counts.Set(roll, count + 1);
+                    seen.Add(roll);
+                }
+                return seen.Count;
+            });
+        // docs:end
+        Check("counted", distinct == 3);
+        Dict<int, int> kept = Arena.Scratch(ref results,
+            static (scoped ScratchScope scratch, scoped ref Arena target) =>
+            {
+                ScratchDict<int, int> squares = scratch.Dict<int, int>(4);
+                for (int i = 0; i < 100; i++)
+                    squares.Set(i, i * i);
+                squares.Remove(50);
+                return squares.Clone(target);
+            });
+        Check("Clone keeps a copy", kept.Count == 99 && kept.TryGet(9, out int nine) && nine == 81 && !kept.ContainsKey(50));
+        int changed = Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            var outer = new Outer { Counts = scratch.Dict<int, int>() };
+            outer.Counts.Set(1, 10);
+            // In a nested call, a key that is there can change; a new one
+            // can't be added (that stops the program).
+            Arena.Scratch(ref outer, static (scoped ScratchScope inner, scoped ref Outer state) =>
+            {
+                state.Counts.Set(1, 11);
+            });
+            outer.Counts.TryGet(1, out int value);
+            return value;
+        });
+        Check("an outer key changed in a nested call", changed == 11);
+        bool setWorks = Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            ScratchHashSet<long> set = scratch.HashSet<long>(4);
+            for (long i = 0; i < 50; i++)
+                set.Add(i % 20);
+            bool removed = set.Remove(7) && !set.Remove(7);
+            long sum = 0;
+            foreach (long item in set)
+                sum += item;
+            return removed && set.Count == 19 && !set.Contains(7) && sum == 190 - 7;
+        });
+        Check("a set", setWorks);
+        Section("dictionaries and sets");
+
+        Console.WriteLine();
         if (s_failures == 0)
-            Out.Line("All checks passed.");
+            Console.WriteLine("All checks passed.");
         else
-            Out.Line($"{s_failures} checks FAILED.");
+            Console.WriteLine($"{s_failures} checks FAILED.");
         return s_failures;
     }
 }

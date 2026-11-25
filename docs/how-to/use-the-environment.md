@@ -15,9 +15,9 @@ so it works in every program, on every target. `samples/Env.cs` runs the example
 ```csharp
 string value = Environment.GetEnvironmentVariable(args[0]);
 if (value == null)
-    Out.Line($"{args[0]} isn't set");
+    Console.WriteLine($"{args[0]} isn't set");
 else
-    Out.Line($"{args[0]}={value}");
+    Console.WriteLine($"{args[0]}={value}");
 ```
 
 `GetEnvironmentVariable` returns `null` when the variable isn't set. The value is a new string, allocated
@@ -39,13 +39,13 @@ What a program sees on each target:
 
 <!-- sample: samples/Env.cs exit -->
 ```csharp
-// No newline: Exit writes what Out still holds before it ends.
-Out.Write(s_failures == 0 ? "PASS" : "FAIL");
+// No newline: Exit writes what Console still holds before it ends.
+Console.Write(s_failures == 0 ? "PASS" : "FAIL");
 Environment.Exit(s_failures);
 ```
 
 `Environment.Exit(code)` ends the program as returning `code` from `Main` would, from any depth. What
-`Out` holds that isn't written yet (a last `Out.Write` without a newline) is written first, and so are
+`Console` holds that isn't written yet (a last `Console.Write` without a newline) is written first, and so are
 files the C library buffers. Nothing else runs: arenas aren't freed and `using` blocks don't end, which
 is fine when the process is about to end anyway. Exit codes are 0 to 255 everywhere, as on Linux.
 
@@ -57,7 +57,7 @@ is fine when the process is about to end anyway. Exit codes are 0 to 255 everywh
   start: use it for differences only. Under wasmtime the clock starts with the program, so it can read
   0 at first, where .NET counts from boot. For finer durations, use
   `Clock.Monotonic`, in nanoseconds ([Use the clock](use-the-clock-and-random-numbers.html)).
-- **`Environment.NewLine`**: `"\n"` on every target, the line ending `Out.Line` writes. In .NET it is
+- **`Environment.NewLine`**: `"\n"` on every target, the line ending `Console.WriteLine` writes. In .NET it is
   `"\r\n"` on Windows; here a program writes the same bytes everywhere, and Windows programs and consoles
   read `"\n"` fine.
 

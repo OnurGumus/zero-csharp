@@ -1,7 +1,8 @@
-// A number to print in hex, in a $"..." hole of Out, Str.Format or
-// StrBuilder, without .NET's formatting:
+// A number to print in hex, in a $"..." hole of Console.WriteLine, Out,
+// Str.Format or StrBuilder, without .NET's formatting:
 //
-//   Out.Line($"PEEK({Hex.Of(address, 4)}) = {Hex.Of(C64.Peek(address), 2)}");
+//   Console.WriteLine(
+//       $"PEEK({Hex.Of(address, 4)}) = {Hex.Of(C64.Peek(address), 2)}");
 //
 // prints "PEEK(D020) = 0E". The text is what {x:X4} gives, but {x:X4} reads its
 // format only as the program runs, so it brings .NET's whole number

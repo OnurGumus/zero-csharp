@@ -5,8 +5,8 @@ index: 2
 
 # Keep a string
 
-Most text in a zero-mode program lives somewhere short-lived: a line read into a stack buffer, a
-string formatted in a scratch arena that is reset every round, the contents of a `StrBuilder`. To keep
+Most text in a zero-mode program lives somewhere short-lived: a line read into a stack buffer, text
+built in `Arena.Scratch`, the contents of a `StrBuilder`. To keep
 one past that, copy it into an arena that lives as long as you need the text. This guide shows the
 three ways to make that copy and how to collect the results.
 
@@ -22,7 +22,7 @@ Arena keep = Arena.Create(4096);
 RefList<string> mistakes = RefList<string>.Create(keep);
 if (!mistakes.IsCreated)
 {
-    Out.Line("Arena.Create failed");
+    Console.WriteLine("Arena.Create failed");
     return 1;
 }
 ```
@@ -51,7 +51,7 @@ needed:
 ```csharp
 else
 {
-    Out.Line($"no, it's {a + b}");
+    Console.WriteLine($"no, it's {a + b}");
     // Kept until the end, so the string is built in `keep`, not in
     // the buffer the next answer overwrites.
     mistakes.Add(Str.Format(keep, $"  {a} + {b} = {a + b}, not {value}"));
@@ -61,18 +61,30 @@ else
 `Str.Format(arena, $"...")` builds the string in that arena and returns it. The holes are formatted
 straight into arena memory (see [Format text](format-text.html)).
 
-## Build in scratch, keep only the result: `StrBuilder.ToArenaString`
+## Build in scratch, keep only the result: `ToArenaString`
 
-A `StrBuilder` that grows can leave its old buffers behind in its arena until that arena is reset. Build
-it in a scratch arena, copy the finished text into the arena that keeps it, and then reset or destroy
-the scratch arena:
+Text that grows as it is built leaves its old buffers behind until its memory is freed. Build it in
+`Arena.Scratch`, which frees everything when the callback returns, and copy only the finished text
+into the arena that keeps it:
 
-```csharp no-sample
-string kept = draft.ToArenaString(keep);
+<!-- sample: samples/Strings.cs scratch -->
+```csharp
+// Or build in scratch memory and copy only the result out: the
+// draft goes when the callback returns, the copy stays in s_arena.
+string kept = Arena.Scratch(ref s_arena,
+    static (scoped ScratchScope scratch, scoped ref Arena keep) =>
+    {
+        ScratchText draft = scratch.Text();
+        for (int i = 0; i < 50; i++)
+            draft.Append($"{i} ");
+        return draft.ToArenaString(keep);
+    });
 ```
 
-`ToArenaString()` without an argument copies into the builder's own arena. Both return null if the
-arena is out of memory.
+The compiler makes sure the draft isn't used after the callback, so there is nothing to reset and no
+`unsafe`. A `StrBuilder` of yours has the same `ToArenaString(keep)`, for text built in an arena you
+reset yourself; without an argument it copies into the builder's own arena. Each returns null if the
+target arena is out of memory.
 
 ## Collect the strings
 
@@ -81,12 +93,12 @@ back:
 
 <!-- sample: samples/Quiz.cs report -->
 ```csharp
-Out.Line($"{right} of {asked} right");
+Console.WriteLine($"{right} of {asked} right");
 if (mistakes.Count > 0)
 {
-    Out.Line("Mistakes:");
+    Console.WriteLine("Mistakes:");
     foreach (string mistake in mistakes)
-        Out.Line(mistake);
+        Console.WriteLine(mistake);
 }
 ```
 
@@ -114,9 +126,9 @@ foreach (ReadOnlySpan<char> w in "the cat and the hat and the bat".Split(' '))
 }
 ```
 
-The same holds for keys formatted in a scratch arena: the sample sets 500 keys made with
-`Str.Format(scratch, $"key{i}")`, resetting `scratch` before each one, and later removes and finds
-them by text with keys made the same way.
+The same holds for keys built in scratch memory: the sample formats 500 keys, one after another, into
+the same `ScratchText` inside `Arena.Scratch`, sets each in the map, and later removes and finds them
+by text with keys made the same way.
 
 Values are stored as they are. A `StrDict<string>` holds references to its value strings, exactly like
 `RefList`, so a value string must live as long as the map uses it:

@@ -8,6 +8,7 @@
 //
 // Board (the LED, hardware registers, the timer) is in the SDK's library:
 // https://onurgumus.github.io/zero-csharp/how-to/build-for-microcontrollers.html
+using System;
 using System.Runtime.InteropServices;
 
 public static class Program
@@ -27,13 +28,13 @@ public static class Program
 
     public static int Main()
     {
-        Out.Line("Hello from C# on a microcontroller!");
+        Console.WriteLine("Hello from C# on a microcontroller!");
         unsafe { Board.StartTicks(10, &OnTick); }
         while (s_ticks < 50)
             Board.WaitForInterrupt();       // sleeps until the next tick
         Board.StopTicks();
         Board.Led(false);
-        Out.Line($"Blinked for {s_ticks / 10} seconds.");
+        Console.WriteLine($"Blinked for {s_ticks / 10} seconds.");
         return 0;
     }
 }

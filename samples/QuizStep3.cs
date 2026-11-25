@@ -23,7 +23,7 @@ public static class Program
         Span<char> buffer = stackalloc char[32];
         int right = 0, asked = 0;
 
-        Out.Line($"{Questions} questions. An empty answer skips one.");
+        Console.WriteLine($"{Questions} questions. An empty answer skips one.");
         for (int i = 1; i <= Questions; i++)
         {
             int a = Next(50), b = Next(50);
@@ -31,12 +31,12 @@ public static class Program
             // docs:loop
             while (true)
             {
-                Out.Write($"Q{i}: {a} + {b} = ");
+                Console.Write($"Q{i}: {a} + {b} = ");
                 int length = In.ReadLine(buffer);
                 if (length < 0)
                 {
-                    Out.Line();
-                    Out.Line("(end of input)");
+                    Console.WriteLine();
+                    Console.WriteLine("(end of input)");
                     asked--;
                     goto Done;
                 }
@@ -44,31 +44,31 @@ public static class Program
                 // buffer holds only its start, so ask again.
                 if (length > buffer.Length)
                 {
-                    Out.Write($"that's {length} characters; ");
-                    Out.Line($"answers are at most {buffer.Length}");
+                    Console.Write($"that's {length} characters; ");
+                    Console.WriteLine($"answers are at most {buffer.Length}");
                     continue;
                 }
 
                 ReadOnlySpan<char> answer = buffer.Slice(0, length).Trim();
                 if (answer.Length == 0)
                 {
-                    Out.Line("skipped");
+                    Console.WriteLine("skipped");
                     break;
                 }
                 if (!Str.TryParse(answer, out long value))
                 {
-                    Out.Line($"\"{answer}\" isn't a number");
+                    Console.WriteLine($"\"{answer}\" isn't a number");
                     continue;
                 }
 
                 if (value == a + b)
                 {
                     right++;
-                    Out.Line("right");
+                    Console.WriteLine("right");
                 }
                 else
                 {
-                    Out.Line($"no, it's {a + b}");
+                    Console.WriteLine($"no, it's {a + b}");
                 }
                 break;
             }
@@ -76,7 +76,7 @@ public static class Program
         }
 
     Done:
-        Out.Line($"{right} of {asked} right");
+        Console.WriteLine($"{right} of {asked} right");
         return 0;
     }
 }

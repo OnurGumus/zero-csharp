@@ -27,3 +27,11 @@ pool-removed|Pool: the handle's item was removed or moved
 pool-moved|Pool: the handle's item was removed or moved
 scratch-pool-outer|Arena.Scratch: a ScratchPool added to inside a nested Arena.Scratch
 pool-other|Pool: the handle is from another pool
+scratch-dict-outer|Arena.Scratch: a ScratchDict added to inside a nested Arena.Scratch
+scratch-set-outer|Arena.Scratch: a ScratchHashSet added to inside a nested Arena.Scratch
+builder-index|StrBuilder: index out of range
+builder-replace-empty|StrBuilder: Replace of an empty string
+scratch-outer-edit|Arena.Scratch: a ScratchText changed by Insert or Replace inside a nested Arena.Scratch
+native-overflow|NativeMemory: the size overflows
+native-zeroed-overflow|NativeMemory: the size overflows
+native-out-of-memory|NativeMemory: out of memory

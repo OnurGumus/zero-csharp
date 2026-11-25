@@ -560,7 +560,7 @@ public static class Program
         Play(ref match, computer, computer, demo: false, MaxFrames);
         long allocated = GC.GetTotalAllocatedBytes() - before;
         Screen.Leave();
-        Out.Line($"Test match: {match.Score.Left} to {match.Score.Right}, {match.Hits} hits in {match.Frames} frames");
+        Console.WriteLine($"Test match: {match.Score.Left} to {match.Score.Right}, {match.Hits} hits in {match.Frames} frames");
 
         int failures = 0;
         void Check(string name, bool ok)
@@ -568,7 +568,7 @@ public static class Program
             if (!ok)
             {
                 failures++;
-                Out.Line($"  failed: {name}");
+                Console.WriteLine($"  failed: {name}");
             }
         }
         Check("someone won", match.Score.Winner is not null);
@@ -577,7 +577,7 @@ public static class Program
         Check("everything stayed on the field", match.Strays == 0);
         Check("nothing was allocated while playing", allocated == 0);
         if (failures == 0)
-            Out.Line("All 5 checks passed.");
+            Console.WriteLine("All 5 checks passed.");
         return failures;
     }
 

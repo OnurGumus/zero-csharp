@@ -10,6 +10,17 @@ namespace System.Text
 
         public int Length => _length;
 
+        public StringBuilder() { }
+
+        public StringBuilder(int capacity) => _chars = new char[capacity < 16 ? 16 : capacity];
+
+        public StringBuilder(string value) => Append(value);
+
+        // Environment.NewLine, which is "\n" on every target.
+        public StringBuilder AppendLine() => Append('\n');
+
+        public StringBuilder AppendLine(string value) => Append(value).Append('\n');
+
         public StringBuilder Append(char value)
         {
             if (_length == _chars.Length)

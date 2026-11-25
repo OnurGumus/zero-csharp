@@ -193,6 +193,15 @@ namespace System
 
         internal ref char FirstChar => ref _firstChar;
 
+        // A string of the characters in `value` (.NET's `new string(span)`).
+        internal static string FromChars(ReadOnlySpan<char> value)
+        {
+            string result = Allocate(value.Length);
+            for (int i = 0; i < value.Length; i++)
+                Unsafe.Add(ref result._firstChar, i) = value[i];
+            return result;
+        }
+
         IEnumerator<char> IEnumerable<char>.GetEnumerator() => new StringEnumerator(this);
 
         IEnumerator IEnumerable.GetEnumerator() => new StringEnumerator(this);

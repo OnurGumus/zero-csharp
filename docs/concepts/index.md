@@ -42,7 +42,7 @@ Most of what follows comes from three facts about zero mode:
   library `zerocore/` differs from the library `lib/`.
 - [Memory without a GC](memory.html): why `new` never frees, how arenas give memory a lifetime, and the
   tools that catch arena mistakes.
-- [Strings without a GC](strings.html): what the core library's `string` can do, how spans and `Out`
+- [Strings without a GC](strings.html): what the core library's `string` can do, how spans and `Console`
   avoid allocating, and where strings that must be kept come from.
 - [The memory safety rules](safety-rules.html): C# 15's updated memory safety rules, and how `lib/`
   uses `unsafe` to mark the operations that can leave pointers dangling.

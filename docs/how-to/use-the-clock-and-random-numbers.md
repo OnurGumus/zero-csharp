@@ -49,10 +49,10 @@ whatever the PC's clock says, which is usually local time.
 <!-- sample: samples/Dice.cs dice -->
 ```csharp
 var random = new Random(42);
-Out.Write("Ten rolls:");
+Console.Write("Ten rolls:");
 for (int i = 0; i < 10; i++)
-    Out.Write($" {random.Next(1, 7)}");
-Out.Line();
+    Console.Write($" {random.Next(1, 7)}");
+Console.WriteLine();
 
 // How often each face comes up in 60,000 rolls: about 10,000 each.
 Span<int> counts = stackalloc int[7];
@@ -60,17 +60,17 @@ var dice = new Random(7);
 for (int i = 0; i < 60_000; i++)
     counts[dice.Next(1, 7)]++;
 for (int face = 1; face <= 6; face++)
-    Out.Line($"{face}: {counts[face]}");
+    Console.WriteLine($"{face}: {counts[face]}");
 
 Span<int> cards = stackalloc int[10];
 for (int i = 0; i < cards.Length; i++)
     cards[i] = i + 1;
 var shuffler = new Random(3);
 shuffler.Shuffle(cards);
-Out.Write("Shuffled:");
+Console.Write("Shuffled:");
 foreach (int card in cards)
-    Out.Write($" {card}");
-Out.Line();
+    Console.Write($" {card}");
+Console.WriteLine();
 ```
 
 ```text

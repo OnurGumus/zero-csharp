@@ -36,8 +36,8 @@ namespace System
             }
         }
 
-        // Set by lib/'s Out once it holds output that isn't written yet, so Exit
-        // can write it first.
+        // Set by lib/'s Out once it holds output that isn't written yet, so Exit,
+        // and returning from Main (StartupCodeHelpers.Shutdown), write it first.
         internal static delegate*<void> s_beforeExit;
 
         /// <summary>

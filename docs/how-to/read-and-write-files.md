@@ -6,7 +6,7 @@ index: 18
 # Read and write files
 
 `lib/File.cs` reads and writes files on every target: a whole file in one call, or an open file read,
-written and moved through piece by piece. Text is UTF-8 on disk and UTF-16 in a string, as with `Out`
+written and moved through piece by piece. Text is UTF-8 on disk and UTF-16 in a string, as with `Console`
 and `In`. `samples/Files.cs` runs every example below.
 
 ## A whole file at once
@@ -22,7 +22,7 @@ if (File.TryReadAllText(arena, Path, out string text))
 {
     foreach (ReadOnlySpan<char> line in text.Split('\n'))
         if (line.Length > 0)
-            Out.Line(line);
+            Console.WriteLine(line);
 }
 ```
 
@@ -46,7 +46,7 @@ if (!file.IsOpen)
     return;
 file.Write("0123456789");
 file.Write("abcdef"u8);
-Out.Line($"Wrote {file.Length} bytes");
+Console.WriteLine($"Wrote {file.Length} bytes");
 
 file.Seek(4);
 file.Write("--");
@@ -56,7 +56,7 @@ File input = File.OpenRead(Path);
 Span<byte> chunk = stackalloc byte[6];
 int count;
 while ((count = input.Read(chunk)) > 0)
-    Out.Line($"{count} bytes at {input.Position - count}");
+    Console.WriteLine($"{count} bytes at {input.Position - count}");
 unsafe { input.Close(); } // SAFETY: input isn't used after this.
 ```
 

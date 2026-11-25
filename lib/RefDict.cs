@@ -4,7 +4,7 @@
 //
 //   RefDict<int, string> names = RefDict<int, string>.Create(keep);
 //   names.Set(42, Str.ToArenaString(keep, line));
-//   if (names.TryGet(42, out string name)) Out.Line(name);
+//   if (names.TryGet(42, out string name)) Console.WriteLine(name);
 //
 // Each value is stored as its address in a Dict<TKey, nint>, as RefList does;
 // see RefList for why that works. The map holds references, not the objects:

@@ -24,6 +24,7 @@
 // against this file but not use it.
 
 using System;
+using System.Numerics.Tensors;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -49,6 +50,16 @@ public readonly struct GpuBuffer<T> where T : unmanaged
     {
         get { unsafe { return new Span<T>(Pointer, Length); } } // SAFETY: the buffer holds Length elements.
     }
+
+    // The buffer as a tensor of these lengths (row-major: the last index
+    // moves fastest), to fill or read with the Tensor methods. It is a view,
+    // not a copy: the GPU sees what the tensor writes, and the tensor what
+    // the GPU writes, once Gpu.Run returns. The lengths must multiply to at
+    // most Length.
+    public TensorSpan<T> AsTensorSpan(params scoped ReadOnlySpan<nint> lengths) => new TensorSpan<T>(Span, lengths);
+
+    public ReadOnlyTensorSpan<T> AsReadOnlyTensorSpan(params scoped ReadOnlySpan<nint> lengths) =>
+        new ReadOnlyTensorSpan<T>(Span, lengths);
 
     public void Free() => Gpu.gpu_buffer_free(Handle);
 

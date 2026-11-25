@@ -11,6 +11,8 @@
 
 // ---- 1. Function-pointer vtable --------------------------------------------
 
+using System;
+
 namespace VirtualTestSample;
 
 public struct Shape
@@ -74,43 +76,43 @@ public static class Program
 {
     public static int Main()
     {
-        Out.Line("=== Polymorphism in --stdlib:zero ===");
-        Out.Line();
+        Console.WriteLine("=== Polymorphism in --stdlib:zero ===");
+        Console.WriteLine();
 
-        Out.Line("--- 1. Function-pointer vtable ---");
+        Console.WriteLine("--- 1. Function-pointer vtable ---");
         Shape rect = Shapes.Rectangle(10, 5);
         Shape circle = Shapes.Circle(7);
         unsafe
         {
             // SAFETY: GetArea was set by the factory to a function that reads only *s.
-            Out.Line("Rectangle area: ", rect.GetArea(&rect));
-            Out.Line("Circle area: ", circle.GetArea(&circle));
+            Console.WriteLine($"Rectangle area: {rect.GetArea(&rect)}");
+            Console.WriteLine($"Circle area: {circle.GetArea(&circle)}");
         }
-        Out.Line();
+        Console.WriteLine();
 
-        Out.Line("--- 2. Static abstract interface (compile-time dispatch) ---");
+        Console.WriteLine("--- 2. Static abstract interface (compile-time dispatch) ---");
         PrintArea(new Rect { W = 3, H = 4 });
         PrintArea(new Square { Side = 6 });
-        Out.Line();
+        Console.WriteLine();
 
         // docs:new-leaks
-        Out.Line("--- 3. Virtual methods on classes (each `new` leaks) ---");
+        Console.WriteLine("--- 3. Virtual methods on classes (each `new` leaks) ---");
         Animal dog = new Dog();
         Animal cat = new Cat();
-        Out.Line(dog.Sound());
-        Out.Line(cat.Sound());
+        Console.WriteLine(dog.Sound());
+        Console.WriteLine(cat.Sound());
         // docs:end
-        Out.Line();
+        Console.WriteLine();
 
-        Out.Line("Done!");
+        Console.WriteLine("Done!");
         return 0;
     }
 
     // docs:generic-call
     static void PrintArea<T>(in T shape) where T : struct, IArea<T>
     {
-        Out.Write(T.Name);
-        Out.Line(" area: ", T.Area(in shape));
+        Console.Write(T.Name);
+        Console.WriteLine($" area: {T.Area(in shape)}");
     }
     // docs:end
 }

@@ -30,7 +30,7 @@ public static class Program
         if (!ok)
         {
             s_failures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -40,7 +40,7 @@ public static class Program
         int length = In.ReadLine(line);
         Check("the first line is text", length == 9);
         if (length >= 0 && length <= line.Length)
-            Out.Line(line.Slice(0, length));
+            Console.WriteLine(line.Slice(0, length));
 
         // The bytes after the line, read in small pieces: the first pieces come
         // from what ReadLine read ahead, the later ones straight from read().
@@ -54,16 +54,16 @@ public static class Program
         }
         // docs:end
 
-        Out.Line($"{s_total} bytes, FNV-1a {s_hash:X8}");
+        Console.WriteLine($"{s_total} bytes, FNV-1a {s_hash:X8}");
         if (s_wrong >= 0)
-            Out.Line($"first wrong byte at {s_wrong}");
+            Console.WriteLine($"first wrong byte at {s_wrong}");
         Check("every byte arrived", s_total == 512 + 3);
         Check("every byte as it was sent", s_wrong < 0);
         Check("0 again after the end", In.Read(chunk) == 0);
         Check("0 for an empty buffer", In.Read(Span<byte>.Empty) == 0);
         Check("ReadLine at the end", In.ReadLine(line) == -1);
 
-        Out.Line(s_failures == 0 ? "PASS" : "FAIL");
+        Console.WriteLine(s_failures == 0 ? "PASS" : "FAIL");
         return s_failures;
     }
 

@@ -13,8 +13,9 @@
 // - Str: parsing, ordinal comparison, and new strings built in an Arena
 //   (Str.Format(arena, $"..."), Str.Concat). Arena strings are ordinary
 //   strings, freed in bulk when their arena is reset.
-// - $"..." works through custom interpolated string handlers: Out.Line($"...")
-//   writes straight to stdout, StrBuilder.Append($"...") into the arena.
+// - $"..." works through custom interpolated string handlers:
+//   Console.WriteLine($"...") writes straight to stdout,
+//   StrBuilder.Append($"...") into the arena.
 //
 // a + b mallocs a string that is never freed; in a loop, prefer Str.Concat or
 // Str.Format, which use the arena. Instead of s.Substring(i, n) use

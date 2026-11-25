@@ -18,7 +18,7 @@ public static class Program
         if (!ok)
         {
             s_failures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -28,7 +28,7 @@ public static class Program
         if (args.Length == 2 && args[0] == "--exit"
             && Str.TryParse(args[1].AsSpan(), out int code))
         {
-            Out.Write($"exiting with {code}");
+            Console.Write($"exiting with {code}");
             Environment.Exit(code);
         }
         if (args.Length > 0)
@@ -36,9 +36,9 @@ public static class Program
             // docs:variable
             string value = Environment.GetEnvironmentVariable(args[0]);
             if (value == null)
-                Out.Line($"{args[0]} isn't set");
+                Console.WriteLine($"{args[0]} isn't set");
             else
-                Out.Line($"{args[0]}={value}");
+                Console.WriteLine($"{args[0]}={value}");
             // docs:end
             return 0;
         }
@@ -55,11 +55,11 @@ public static class Program
         for (int i = 0; i < 1_000_000 && later == start; i++)
             later = Environment.TickCount64;
         Check("TickCount64 goes forward", later >= start);
-        Out.Line("checked Environment");
+        Console.WriteLine("checked Environment");
 
         // docs:exit
-        // No newline: Exit writes what Out still holds before it ends.
-        Out.Write(s_failures == 0 ? "PASS" : "FAIL");
+        // No newline: Exit writes what Console still holds before it ends.
+        Console.Write(s_failures == 0 ? "PASS" : "FAIL");
         Environment.Exit(s_failures);
         // docs:end
         return 99; // not reached

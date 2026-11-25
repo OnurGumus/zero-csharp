@@ -63,7 +63,7 @@ unsafe
     e->Position.X = 100;
     for (int i = 0; i < 10; i++)
         squares[i] = i * i;
-    Out.Line("squares[5] = ", squares[5]);
+    Console.WriteLine($"squares[5] = {squares[5]}");
 }
 ```
 

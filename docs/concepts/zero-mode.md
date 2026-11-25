@@ -88,8 +88,11 @@ passes it to bflat with `--stdlib:none`, so nothing AGPL-licensed ends up in the
   `Main(string[] args)`;
 - `Math`, `MathF`, `Interlocked`, `Volatile`, and the SIMD types `lib/Kernels.cs` uses;
 - `Half`, `BitOperations`, `BitArray` and `BitConverter`'s bit conversions;
+- `NativeMemory`, on `calloc` and `free`, and the `SupportedOSPlatform`, `UnsupportedOSPlatform`
+  and `ConstantExpected` attributes for code shared with .NET;
 - `System.Numerics`: `Complex`, the vectors, `Matrix3x2`, `Matrix4x4`, `Quaternion` and `Plane`;
-  `TensorPrimitives` for spans of `float`.
+  `TensorPrimitives` for spans of `float`; `Tensor<T>`, `TensorSpan<T>` and the `Tensor` class,
+  with math for `float`.
 
 Much of it is a contract with the compiler, which looks types, methods and fields up by name. Those
 names can't be changed. Compared with zerolib, zerocore adds casts to interfaces, interface calls the
@@ -103,7 +106,7 @@ zero mode gets what .NET's base class library would otherwise provide:
 - collections that live in an arena: `List`, `Dict`, `HashSet`, `Queue`, `Stack`, `PriorityQueue`,
   `RefList`, `StrDict`, `RefDict`;
 - `Regex`, regular expressions matched in linear time;
-- `Str`, `StrBuilder`, `Out` and `In` for text, input and output (see
+- `Console`, `Str`, `StrBuilder`, `Out` and `In` for text, input and output (see
   [Strings without a GC](strings.html));
 - `Kernels`, SIMD math, and `Dos`, the PC's screen, keyboard and speaker on DOS.
 

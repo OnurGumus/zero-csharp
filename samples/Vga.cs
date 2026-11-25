@@ -383,17 +383,17 @@ public static class Program
             Machine.Mouse(out _, out _);
 
         Machine.Text();
-        Out.Line("frames played: ", s_frame);
-        Out.Line("score: ", s_score);
-        Out.Line("frames with a rock on the ship: ", s_hits);
-        Out.Line("picture checksum: ", checksum);
-        Out.Line("pixels the screen shows differently: ", different);
-        Out.Line(frames >= 150 && frames <= 600 ? "20 frames took about 286 ms: yes" : "20 frames took about 286 ms: NO");
-        Out.Line(slept >= 100 && slept <= 500 ? "Sleep(200) took about 200 ms: yes" : "Sleep(200) took about 200 ms: NO");
-        Out.Line("key presses waiting: ", keys);
-        Out.Line(speakerOn && speakerOff ? "speaker switches on and off: yes" : "speaker switches on and off: NO");
-        Out.Line(files ? "file written, appended, read back, deleted: yes" : "file written, appended, read back, deleted: NO");
-        Out.Line(buttons >= 0 && buttons <= 3 ? "mouse driver asked: yes" : "mouse driver asked: NO");
+        Console.WriteLine($"frames played: {s_frame}");
+        Console.WriteLine($"score: {s_score}");
+        Console.WriteLine($"frames with a rock on the ship: {s_hits}");
+        Console.WriteLine($"picture checksum: {checksum}");
+        Console.WriteLine($"pixels the screen shows differently: {different}");
+        Console.WriteLine(frames >= 150 && frames <= 600 ? "20 frames took about 286 ms: yes" : "20 frames took about 286 ms: NO");
+        Console.WriteLine(slept >= 100 && slept <= 500 ? "Sleep(200) took about 200 ms: yes" : "Sleep(200) took about 200 ms: NO");
+        Console.WriteLine($"key presses waiting: {keys}");
+        Console.WriteLine(speakerOn && speakerOff ? "speaker switches on and off: yes" : "speaker switches on and off: NO");
+        Console.WriteLine(files ? "file written, appended, read back, deleted: yes" : "file written, appended, read back, deleted: NO");
+        Console.WriteLine(buttons >= 0 && buttons <= 3 ? "mouse driver asked: yes" : "mouse driver asked: NO");
         bool ok = different == 0 && frames >= 150 && frames <= 600 && slept >= 100 && slept <= 500
                   && speakerOn && speakerOff && files;
         return ok ? 0 : 1;
@@ -428,7 +428,7 @@ public static class Program
         Machine.Text();
         if (s_best > bestBefore)
             SaveBest(s_best);
-        Out.Line("Best score: ", s_best);
+        Console.WriteLine($"Best score: {s_best}");
         // docs:end
         return 0;
     }

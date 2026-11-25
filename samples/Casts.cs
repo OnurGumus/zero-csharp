@@ -12,6 +12,8 @@
 // Not supported, and reported at run time rather than answered wrongly:
 // variance (IProducer<string> as IProducer<object>, string[] as object[]).
 
+using System;
+
 namespace CastsSample;
 
 public interface INamed
@@ -130,7 +132,7 @@ public static class Program
 
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -142,7 +144,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -257,11 +259,11 @@ public static class Program
         Check("captured local is shared", addOffset(5) == 25);
         Section("delegates");
 
-        Out.Line();
+        Console.WriteLine();
         if (s_failures == 0)
-            Out.Line("All checks passed.");
+            Console.WriteLine("All checks passed.");
         else
-            Out.Line($"{s_failures} checks FAILED.");
+            Console.WriteLine($"{s_failures} checks FAILED.");
         return s_failures;
     }
 }

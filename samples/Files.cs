@@ -19,7 +19,7 @@ public static class Program
 
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -31,7 +31,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -59,7 +59,7 @@ public static class Program
         {
             foreach (ReadOnlySpan<char> line in text.Split('\n'))
                 if (line.Length > 0)
-                    Out.Line(line);
+                    Console.WriteLine(line);
         }
         // docs:end
         Check("read back what was written", text == "naïve café\nsnow ☃ and a clef 𝄞\n");
@@ -89,7 +89,7 @@ public static class Program
             return;
         file.Write("0123456789");
         file.Write("abcdef"u8);
-        Out.Line($"Wrote {file.Length} bytes");
+        Console.WriteLine($"Wrote {file.Length} bytes");
 
         file.Seek(4);
         file.Write("--");
@@ -99,7 +99,7 @@ public static class Program
         Span<byte> chunk = stackalloc byte[6];
         int count;
         while ((count = input.Read(chunk)) > 0)
-            Out.Line($"{count} bytes at {input.Position - count}");
+            Console.WriteLine($"{count} bytes at {input.Position - count}");
         unsafe { input.Close(); } // SAFETY: input isn't used after this.
         // docs:end
 

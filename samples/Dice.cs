@@ -17,7 +17,7 @@ public static class Program
 
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -29,7 +29,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -50,10 +50,10 @@ public static class Program
     {
         // docs:dice
         var random = new Random(42);
-        Out.Write("Ten rolls:");
+        Console.Write("Ten rolls:");
         for (int i = 0; i < 10; i++)
-            Out.Write($" {random.Next(1, 7)}");
-        Out.Line();
+            Console.Write($" {random.Next(1, 7)}");
+        Console.WriteLine();
 
         // How often each face comes up in 60,000 rolls: about 10,000 each.
         Span<int> counts = stackalloc int[7];
@@ -61,21 +61,21 @@ public static class Program
         for (int i = 0; i < 60_000; i++)
             counts[dice.Next(1, 7)]++;
         for (int face = 1; face <= 6; face++)
-            Out.Line($"{face}: {counts[face]}");
+            Console.WriteLine($"{face}: {counts[face]}");
 
         Span<int> cards = stackalloc int[10];
         for (int i = 0; i < cards.Length; i++)
             cards[i] = i + 1;
         var shuffler = new Random(3);
         shuffler.Shuffle(cards);
-        Out.Write("Shuffled:");
+        Console.Write("Shuffled:");
         foreach (int card in cards)
-            Out.Write($" {card}");
-        Out.Line();
+            Console.Write($" {card}");
+        Console.WriteLine();
         // docs:end
 
         var bits = new Random(0);
-        Out.Line($"Random(0): {bits.NextUInt64():X16} {bits.NextUInt64():X16}");
+        Console.WriteLine($"Random(0): {bits.NextUInt64():X16} {bits.NextUInt64():X16}");
     }
 
     static void RandomChecks()

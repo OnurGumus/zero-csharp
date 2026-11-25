@@ -19,16 +19,16 @@ public static class Program
 {
     static void Usage()
     {
-        Out.Line("Usage: Llama [-n steps] [-t temperature] [-p top-p] [-s seed] [-i prompt] [-v]");
-        Out.Line("       Llama -c [-e] [-t temperature] [-p top-p] [-s seed]");
-        Out.Line("  -n  tokens to produce, the prompt's included (default 64)");
-        Out.Line("  -t  0 picks the likeliest token (default); higher is more random");
-        Out.Line("  -p  with -t, choose only among the likeliest tokens that add up to p (default 0.9)");
-        Out.Line("  -s  random seed, for -t (default 42)");
-        Out.Line("  -i  the start of the story (default \"Once upon a time\")");
-        Out.Line("  -v  print the token ids and the speed");
-        Out.Line("  -c  take turns: each line you type joins the story, then the model adds to it");
-        Out.Line("  -e  with -c, print each line read (for input from a file)");
+        Console.WriteLine("Usage: Llama [-n steps] [-t temperature] [-p top-p] [-s seed] [-i prompt] [-v]");
+        Console.WriteLine("       Llama -c [-e] [-t temperature] [-p top-p] [-s seed]");
+        Console.WriteLine("  -n  tokens to produce, the prompt's included (default 64)");
+        Console.WriteLine("  -t  0 picks the likeliest token (default); higher is more random");
+        Console.WriteLine("  -p  with -t, choose only among the likeliest tokens that add up to p (default 0.9)");
+        Console.WriteLine("  -s  random seed, for -t (default 42)");
+        Console.WriteLine("  -i  the start of the story (default \"Once upon a time\")");
+        Console.WriteLine("  -v  print the token ids and the speed");
+        Console.WriteLine("  -c  take turns: each line you type joins the story, then the model adds to it");
+        Console.WriteLine("  -e  with -c, print each line read (for input from a file)");
     }
 
     public static int Main(string[] args)
@@ -81,7 +81,7 @@ public static class Program
         // docs:end
         if (!llama.IsCreated)
         {
-            Out.Line("The model or the tokenizer is malformed.");
+            Console.WriteLine("The model or the tokenizer is malformed.");
             return 1;
         }
         if (steps < 1 || steps > llama.SeqLen)
@@ -122,11 +122,11 @@ public static class Program
                     break; // BOS: the story is over
                 Out.WriteUtf8(llama.Decode(token, next));
                 if (verbose)
-                    Out.Write($"[{next}]");
+                    Console.Write($"[{next}]");
                 token = next;
             }
         }
-        Out.Line();
+        Console.WriteLine();
         // docs:end
         return 0;
     }
@@ -139,8 +139,10 @@ public static class Program
     // the model ends it, a new one begins.
     static int TakeTurns(Llama llama, LlamaSampler sampler, Arena arena, bool echo)
     {
-        Out.Line("Tell a story together: type a line, and the model continues it.");
-        Out.Line("An empty line lets it go on by itself; end of input stops.");
+        Console.WriteLine(
+            "Tell a story together: type a line, and the model continues it.");
+        Console.WriteLine(
+            "An empty line lets it go on by itself; end of input stops.");
         Span<char> line = stackalloc char[200];
         Span<byte> text;
         Span<int> ids;
@@ -155,21 +157,21 @@ public static class Program
 
         while (true)
         {
-            Out.Write("> ");
+            Console.Write("> ");
             int length = In.ReadLine(line);
             if (length < 0)
             {
-                Out.Line();
+                Console.WriteLine();
                 return 0;
             }
             if (length > line.Length)
             {
-                Out.Line($"(a line is at most {line.Length} characters)");
+                Console.WriteLine($"(a line is at most {line.Length} characters)");
                 continue;
             }
             ReadOnlySpan<char> said = line.Slice(0, length).Trim();
             if (echo)
-                Out.Line(said);
+                Console.WriteLine(said);
 
             // Your line, as tokens after the story so far. Encode starts
             // with BOS, which the model has already seen unless the story is new.
@@ -178,8 +180,9 @@ public static class Program
                 count = 1;
             if (position + count + 48 >= llama.SeqLen)
             {
-                Out.Line("(The story is as long as the model can remember.");
-                Out.Line(" A new one begins.)");
+                Console.WriteLine(
+                    "(The story is as long as the model can remember.");
+                Console.WriteLine(" A new one begins.)");
                 position = 0;
                 token = 1;
             }
@@ -203,8 +206,8 @@ public static class Program
                 }
                 if (next == 1)
                 {
-                    Out.Line();
-                    Out.Line("(The end. A new story begins.)");
+                    Console.WriteLine();
+                    Console.WriteLine("(The end. A new story begins.)");
                     position = 0;
                     token = 1;
                     break;
@@ -216,7 +219,7 @@ public static class Program
                     sentences++;
                 token = next;
             }
-            Out.Line();
+            Console.WriteLine();
         }
     }
     // docs:end

@@ -62,7 +62,8 @@ Test the instruction set you need, from the most specific to none, and keep a sc
 
 <!-- sample: samples/Simd.cs path -->
 ```csharp
-Out.Line(AdvSimd.Arm64.IsSupported ? "NEON (AdvSimd), 4 floats per instruction"
+Console.WriteLine(AdvSimd.Arm64.IsSupported
+    ? "NEON (AdvSimd), 4 floats per instruction"
     : Fma.IsSupported ? "AVX + FMA, 8 floats per instruction"
     : "scalar (no SIMD ISA enabled)");
 ```

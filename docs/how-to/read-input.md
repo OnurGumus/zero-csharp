@@ -29,23 +29,23 @@ quiz takes numbers, so 32 is plenty.
 
 <!-- sample: samples/QuizStep2.cs ask -->
 ```csharp
-// In.ReadLine flushes Out first, so the prompt shows before the
-// program waits for the answer.
-Out.Write($"Q{i}: {a} + {b} = ");
+// Console.Write holds the prompt in a buffer; In.ReadLine writes it
+// out first, so it shows before the program waits for the answer.
+Console.Write($"Q{i}: {a} + {b} = ");
 int length = In.ReadLine(buffer);
 if (length < 0)
 {
-    Out.Line();
-    Out.Line("(end of input)");
+    Console.WriteLine();
+    Console.WriteLine("(end of input)");
     break;
 }
 asked++;
 ```
 
-`Out.Write` puts the prompt in `Out`'s buffer without a newline. `Out` writes its buffer out only when
-`Out.Line` ends a line, when the buffer is full, or on `Out.Flush()`. `In.ReadLine` calls
-`Out.Flush()` before it reads, so the prompt is on the screen before the program waits. You don't have
-to flush yourself.
+`Console.Write` puts the prompt in the output buffer without a newline. The buffer is written out
+only when `Console.WriteLine` ends a line, when the buffer is full, or on `Out.Flush()`. `In.ReadLine`
+writes it out before it reads, so the prompt is on the screen before the program waits. You don't
+have to flush yourself.
 
 `In.ReadLine(buffer)` returns one of three things:
 
@@ -66,12 +66,12 @@ answer skip the question:
 ```csharp
 while (true)
 {
-    Out.Write($"Q{i}: {a} + {b} = ");
+    Console.Write($"Q{i}: {a} + {b} = ");
     int length = In.ReadLine(buffer);
     if (length < 0)
     {
-        Out.Line();
-        Out.Line("(end of input)");
+        Console.WriteLine();
+        Console.WriteLine("(end of input)");
         asked--;
         goto Done;
     }
@@ -79,31 +79,31 @@ while (true)
     // buffer holds only its start, so ask again.
     if (length > buffer.Length)
     {
-        Out.Write($"that's {length} characters; ");
-        Out.Line($"answers are at most {buffer.Length}");
+        Console.Write($"that's {length} characters; ");
+        Console.WriteLine($"answers are at most {buffer.Length}");
         continue;
     }
 
     ReadOnlySpan<char> answer = buffer.Slice(0, length).Trim();
     if (answer.Length == 0)
     {
-        Out.Line("skipped");
+        Console.WriteLine("skipped");
         break;
     }
     if (!Str.TryParse(answer, out long value))
     {
-        Out.Line($"\"{answer}\" isn't a number");
+        Console.WriteLine($"\"{answer}\" isn't a number");
         continue;
     }
 
     if (value == a + b)
     {
         right++;
-        Out.Line("right");
+        Console.WriteLine("right");
     }
     else
     {
-        Out.Line($"no, it's {a + b}");
+        Console.WriteLine($"no, it's {a + b}");
     }
     break;
 }
@@ -180,7 +180,7 @@ while ((count = In.Read(chunk)) > 0)
 }
 ```
 
-`Out.WriteUtf8` writes bytes out the same way, so a program can sit in a pipe:
+`Out.WriteUtf8` writes bytes out the same way, without encoding them as `Console` does, so a program can sit in a pipe:
 `./run.sh Pipe < tests/input/Pipe.txt`. Nothing is decoded or translated, on any target: a `\r` or a
 NUL byte arrives as it was sent. The one exception is typing into a Windows console, which hands over
 `\r\n` at the end of each line and so has its `\r` dropped; a file or a pipe on Windows is passed

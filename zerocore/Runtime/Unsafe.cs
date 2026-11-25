@@ -8,7 +8,10 @@ namespace System.Runtime.CompilerServices
         public static T As<T>(object o) where T : class => As<T>(o);
 
         [Intrinsic]
-        public static ref TTo As<TFrom, TTo>(ref TFrom source) => ref As<TFrom, TTo>(ref source);
+        public static ref TTo As<TFrom, TTo>(ref TFrom source)
+            where TFrom : allows ref struct
+            where TTo : allows ref struct
+            => ref As<TFrom, TTo>(ref source);
 
         [Intrinsic]
         public static ref T Add<T>(ref T source, int elementOffset) => ref Add(ref source, elementOffset);
@@ -26,13 +29,34 @@ namespace System.Runtime.CompilerServices
         public static ref T AsRef<T>(void* source) => ref AsRef<T>(source);
 
         [Intrinsic]
-        public static ref T AsRef<T>(ref readonly T source) => ref AsRef(in source);
+        public static ref T AsRef<T>(scoped ref readonly T source)
+            where T : allows ref struct
+            => ref AsRef(in source);
 
         [Intrinsic]
         public static int SizeOf<T>() => SizeOf<T>();
 
         [Intrinsic]
         public static bool AreSame<T>(ref T left, ref T right) => AreSame(ref left, ref right);
+
+        [Intrinsic]
+        public static bool IsAddressGreaterThan<T>(ref T left, ref T right) => IsAddressGreaterThan(ref left, ref right);
+
+        [Intrinsic]
+        public static bool IsAddressLessThan<T>(ref T left, ref T right) => IsAddressLessThan(ref left, ref right);
+
+        // right's address minus left's, in bytes.
+        [Intrinsic]
+        public static nint ByteOffset<T>(ref readonly T origin, ref readonly T target) => ByteOffset(in origin, in target);
+
+        [Intrinsic]
+        public static ref T NullRef<T>() => ref NullRef<T>();
+
+        [Intrinsic]
+        public static bool IsNullRef<T>(ref readonly T source) => IsNullRef(in source);
+
+        [Intrinsic]
+        public static void SkipInit<T>(out T value) => SkipInit(out value);
 
         // A T at any address, aligned or not: what BinaryPrimitives reads and
         // writes file formats with.

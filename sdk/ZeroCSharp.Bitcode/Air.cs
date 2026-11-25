@@ -84,7 +84,7 @@ static class Air
     static ToolFailure Fail(string message) => new("ll2air", message);
 
     // Python's re.match: anchored at the start only.
-    static Match At(string input, string pattern) => Regex.Match(input, @"\G(?:" + pattern + ")");
+    internal static Match At(string input, string pattern) => Regex.Match(input, @"\G(?:" + pattern + ")");
 
     public static void Run(string output, string assembly, string[] inputs)
     {
@@ -96,7 +96,7 @@ static class Air
         Files.WriteText(output, Module(kernels, sources));
     }
 
-    static List<string> FindFunction(string[] sources, string name)
+    internal static List<string> FindFunction(string[] sources, string name)
     {
         var start = new Regex(@"^define [^@]*@" + Regex.Escape(name) + @"\(");
         foreach (string text in sources)
@@ -125,7 +125,7 @@ static class Air
         t == "ptr" ? Pointer(space) : Regex.Replace(t, @"\bptr\b", Pointer(Device));
 
     // `#N` attribute groups and `!dbg !N`-style metadata attachments.
-    static string StripAttachments(string line) =>
+    internal static string StripAttachments(string line) =>
         Regex.Replace(Regex.Replace(line, @"\s#\d+", ""), @",\s*!\w[\w.]*\s+!\d+", "");
 
     /// <summary>Where each pointer value points, following GEPs, phis and selects.</summary>
@@ -167,7 +167,7 @@ static class Air
     /// An i32 can't hold a GPU's 64-bit address, so each such %q becomes %p itself;
     /// an integer from ptrtoint that is used for anything else is an error.
     /// </summary>
-    static List<string> PointerRoundTrips(string name, List<string> lines)
+    internal static List<string> PointerRoundTrips(string name, List<string> lines)
     {
         const string toInt = @"\s*" + Name + @" = ptrtoint ptr " + Name + @" to i32$";
         var origin = new Dictionary<string, string>();
@@ -197,7 +197,7 @@ static class Air
     }
 
     /// <summary>(export name, function) for each of the assembly's [RuntimeExport] methods.</summary>
-    static List<(string Export, string Function)> KernelsOf(string[] sources, string assembly)
+    internal static List<(string Export, string Function)> KernelsOf(string[] sources, string assembly)
     {
         // NativeAOT's symbol names begin with the assembly's, with anything but
         // letters, digits and _ made _ (My.App: My_App_...).
@@ -457,7 +457,7 @@ static class Air
         return new Kernel(shortName, string.Join(", ", sig), meta, function, intrinsics);
     }
 
-    static string Last(string argument) => argument.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[^1];
+    internal static string Last(string argument) => argument.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[^1];
 
     static string Module(List<Kernel> kernels, string[] sources)
     {

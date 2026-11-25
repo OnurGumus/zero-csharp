@@ -8,7 +8,7 @@
 // lib/C64.cs has the machine: the screen, the video chip, the keyboard.
 //
 // At the end the program reads back what it put on the screen and in the
-// video chip, and reports through Out, which is how ./test.sh --c64 checks it
+// video chip, and reports through Console, which is how ./test.sh --c64 checks it
 // (it types a key for the program to stop at).
 
 using System;
@@ -181,9 +181,9 @@ public static class Program
         C64.Border(C64.LightBlue);
         C64.Clear(C64.Blue);
         if (s_failures == 0)
-            Out.Line($"All {s_checks} checks passed.");
+            Console.WriteLine($"All {s_checks} checks passed.");
         else
-            Out.Line($"{s_failures} of {s_checks} checks FAILED, the first: {s_firstFailure}");
+            Console.WriteLine($"{s_failures} of {s_checks} checks FAILED, the first: {s_firstFailure}");
         return s_failures;
     }
 }

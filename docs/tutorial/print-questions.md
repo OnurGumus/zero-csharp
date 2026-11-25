@@ -33,25 +33,25 @@ as it does in any C# program.
 ```csharp
 public static int Main()
 {
-    Out.Line($"{Questions} questions:");
+    Console.WriteLine($"{Questions} questions:");
     for (int i = 1; i <= Questions; i++)
     {
         int a = Next(50), b = Next(50);
-        // Each hole is formatted straight into Out's buffer: no string is
+        // Each hole is formatted straight into the output buffer: no string is
         // built. {a,2} pads to two characters, so the columns line up.
-        Out.Line($"Q{i}: {a,2} + {b,2} = {a + b,3}");
+        Console.WriteLine($"Q{i}: {a,2} + {b,2} = {a + b,3}");
     }
     return 0;
 }
 ```
 
-`Out.Line($"...")` looks like `Console.WriteLine($"...")`, and it reads the same way, but no string
-is built. In .NET, `$"..."` makes a string on the heap, and the garbage collector frees it later. Zero
-mode has no garbage collector: a string made with `new` is never freed. So `Out` takes the
-interpolated string through a handler that formats each hole straight into its output buffer. The
+`Console.WriteLine($"...")` reads as it does in .NET, but no string is built. In .NET, `$"..."`
+makes a string on the heap, and the garbage collector frees it later. Zero mode has no garbage
+collector: a string made with `new` is never freed. So `Console.WriteLine` takes the interpolated
+string through a handler that formats each hole straight into its output buffer. The
 literal parts are copied in, `{a,2}` is formatted into the buffer padded to two characters, and the
 whole line goes to the C library's `write` when the line ends (or sooner, in pieces, if it doesn't fit
-`Out`'s 256-byte buffer).
+the 256-byte buffer).
 
 Holes take numbers, `bool`, `char`, strings and spans, with an alignment (`{x,5}`, `{x,-5}`) and a
 format (`{x:D4}`, `{x:X}`, `{price:F2}`). [Format text](../how-to/format-text.html) lists them.
@@ -75,8 +75,8 @@ Q5: 27 +  8 =  35
 Q6: 38 + 36 =  74
 ```
 
-The program uses `Out` but declares no `using` for it: `lib/` puts its types in the global namespace,
-and every zero project compiles against it (the SDK carries it, and `build.sh` uses it in the
-repository).
+`Console` comes from `lib/`, which every zero project compiles against (the SDK carries it, and
+`build.sh` uses it in the repository). It's in the `System` namespace, as in .NET. `lib/`'s own types,
+such as `In` in the next step, are in the global namespace and need no `using`.
 
 Next: [read the answers](read-answers.html).

@@ -19,7 +19,7 @@ WIDTH = 80
 # Page order: (file, types documented on the page, page name, one-line description for the index).
 PAGES = [
     ('Arena.cs', ['Arena'], 'arena', 'Growable bump allocator: allocation, scopes, reset, debug checks.'),
-    ('Scratch.cs', ['Arena', 'ScratchScope', 'ScratchList', 'ScratchText', 'ScratchPool'], 'scratch', 'Temporary memory whose lifetime the compiler checks: Arena.Scratch, ScratchScope and its lists, text and pools.'),
+    ('Scratch.cs', ['Arena', 'ScratchScope', 'ScratchList', 'ScratchText', 'ScratchDict', 'ScratchHashSet', 'ScratchPool'], 'scratch', 'Temporary memory whose lifetime the compiler checks: Arena.Scratch, ScratchScope and its lists, text, dictionaries, sets and pools.'),
     ('List.cs', ['List'], 'list', 'Growable array of unmanaged items in an arena.'),
     ('Pool.cs', ['Pool', 'Handle'], 'pool', 'Items removed one by one, found by handles that notice when they are out of date: Pool<T> and Handle<T>.'),
     ('LinkedList.cs', ['LinkedList', 'LinkedListNode'], 'linkedlist', 'Doubly linked list in an arena, built on Pool<T>.'),
@@ -30,7 +30,7 @@ PAGES = [
     ('RefList.cs', ['RefList'], 'reflist', 'List of references: strings, classes, arrays.'),
     ('StrDict.cs', ['StrDict'], 'strdict', 'Hash map with string keys compared by text, values of any type.'),
     ('RefDict.cs', ['RefDict'], 'refdict', 'Hash map with unmanaged keys and reference values.'),
-    ('Regex.cs', ['Regex', 'RegexMatch', 'RegexGroups', 'RegexGroup', 'RegexMatches', 'RegexOptions'], 'regex', 'Regular expressions compiled into an arena, matched in linear time.'),
+    ('Regex.cs', ['Regex', 'RegexMatch', 'RegexGroups', 'RegexGroup', 'RegexMatches', 'RegexSplit', 'RegexOptions'], 'regex', 'Regular expressions compiled into an arena, matched in linear time.'),
     ('Seq.cs', ['Seq', 'Query'], 'seq', 'Allocation-free query operators over spans: Where, Select, Sum, ...'),
     ('Threads.cs', ['Parallel'], 'parallel', 'Loops whose iterations run on every processor.'),
     ('Str.cs', ['Str', 'MemoryExtensions'], 'str', 'Parsing, comparing and arena strings; span and string operations.'),

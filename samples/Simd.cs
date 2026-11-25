@@ -4,6 +4,7 @@
 //   x64:   AVX + FMA, 8 lanes per instruction (needs -m x86-64-v3, which build.sh passes)
 // Build: ./build.sh Simd
 
+using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
@@ -87,10 +88,11 @@ public static class Program
 
     public static int Main()
     {
-        Out.Line("=== SIMD dot product in --stdlib:zero ===");
-        Out.Write("Path: ");
+        Console.WriteLine("=== SIMD dot product in --stdlib:zero ===");
+        Console.Write("Path: ");
         // docs:path
-        Out.Line(AdvSimd.Arm64.IsSupported ? "NEON (AdvSimd), 4 floats per instruction"
+        Console.WriteLine(AdvSimd.Arm64.IsSupported
+            ? "NEON (AdvSimd), 4 floats per instruction"
             : Fma.IsSupported ? "AVX + FMA, 8 floats per instruction"
             : "scalar (no SIMD ISA enabled)");
         // docs:end
@@ -136,15 +138,15 @@ public static class Program
                 return 1; // keeps the loops from being optimized away
         }
 
-        Out.Line("Scalar result: ", (long)scalar);
-        Out.Line("SIMD result:   ", (long)simd);
-        Out.Write("Results match: ");
-        Out.Write(scalar == simd);
-        Out.Line();
-        Out.Line("Scalar: ", scalarMs, " ms");
-        Out.Line("SIMD:   ", simdMs, " ms");
+        Console.WriteLine($"Scalar result: {(long)scalar}");
+        Console.WriteLine($"SIMD result:   {(long)simd}");
+        Console.Write("Results match: ");
+        Console.Write(scalar == simd);
+        Console.WriteLine();
+        Console.WriteLine($"Scalar: {scalarMs} ms");
+        Console.WriteLine($"SIMD:   {simdMs} ms");
         if (simdMs > 0)
-            Out.Line("Speedup: ", scalarMs / simdMs, "x");
+            Console.WriteLine($"Speedup: {scalarMs / simdMs}x");
 
         unsafe { arena.Destroy(); } // SAFETY: a and b are not used after this.
         return scalar == simd ? 0 : 1;

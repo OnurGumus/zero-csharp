@@ -10,7 +10,7 @@ PASS format: integers (9 checks)
 PASS format: doubles (17 checks)
 PASS format: other values and alignment (13 checks)
 PASS arena strings (12 checks)
-PASS StrBuilder (7 checks)
+PASS StrBuilder (21 checks)
 
 item    |  qty|    price
 apple   |    3|     1.25

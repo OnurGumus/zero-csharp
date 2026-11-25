@@ -1,7 +1,7 @@
 // HashSet<T>: a set of unmanaged values, backed by an Arena.
 //
 //   var seen = HashSet<int>.Create(arena);
-//   if (!seen.Add(id)) Out.Line("duplicate: ", id);
+//   if (!seen.Add(id)) Console.WriteLine($"duplicate: {id}");
 //
 // A Dict without values underneath, so it behaves like one: a handle whose
 // copies share contents, default(HashSet) is "not created", and items are

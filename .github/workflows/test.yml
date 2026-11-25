@@ -2,7 +2,8 @@
 # Linux x64 and arm64, macOS on Apple Silicon, Windows x64 (under Wine),
 # WebAssembly, and UEFI x64 and arm64 (in QEMU, on OVMF). DOS isn't here: it runs under an emulated 386 for 15 minutes
 # and more, so run ./test.sh --dos locally. The GPU's kernels are checked up to
-# Metal (./test.sh --gpu-air), not run: run ./test.sh --gpu on a Mac.
+# Metal (./test.sh --gpu-air) and to CUDA's ptxas (./build.sh --cuda), not run:
+# run ./test.sh --gpu on a Mac.
 #
 # bflat comes from the fork (see README, "Getting bflat"). It has no release to
 # download, so the first job builds its layouts from source when the fork's
@@ -262,6 +263,23 @@ jobs:
         env:
           BFLAT_DIR: ${{ github.workspace }}/bflat/layouts/linux-glibc-x64
         run: ./test.sh --gpu-air
+      # The same kernels for NVIDIA's GPUs (experimental): PTX from LLVM's
+      # NVPTX backend, assembled by NVIDIA's ptxas (pip's nvidia-cuda-nvcc-cu12,
+      # no GPU needed), and the Linux program that runs them through the CUDA
+      # driver, built. No runner here has an NVIDIA GPU to run it.
+      - name: Build the GPU kernels for CUDA (PTX checked by ptxas)
+        working-directory: zero-csharp
+        env:
+          BFLAT_DIR: ${{ github.workspace }}/bflat/layouts/linux-glibc-x64
+        run: |
+          # This job is on Ubuntu 22.04, whose newest LLVM is 15; its llc reads
+          # the kernels' IR.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-15
+          pip install --quiet nvidia-cuda-nvcc-cu12
+          nvcc_dir=$(python3 -c 'import nvidia.cuda_nvcc as m; print(m.__path__[0])')
+          export PATH="/usr/lib/llvm-15/bin:$nvcc_dir/bin:$PATH"
+          ./build.sh --cuda
 
   # The Commodore 64: llvm-mos (x64 Linux build) and VICE from Ubuntu, with the
   # ROMs ./setup.sh --c64 fetches from VICE's source release. VICE has no mode

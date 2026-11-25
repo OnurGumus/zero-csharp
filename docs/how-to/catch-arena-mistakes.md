@@ -86,7 +86,7 @@ Arena.DebugChecks: collection's buffer was freed (it grew after Save() and was u
 
 Without `DebugChecks`, nothing reports this. The list keeps reading memory that later allocations
 overwrite. The fix is to add only to collections created after the mark, or to do the temporary work
-in a separate scratch arena and copy the result out.
+in `Arena.Scratch`, whose memory is separate from your arenas, and copy the result out.
 
 ## What the library stops the program for
 
@@ -105,6 +105,7 @@ repository:
 | `list-grew-in-place` | the same, grown in place | yes |
 | `builder-grew-in-place` | the same for a `StrBuilder` | yes |
 | `list-index` | a list index out of range | no |
+| `builder-index` | a `StrBuilder` index out of range | no |
 | `out-of-memory` | an allocation the system can't satisfy, in a `stopOnOutOfMemory` arena | no |
 
 `Guards.fail` holds each case's message. A named arena's name goes to standard output, the message to

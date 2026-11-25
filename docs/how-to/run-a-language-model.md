@@ -88,11 +88,11 @@ for (int position = 0; position + 1 < steps; position++)
             break; // BOS: the story is over
         Out.WriteUtf8(llama.Decode(token, next));
         if (verbose)
-            Out.Write($"[{next}]");
+            Console.Write($"[{next}]");
         token = next;
     }
 }
-Out.Line();
+Console.WriteLine();
 ```
 
 Generating allocates nothing: `Forward` works in the buffers `Create` took from the arena, and
@@ -124,8 +124,10 @@ every token of the story so far, so each turn only runs the new tokens, yours an
 // the model ends it, a new one begins.
 static int TakeTurns(Llama llama, LlamaSampler sampler, Arena arena, bool echo)
 {
-    Out.Line("Tell a story together: type a line, and the model continues it.");
-    Out.Line("An empty line lets it go on by itself; end of input stops.");
+    Console.WriteLine(
+        "Tell a story together: type a line, and the model continues it.");
+    Console.WriteLine(
+        "An empty line lets it go on by itself; end of input stops.");
     Span<char> line = stackalloc char[200];
     Span<byte> text;
     Span<int> ids;
@@ -140,21 +142,21 @@ static int TakeTurns(Llama llama, LlamaSampler sampler, Arena arena, bool echo)
 
     while (true)
     {
-        Out.Write("> ");
+        Console.Write("> ");
         int length = In.ReadLine(line);
         if (length < 0)
         {
-            Out.Line();
+            Console.WriteLine();
             return 0;
         }
         if (length > line.Length)
         {
-            Out.Line($"(a line is at most {line.Length} characters)");
+            Console.WriteLine($"(a line is at most {line.Length} characters)");
             continue;
         }
         ReadOnlySpan<char> said = line.Slice(0, length).Trim();
         if (echo)
-            Out.Line(said);
+            Console.WriteLine(said);
 
         // Your line, as tokens after the story so far. Encode starts
         // with BOS, which the model has already seen unless the story is new.
@@ -163,8 +165,9 @@ static int TakeTurns(Llama llama, LlamaSampler sampler, Arena arena, bool echo)
             count = 1;
         if (position + count + 48 >= llama.SeqLen)
         {
-            Out.Line("(The story is as long as the model can remember.");
-            Out.Line(" A new one begins.)");
+            Console.WriteLine(
+                "(The story is as long as the model can remember.");
+            Console.WriteLine(" A new one begins.)");
             position = 0;
             token = 1;
         }
@@ -188,8 +191,8 @@ static int TakeTurns(Llama llama, LlamaSampler sampler, Arena arena, bool echo)
             }
             if (next == 1)
             {
-                Out.Line();
-                Out.Line("(The end. A new story begins.)");
+                Console.WriteLine();
+                Console.WriteLine("(The end. A new story begins.)");
                 position = 0;
                 token = 1;
                 break;
@@ -201,7 +204,7 @@ static int TakeTurns(Llama llama, LlamaSampler sampler, Arena arena, bool echo)
                 sentences++;
             token = next;
         }
-        Out.Line();
+        Console.WriteLine();
     }
 }
 ```

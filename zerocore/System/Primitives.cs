@@ -194,6 +194,18 @@ namespace System
             get => sizeof(nint);
         }
 
+        public static nint MaxValue => sizeof(nint) == 8 ? (nint)long.MaxValue : (nint)int.MaxValue;
+        public static nint MinValue => sizeof(nint) == 8 ? (nint)long.MinValue : (nint)int.MinValue;
+
+        public static nint Min(nint x, nint y) => x <= y ? x : y;
+        public static nint Max(nint x, nint y) => x >= y ? x : y;
+
+        public static (nint Quotient, nint Remainder) DivRem(nint left, nint right)
+        {
+            nint quotient = left / right;
+            return (quotient, left - quotient * right);
+        }
+
         public override bool Equals(object obj) => obj is nint other && (nint)this == other;
         public override int GetHashCode() => unchecked((int)(long)(nint)this ^ (int)((long)(nint)this >> 32));
         public override string ToString() => Number.FormatInt64((nint)this);
@@ -232,7 +244,8 @@ namespace System
     //
     // Equals here is bit equality, so NaN equals NaN, as .NET's Equals has
     // it (unlike ==); 0.0 and -0.0 are equal, as in .NET.
-    public unsafe struct Single : IEquatable<float>, IComparable<float>, IComparable, ISpanFormattable
+    public unsafe struct Single : IEquatable<float>, IComparable<float>, IComparable, ISpanFormattable,
+        System.Numerics.Tensors.IFloatTensorElement
     {
         public int CompareTo(object obj) => obj is float other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type Single.");
 

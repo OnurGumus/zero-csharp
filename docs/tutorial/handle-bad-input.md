@@ -13,12 +13,12 @@ ends when the answer has been dealt with:
 ```csharp
 while (true)
 {
-    Out.Write($"Q{i}: {a} + {b} = ");
+    Console.Write($"Q{i}: {a} + {b} = ");
     int length = In.ReadLine(buffer);
     if (length < 0)
     {
-        Out.Line();
-        Out.Line("(end of input)");
+        Console.WriteLine();
+        Console.WriteLine("(end of input)");
         asked--;
         goto Done;
     }
@@ -26,31 +26,31 @@ while (true)
     // buffer holds only its start, so ask again.
     if (length > buffer.Length)
     {
-        Out.Write($"that's {length} characters; ");
-        Out.Line($"answers are at most {buffer.Length}");
+        Console.Write($"that's {length} characters; ");
+        Console.WriteLine($"answers are at most {buffer.Length}");
         continue;
     }
 
     ReadOnlySpan<char> answer = buffer.Slice(0, length).Trim();
     if (answer.Length == 0)
     {
-        Out.Line("skipped");
+        Console.WriteLine("skipped");
         break;
     }
     if (!Str.TryParse(answer, out long value))
     {
-        Out.Line($"\"{answer}\" isn't a number");
+        Console.WriteLine($"\"{answer}\" isn't a number");
         continue;
     }
 
     if (value == a + b)
     {
         right++;
-        Out.Line("right");
+        Console.WriteLine("right");
     }
     else
     {
-        Out.Line($"no, it's {a + b}");
+        Console.WriteLine($"no, it's {a + b}");
     }
     break;
 }
@@ -105,6 +105,6 @@ Q6: 38 + 36 =
 
 The invalid bytes came out as `�`, the Unicode replacement character: `In` decodes UTF-8 and replaces
 what it can't decode, so a program never sees a broken character. `"é😀"` went in as UTF-8, became
-UTF-16 `char`s in the span, and came back out as UTF-8 through `Out`.
+UTF-16 `char`s in the span, and came back out as UTF-8 through `Console`.
 
 Next: [keep the mistakes](keep-the-mistakes.html).

@@ -6,6 +6,7 @@
 // It also checks itself, as the tests do: that the handler ran as often as
 // asked, that the LED followed, and that a hardware register reads back.
 
+using System;
 using System.Runtime.InteropServices;
 
 namespace BlinkSample;
@@ -74,15 +75,15 @@ public static class Program
     {
         if (!ok)
         {
-            Out.Write("  FAIL: ");
-            Out.Line(what);
+            Console.Write("  FAIL: ");
+            Console.WriteLine(what);
             s_failures++;
         }
     }
 
     public static int Main()
     {
-        Out.Line("Blinking for 2.5 seconds...");
+        Console.WriteLine("Blinking for 2.5 seconds...");
         Board.Led(false);
 
         // docs:blink
@@ -106,7 +107,7 @@ public static class Program
         Board.Write(SysTickReload, 12345);
         Check("a register reads back", Board.Read(SysTickReload) == 12345);
 
-        Out.Line($"{s_ticks} ticks, {s_toggles} toggles");
+        Console.WriteLine($"{s_ticks} ticks, {s_toggles} toggles");
 
         // The handler also interrupts C# code in the middle of its work.
         // Managed code keeps the references in its locals on a stack of its
@@ -127,10 +128,10 @@ public static class Program
         Board.Led(false);
         Check("references intact under interrupts", intact);
         Check("interrupted many times", rounds > 200);
-        Out.Line(intact
+        Console.WriteLine(intact
             ? "200 ticks during C# work, references intact"
             : "200 ticks during C# work, references OVERWRITTEN");
-        Out.Line(s_failures == 0 ? "PASS" : "FAILED");
+        Console.WriteLine(s_failures == 0 ? "PASS" : "FAILED");
         return s_failures;
     }
 }

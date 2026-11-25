@@ -27,8 +27,9 @@
 // of the caller's. For data that only goes in, or spans the callback fills,
 // there are overloads with an input passed by value.
 //
-// Besides spans, the scope makes growable lists and text, and pools (items
-// found by a Handle<T>, removed one by one), that live as long:
+// Besides spans, the scope makes growable lists and text, dictionaries and
+// sets, and pools (items found by a Handle<T>, removed one by one), that live
+// as long:
 //
 //   ScratchList<int> evens = s.List<int>();
 //   ScratchText line = s.Text();
@@ -119,6 +120,16 @@ public ref struct ScratchScope
     public ScratchList<T> List<T>(int initialCapacity = 16) where T : unmanaged
         => new ScratchList<T>(global::List<T>.Create(Allocator(), initialCapacity), _thread, _depth);
 
+    /// <summary>An empty dictionary whose entries live until the callback returns.</summary>
+    public ScratchDict<TKey, TValue> Dict<TKey, TValue>(int capacity = 32)
+        where TKey : unmanaged
+        where TValue : unmanaged
+        => new ScratchDict<TKey, TValue>(global::Dict<TKey, TValue>.Create(Allocator(), capacity), _thread, _depth);
+
+    /// <summary>An empty set whose items live until the callback returns.</summary>
+    public ScratchHashSet<T> HashSet<T>(int capacity = 32) where T : unmanaged
+        => new ScratchHashSet<T>(global::HashSet<T>.Create(Allocator(), capacity), _thread, _depth);
+
     /// <summary>An empty pool whose items live until the callback returns.</summary>
     public ScratchPool<T> Pool<T>(int chunkSize = 64) where T : unmanaged
         => new ScratchPool<T>(global::Pool<T>.Create(Allocator(), chunkSize), _thread, _depth);
@@ -197,6 +208,128 @@ public ref struct ScratchList<T> where T : unmanaged
 
     void CheckInnermost() => ScratchThread.CheckInnermost(_thread, _depth,
         "Arena.Scratch: a ScratchList added to inside a nested Arena.Scratch, which would free its memory early");
+}
+
+/// <summary>
+/// A dictionary from <see cref="ScratchScope.Dict{TKey, TValue}"/>, freed when
+/// the Arena.Scratch callback returns; keys are compared as Dict's are. Clone
+/// copies it into an arena you keep. Copies share the same entries.
+/// </summary>
+public ref struct ScratchDict<TKey, TValue>
+    where TKey : unmanaged
+    where TValue : unmanaged
+{
+    readonly Dict<TKey, TValue> _map;
+    readonly ScratchThread* _thread;
+    readonly int _depth;
+
+    internal ScratchDict(Dict<TKey, TValue> map, ScratchThread* thread, int depth)
+    {
+        _map = map;
+        _thread = thread;
+        _depth = depth;
+    }
+
+    /// <summary>How many keys it holds.</summary>
+    public int Count => _map.Count;
+
+    /// <summary>Adds the key or changes its value.</summary>
+    public void Set(TKey key, TValue value)
+    {
+        CheckCanAdd(key);
+        _map.Set(key, value); // the scratch arena stops the program rather than fail
+    }
+
+    /// <summary>Adds the key if it isn't there. False if it was.</summary>
+    public bool TryAdd(TKey key, TValue value)
+    {
+        CheckCanAdd(key);
+        return _map.TryAdd(key, value);
+    }
+
+    /// <summary>The key's value, if it is there.</summary>
+    public bool TryGet(TKey key, out TValue value) => _map.TryGet(key, out value);
+
+    /// <summary>Whether the key is there.</summary>
+    public bool ContainsKey(TKey key) => _map.ContainsKey(key);
+
+    /// <summary>Removes the key. False if it wasn't there.</summary>
+    public bool Remove(TKey key) => _map.Remove(key);
+
+    /// <summary>Removes every key.</summary>
+    public void Clear() => _map.Clear();
+
+    /// <summary>For foreach: every key and value, in no particular order.</summary>
+    public Dict<TKey, TValue>.Enumerator GetEnumerator() => _map.GetEnumerator();
+
+    /// <summary>A copy in <paramref name="target"/>, an arena you keep: how the result leaves the callback.</summary>
+    public Dict<TKey, TValue> Clone(Arena target) => _map.Clone(target);
+
+    // A new key may grow the table, which only the innermost callback may do;
+    // changing a key that is there allocates nothing.
+    void CheckCanAdd(TKey key)
+    {
+        unsafe
+        {
+            // SAFETY: as in ScratchThread.CheckInnermost, which this falls back on.
+            if (_thread != null && _thread->Depth == _depth)
+                return;
+        }
+        if (_thread == null || !_map.ContainsKey(key))
+            ScratchThread.CheckInnermost(_thread, _depth,
+                "Arena.Scratch: a ScratchDict added to inside a nested Arena.Scratch, which would free its memory early");
+    }
+}
+
+/// <summary>
+/// A set from <see cref="ScratchScope.HashSet{T}"/>, freed when the
+/// Arena.Scratch callback returns; items are compared as HashSet's are. Clone
+/// copies it into an arena you keep. Copies share the same items.
+/// </summary>
+public ref struct ScratchHashSet<T> where T : unmanaged
+{
+    readonly HashSet<T> _set;
+    readonly ScratchThread* _thread;
+    readonly int _depth;
+
+    internal ScratchHashSet(HashSet<T> set, ScratchThread* thread, int depth)
+    {
+        _set = set;
+        _thread = thread;
+        _depth = depth;
+    }
+
+    /// <summary>How many items it holds.</summary>
+    public int Count => _set.Count;
+
+    /// <summary>Adds the item. False if it was already there.</summary>
+    public bool Add(T item)
+    {
+        unsafe
+        {
+            // SAFETY: as in ScratchDict.CheckCanAdd.
+            bool innermost = _thread != null && _thread->Depth == _depth;
+            if (!innermost && (_thread == null || !_set.Contains(item)))
+                ScratchThread.CheckInnermost(_thread, _depth,
+                    "Arena.Scratch: a ScratchHashSet added to inside a nested Arena.Scratch, which would free its memory early");
+        }
+        return _set.Add(item); // the scratch arena stops the program rather than fail
+    }
+
+    /// <summary>Whether the item is there.</summary>
+    public bool Contains(T item) => _set.Contains(item);
+
+    /// <summary>Removes the item. False if it wasn't there.</summary>
+    public bool Remove(T item) => _set.Remove(item);
+
+    /// <summary>Removes every item.</summary>
+    public void Clear() => _set.Clear();
+
+    /// <summary>For foreach: every item, in no particular order.</summary>
+    public HashSet<T, DefaultEqualityComparer<T>>.Enumerator GetEnumerator() => _set.GetEnumerator();
+
+    /// <summary>A copy in <paramref name="target"/>, an arena you keep: how the result leaves the callback.</summary>
+    public HashSet<T> Clone(Arena target) => _set.Clone(target);
 }
 
 /// <summary>
@@ -326,6 +459,61 @@ public ref struct ScratchText
     {
     }
 
+    /// <summary>The char at <paramref name="index"/>; stops the program if it is out of range.</summary>
+    public char this[int index]
+    {
+        get => _builder[index];
+        set { var builder = _builder; builder[index] = value; }
+    }
+
+    /// <summary>Puts <paramref name="text"/> before the char at <paramref name="index"/> (at the end when it is Length).</summary>
+    public void Insert(int index, ReadOnlySpan<char> text)
+    {
+        CheckInnermostToEdit();
+        _builder.Insert(index, text);
+    }
+
+    /// <summary>Puts one char before the char at <paramref name="index"/>.</summary>
+    public void Insert(int index, char value)
+    {
+        CheckInnermostToEdit();
+        _builder.Insert(index, value);
+    }
+
+    /// <summary>Puts a number, in decimal, before the char at <paramref name="index"/>.</summary>
+    public void Insert(int index, long value)
+    {
+        CheckInnermostToEdit();
+        _builder.Insert(index, value);
+    }
+
+    /// <summary>Puts a number, in decimal, before the char at <paramref name="index"/>.</summary>
+    public void Insert(int index, int value) => Insert(index, (long)value);
+
+    /// <summary>Removes <paramref name="length"/> chars from <paramref name="startIndex"/>.</summary>
+    public void Remove(int startIndex, int length) => _builder.Remove(startIndex, length);
+
+    /// <summary>Replaces every <paramref name="oldChar"/> with <paramref name="newChar"/>.</summary>
+    public void Replace(char oldChar, char newChar) => _builder.Replace(oldChar, newChar);
+
+    /// <summary>Replaces <paramref name="oldChar"/> with <paramref name="newChar"/> in the <paramref name="count"/> chars from <paramref name="startIndex"/>.</summary>
+    public void Replace(char oldChar, char newChar, int startIndex, int count)
+        => _builder.Replace(oldChar, newChar, startIndex, count);
+
+    /// <summary>Replaces every <paramref name="oldValue"/> with <paramref name="newValue"/>, left to right.</summary>
+    public void Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue)
+    {
+        CheckInnermostToEdit();
+        _builder.Replace(oldValue, newValue);
+    }
+
+    /// <summary>Replaces the <paramref name="oldValue"/>s that lie wholly within the <paramref name="count"/> chars from <paramref name="startIndex"/>.</summary>
+    public void Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue, int startIndex, int count)
+    {
+        CheckInnermostToEdit();
+        _builder.Replace(oldValue, newValue, startIndex, count);
+    }
+
     /// <summary>Empties the text; the memory stays the text's.</summary>
     public void Clear() => _builder.Clear();
 
@@ -344,6 +532,10 @@ public ref struct ScratchText
 
     void CheckInnermost() => ScratchThread.CheckInnermost(_thread, _depth,
         "Arena.Scratch: a ScratchText appended to inside a nested Arena.Scratch, which would free its memory early");
+
+    // Insert and Replace may need a bigger buffer, so they follow Append's rule.
+    void CheckInnermostToEdit() => ScratchThread.CheckInnermost(_thread, _depth,
+        "Arena.Scratch: a ScratchText changed by Insert or Replace inside a nested Arena.Scratch, which would free its memory early");
 }
 
 public delegate void ScratchAction(scoped ScratchScope scratch);
@@ -368,8 +560,11 @@ public delegate TResult ScratchFuncIn<TInput, TResult>(scoped ScratchScope scrat
 
 public partial struct Arena
 {
-    // Each thread's ScratchThread, behind a pthread key (zero mode has no
-    // [ThreadStatic]). The key's destructor frees its arena when the thread ends.
+    // Each thread's ScratchThread, behind a pthread key, whose destructor frees
+    // its arena when the thread ends. Not [ThreadStatic]: that has no hook for
+    // the end of a thread, so each thread's arena would leak (Parallel.For
+    // starts new threads every call), and it is a pthread key underneath
+    // anyway, so it wouldn't be faster.
     static nuint s_scratchKey;
     static int s_scratchKeyState; // 0 none, 1 being created, 2 ready
 

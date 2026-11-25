@@ -21,7 +21,7 @@ Arena keep = Arena.Create(4096);
 RefList<string> mistakes = RefList<string>.Create(keep);
 if (!mistakes.IsCreated)
 {
-    Out.Line("Arena.Create failed");
+    Console.WriteLine("Arena.Create failed");
     return 1;
 }
 ```
@@ -38,7 +38,7 @@ If the arena couldn't be created, nothing built on it can be either, so checking
 ```csharp
 else
 {
-    Out.Line($"no, it's {a + b}");
+    Console.WriteLine($"no, it's {a + b}");
     // Kept until the end, so the string is built in `keep`, not in
     // the buffer the next answer overwrites.
     mistakes.Add(Str.Format(keep, $"  {a} + {b} = {a + b}, not {value}"));
@@ -46,7 +46,7 @@ else
 ```
 
 `Str.Format(keep, $"...")` is the one place in the program that builds a string. It formats the line,
-like `Out.Line` would, into a new string allocated in `keep`. The string lives as long as the arena,
+like `Console.WriteLine` would, into a new string allocated in `keep`. The string lives as long as the arena,
 and the list holds a reference to it.
 
 Both must live in an arena that outlives their use. The list could live in `keep` while its strings
@@ -57,12 +57,12 @@ and its strings in the same arena avoids that.
 
 <!-- sample: samples/Quiz.cs report -->
 ```csharp
-Out.Line($"{right} of {asked} right");
+Console.WriteLine($"{right} of {asked} right");
 if (mistakes.Count > 0)
 {
-    Out.Line("Mistakes:");
+    Console.WriteLine("Mistakes:");
     foreach (string mistake in mistakes)
-        Out.Line(mistake);
+        Console.WriteLine(mistake);
 }
 ```
 

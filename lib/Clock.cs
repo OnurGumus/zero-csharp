@@ -3,10 +3,10 @@
 //
 //   long start = Clock.Monotonic;
 //   Work();
-//   Out.Line("took ", (Clock.Monotonic - start) / 1_000_000, " ms");
+//   Console.WriteLine($"took {(Clock.Monotonic - start) / 1_000_000} ms");
 //
 //   CalendarTime now = Clock.UtcNow;
-//   Out.Line($"{now.Year}-{now.Month:D2}-{now.Day:D2}");
+//   Console.WriteLine($"{now.Year}-{now.Month:D2}-{now.Day:D2}");
 //
 // Both come from the C library's clock_gettime, with Linux's clock numbers:
 // 1 for the monotonic clock and 0 for the wall clock. Each target's runtime

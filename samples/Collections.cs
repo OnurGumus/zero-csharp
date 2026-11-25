@@ -35,6 +35,14 @@ public struct Modulo : IEqualityComparer<int>
 }
 // docs:end
 
+// The 500-key check's map and what it found, passed to Arena.Scratch by ref.
+public struct SquareWork
+{
+    public StrDict<long> Map;
+    public int Removed;
+    public int OddFound;
+}
+
 public static class Program
 {
     public static int Main()
@@ -43,31 +51,31 @@ public static class Program
         if (!arena.IsCreated)
             return 1;
 
-        Out.Line("=== Collections Demo ===");
-        Out.Line();
+        Console.WriteLine("=== Collections Demo ===");
+        Console.WriteLine();
 
-        Out.Line("--- List<int> ---");
+        Console.WriteLine("--- List<int> ---");
         var numbers = List<int>.Create(arena, 0); // capacity is clamped to a minimum of 4
         for (int i = 1; i <= 10; i++)
             numbers.Add(i * 10);
-        Out.Line("Count: ", numbers.Count, " | Capacity: ", numbers.Capacity);
+        Console.WriteLine($"Count: {numbers.Count} | Capacity: {numbers.Capacity}");
         PrintList(numbers);
 
         numbers.RemoveAt(5);
-        Out.Line("After RemoveAt(5):");
+        Console.WriteLine("After RemoveAt(5):");
         PrintList(numbers);
 
         // List is a handle: the callee's Adds are visible to the caller.
         AddMore(numbers, 3);
-        Out.Line("After AddMore(numbers, 3) in another method, Count: ", numbers.Count);
+        Console.WriteLine($"After AddMore(numbers, 3) in another method, Count: {numbers.Count}");
 
         List<int> notCreated = default;
-        Out.Write("Add on default(List) returns ");
-        Out.Write(notCreated.Add(1));
-        Out.Line();
-        Out.Line();
+        Console.Write("Add on default(List) returns ");
+        Console.Write(notCreated.Add(1));
+        Console.WriteLine();
+        Console.WriteLine();
 
-        Out.Line("--- List<Point> ---");
+        Console.WriteLine("--- List<Point> ---");
         var points = List<Point>.Create(arena);
         points.Add(new Point { X = 1, Y = 2 });
         points.Add(new Point { X = 10, Y = 20 });
@@ -75,17 +83,17 @@ public static class Program
         for (int i = 0; i < points.Count; i++)
         {
             Point p = points.Get(i);
-            Out.Write("[");
-            Out.Write(i);
-            Out.Write("] (");
-            Out.Write(p.X);
-            Out.Write(", ");
-            Out.Write(p.Y);
-            Out.Line(")");
+            Console.Write("[");
+            Console.Write(i);
+            Console.Write("] (");
+            Console.Write(p.X);
+            Console.Write(", ");
+            Console.Write(p.Y);
+            Console.WriteLine(")");
         }
-        Out.Line();
+        Console.WriteLine();
 
-        Out.Line("--- Dict<int, int> ---");
+        Console.WriteLine("--- Dict<int, int> ---");
         // docs:dict
         var scores = Dict<int, int>.Create(arena);
         scores.Set(1, 100);
@@ -93,14 +101,14 @@ public static class Program
         scores.Set(3, 175);
         scores.Set(-42, 999);
         // docs:end
-        Out.Line("Count: ", scores.Count);
+        Console.WriteLine($"Count: {scores.Count}");
 
         if (scores.TryGet(2, out int value))
-            Out.Line("scores[2] = ", value);
+            Console.WriteLine($"scores[2] = {value}");
         if (scores.TryGet(-42, out value))
-            Out.Line("scores[-42] = ", value);
+            Console.WriteLine($"scores[-42] = {value}");
         if (!scores.TryGet(99, out value))
-            Out.Line("scores[99] not found");
+            Console.WriteLine("scores[99] not found");
 
         // Growth: 1000 inserts into a map created with capacity 8.
         var squares = Dict<int, long>.Create(arena, 8);
@@ -112,54 +120,54 @@ public static class Program
             if (squares.TryGet(i, out long sq) && sq == (long)i * i)
                 found++;
         }
-        Out.Line("1000 inserts after growth, found: ", found);
+        Console.WriteLine($"1000 inserts after growth, found: {found}");
 
         Dict<int, int> notCreatedMap = default;
-        Out.Write("Lookup in default(Dict) misses instead of crashing: ");
-        Out.Write(!notCreatedMap.ContainsKey(1));
-        Out.Line();
-        Out.Line();
+        Console.Write("Lookup in default(Dict) misses instead of crashing: ");
+        Console.Write(!notCreatedMap.ContainsKey(1));
+        Console.WriteLine();
+        Console.WriteLine();
 
-        Out.Line("--- Dict<Point, int> ---");
+        Console.WriteLine("--- Dict<Point, int> ---");
         var pointIds = Dict<Point, int>.Create(arena);
         pointIds.Set(new Point { X = 0, Y = 0 }, 1);
         pointIds.Set(new Point { X = 10, Y = 10 }, 2);
         pointIds.Set(new Point { X = 5, Y = 5 }, 3);
         if (pointIds.TryGet(new Point { X = 10, Y = 10 }, out value))
-            Out.Line("ID for (10, 10): ", value);
+            Console.WriteLine($"ID for (10, 10): {value}");
 
-        Out.Line();
+        Console.WriteLine();
 
-        Out.Line("--- Sort, Remove, foreach ---");
+        Console.WriteLine("--- Sort, Remove, foreach ---");
         var unsorted = List<int>.Create(arena);
         int[] values = { 42, 7, 19, 3, 88, 7, 61 };
         foreach (int v in values)
             unsorted.Add(v);
         unsorted.Sort(&Ascending); // any comparison: pass a static method's address
-        Out.Write("Ascending:  ");
+        Console.Write("Ascending:  ");
         PrintList(unsorted);
         unsorted.Sort(&ByLastDigit);
-        Out.Write("By last digit, then value: ");
+        Console.Write("By last digit, then value: ");
         PrintList(unsorted);
         // docs:sort-comparers
         unsorted.Sort();                  // by int's IComparable<int>
-        Out.Write("Sort():     ");
+        Console.Write("Sort():     ");
         PrintList(unsorted);
         unsorted.Sort(new Descending());  // by a struct: an IComparer<int>
-        Out.Write("Descending: ");
+        Console.Write("Descending: ");
         PrintList(unsorted);
 
         Span<int> span = values;          // spans sort in place too
         span.Sort();
-        Out.Line($"BinarySearch(19): {span.BinarySearch(19)}, "
+        Console.WriteLine($"BinarySearch(19): {span.BinarySearch(19)}, "
             + $"(20) would go at {~span.BinarySearch(20)}");
         // docs:end
         span.Reverse();
-        Out.Line($"Reversed: {span[0]} ... {span[^1]}");
+        Console.WriteLine($"Reversed: {span[0]} ... {span[^1]}");
         span.Sort((a, b) => a % 10 - b % 10);
-        Out.Line($"By a lambda, last digit first: {span[0]}, then {span[1]}");
+        Console.WriteLine($"By a lambda, last digit first: {span[0]}, then {span[1]}");
 
-        Out.Line($"Remove(3): {scores.Remove(3)}, again: {scores.Remove(3)}, Count: {scores.Count}");
+        Console.WriteLine($"Remove(3): {scores.Remove(3)}, again: {scores.Remove(3)}, Count: {scores.Count}");
         long total = 0;
         int pairs = 0;
         foreach (var pair in scores) // no particular order
@@ -167,7 +175,7 @@ public static class Program
             total += pair.Value;
             pairs++;
         }
-        Out.Line($"foreach over scores: {pairs} pairs, values sum to {total}");
+        Console.WriteLine($"foreach over scores: {pairs} pairs, values sum to {total}");
         for (int i = 0; i < 1000; i += 2)
             squares.Remove(i);
         int odd = 0;
@@ -176,13 +184,13 @@ public static class Program
             if (pair.Key % 2 == 1 && pair.Value == (long)pair.Key * pair.Key)
                 odd++;
         }
-        Out.Line($"After removing the 500 even keys: Count {squares.Count}, odd keys intact: {odd}");
-        Out.Line();
+        Console.WriteLine($"After removing the 500 even keys: Count {squares.Count}, odd keys intact: {odd}");
+        Console.WriteLine();
 
         // A separate arena, so the byte count printed at the end stays the same.
         Arena more = Arena.Create(64 * 1024);
 
-        Out.Line("--- Dict with a comparer ---");
+        Console.WriteLine("--- Dict with a comparer ---");
         // docs:dict-comparer
         // As in .NET, 0.0 and -0.0 are one key; by raw bytes, they're two.
         var byValue = Dict<double, int>.Create(more);
@@ -192,26 +200,26 @@ public static class Program
         byBytes.Set(-0.0, 2);
         byValue.Set(0.0, 1);
         byValue.Set(-0.0, 2);
-        Out.Line($"By bytes: {byBytes.Count} keys; by value: {byValue.Count}");
+        Console.WriteLine($"By bytes: {byBytes.Count} keys; by value: {byValue.Count}");
 
         var lastDigit =
             Dict<int, int, Modulo>.Create(more, comparer: new Modulo { By = 10 });
         lastDigit.Set(13, 1);
         lastDigit.Set(23, 2);  // the same key as 13
         lastDigit.TryGet(3, out int atThree);
-        Out.Line($"Modulo 10: {lastDigit.Count} key, [3] = {atThree}");
+        Console.WriteLine($"Modulo 10: {lastDigit.Count} key, [3] = {atThree}");
         // docs:end
-        Out.Line($"TryAdd: {lastDigit.TryAdd(4, 9)}, again: {lastDigit.TryAdd(14, 9)}");
+        Console.WriteLine($"TryAdd: {lastDigit.TryAdd(4, 9)}, again: {lastDigit.TryAdd(14, 9)}");
         // Point implements nothing: compared by its bytes, without boxing.
         long allocated = GC.GetTotalAllocatedBytes();
         int hits = 0;
         for (int i = 0; i < 100; i++)
             if (pointIds.TryGet(new Point { X = 10, Y = 10 }, out _))
                 hits++;
-        Out.Line($"100 lookups by a struct key: {hits} found, {GC.GetTotalAllocatedBytes() - allocated} bytes allocated");
-        Out.Line();
+        Console.WriteLine($"100 lookups by a struct key: {hits} found, {GC.GetTotalAllocatedBytes() - allocated} bytes allocated");
+        Console.WriteLine();
 
-        Out.Line("--- HashSet<int> ---");
+        Console.WriteLine("--- HashSet<int> ---");
         // docs:hashset
         var seen = HashSet<int>.Create(more);
         int duplicates = 0;
@@ -220,7 +228,7 @@ public static class Program
             if (!seen.Add(id))
                 duplicates++;
         }
-        Out.Line($"{seen.Count} distinct, {duplicates} duplicates");
+        Console.WriteLine($"{seen.Count} distinct, {duplicates} duplicates");
 
         var odds = HashSet<int>.Create(more);
         for (int i = 1; i < 10; i += 2)
@@ -230,9 +238,9 @@ public static class Program
         var evens = seen.Clone(more);
         evens.ExceptWith(odds);        // in seen, not odds: 2, 4, 6
         // docs:end
-        Out.Line($"Intersect: {both.Count} items summing to {Sum(both)}; except: {evens.Count} summing to {Sum(evens)}");
+        Console.WriteLine($"Intersect: {both.Count} items summing to {Sum(both)}; except: {evens.Count} summing to {Sum(evens)}");
         odds.UnionWith(seen);
-        Out.Line($"Union: {odds.Count} items summing to {Sum(odds)}");
+        Console.WriteLine($"Union: {odds.Count} items summing to {Sum(odds)}");
         var thousand = HashSet<int>.Create(more);
         var everyThird = HashSet<int>.Create(more);
         for (int i = 0; i < 1000; i++)
@@ -246,12 +254,12 @@ public static class Program
         foreach (int item in thousand)
             if (item % 3 == 0)
                 multiples++;
-        Out.Line($"1000 intersected with every third: {thousand.Count} left, multiples of 3: {multiples}");
+        Console.WriteLine($"1000 intersected with every third: {thousand.Count} left, multiples of 3: {multiples}");
         evens.ExceptWith(evens);
-        Out.Line($"ExceptWith itself: {evens.Count}");
-        Out.Line();
+        Console.WriteLine($"ExceptWith itself: {evens.Count}");
+        Console.WriteLine();
 
-        Out.Line("--- Queue, Stack, PriorityQueue ---");
+        Console.WriteLine("--- Queue, Stack, PriorityQueue ---");
         // docs:queue
         var queue = Queue<int>.Create(more);
         for (int i = 1; i <= 40; i++)
@@ -269,17 +277,17 @@ public static class Program
         while (queue.TryDequeue(out int item))
             inOrder &= item == expected++;
         // docs:end
-        Out.Line($"Queue: front was {front}, 50 out in order: {inOrder && expected == 51}, empty: {!queue.TryDequeue(out _)}");
+        Console.WriteLine($"Queue: front was {front}, 50 out in order: {inOrder && expected == 51}, empty: {!queue.TryDequeue(out _)}");
 
         var stack = Stack<int>.Create(more);
         for (int i = 1; i <= 5; i++)
             stack.Push(i);
-        Out.Write("Stack, top first:");
+        Console.Write("Stack, top first:");
         foreach (int item in stack)
-            Out.Write($" {item}");
+            Console.Write($" {item}");
         stack.TryPop(out int top);
         stack.TryPeek(out int next);
-        Out.Line($"; popped {top}, then {next} on top");
+        Console.WriteLine($"; popped {top}, then {next} on top");
 
         // docs:priority-queue
         var tasks = PriorityQueue<char, int>.Create(more);
@@ -287,10 +295,10 @@ public static class Program
         tasks.Enqueue('a', 1);
         tasks.Enqueue('d', 4);
         tasks.Enqueue('b', 2);
-        Out.Write("By priority:");
+        Console.Write("By priority:");
         while (tasks.TryDequeue(out char task, out int priority))
-            Out.Write($" {task}{priority}");
-        Out.Line();
+            Console.Write($" {task}{priority}");
+        Console.WriteLine();
         // docs:end
 
         var largestFirst =
@@ -310,38 +318,38 @@ public static class Program
             previous = priority;
             dequeued++;
         }
-        Out.Line($"200 random priorities, largest first: {descending && dequeued == 200}");
-        Out.Line();
+        Console.WriteLine($"200 random priorities, largest first: {descending && dequeued == 200}");
+        Console.WriteLine();
 
         // Collections are handles, so `var b = a` shares contents. Clone makes a
         // real copy, in any arena: here one that outlives the original's.
         // List<T> takes only unmanaged types; RefList<T> holds references.
-        Out.Line("--- RefList<string> ---");
+        Console.WriteLine("--- RefList<string> ---");
         var names = RefList<string>.Create(arena, 0);
         string[] words = { "delta", "alpha", "charlie", "bravo" };
         foreach (string word in words)
             names.Add(Str.Format(arena, $"{word}:{word.Length}")); // strings built in the arena
         names.Add(null);
         names.Sort(&ByName);
-        Out.Write("Sorted (null first): ");
+        Console.Write("Sorted (null first): ");
         PrintNames(names);
         names.RemoveAt(0);
         names.Set(0, "ALPHA");
-        Out.Write("RemoveAt(0), Set(0): ");
+        Console.Write("RemoveAt(0), Set(0): ");
         PrintNames(names);
         var codes = RefList<string>.Create(arena, 0);
         codes.Add("b");
         codes.Add("C");
         codes.Add("a");
         codes.Sort(); // string's CompareTo: by UTF-16 code unit, so "C" first
-        Out.Write("Sort(): ");
+        Console.Write("Sort(): ");
         PrintNames(codes);
         RefList<string> noNames = default;
-        Out.Line($"default(RefList): Count {noNames.Count}, Add returns {noNames.Add("x")}");
-        Out.Line();
+        Console.WriteLine($"default(RefList): Count {noNames.Count}, Add returns {noNames.Add("x")}");
+        Console.WriteLine();
 
         // Keys compared by their text; each new key is copied into the map.
-        Out.Line("--- StrDict ---");
+        Console.WriteLine("--- StrDict ---");
         var counts = StrDict<int>.Create(arena, 0);
         Span<char> wordBuffer = stackalloc char[8]; // every word is read into this buffer
         // docs:word-counts
@@ -354,30 +362,38 @@ public static class Program
             counts.Set(key, n + 1);
         }
         // docs:end
-        Out.Line($"Word counts: {counts.Count} distinct, the = {Count(counts, "the")}, and = {Count(counts, "and")}, bat = {Count(counts, "bat")}, dog = {Count(counts, "dog")}");
+        Console.WriteLine($"Word counts: {counts.Count} distinct, the = {Count(counts, "the")}, and = {Count(counts, "and")}, bat = {Count(counts, "bat")}, dog = {Count(counts, "dog")}");
 
-        // Keys made in a scratch arena that is reset every time: the map has its own copies.
-        var squareMap = StrDict<long>.Create(arena, 0);
-        Arena scratch = Arena.Create(256);
-        for (int i = 0; i < 500; i++)
+        // Keys formatted into scratch text, cleared for each one: the map
+        // copies each new key into its own arena.
+        var squareWork = new SquareWork { Map = StrDict<long>.Create(arena, 0) };
+        Arena.Scratch(ref squareWork, static (scoped ScratchScope scratch, scoped ref SquareWork work) =>
         {
-            unsafe { scratch.Reset(); } // SAFETY: nothing from scratch is used after this.
-            squareMap.Set(Str.Format(scratch, $"key{i}"), (long)i * i);
-        }
-        int removed = 0;
-        for (int i = 0; i < 500; i += 2)
-        {
-            unsafe { scratch.Reset(); } // SAFETY: as above.
-            if (squareMap.Remove(Str.Format(scratch, $"key{i}")))
-                removed++;
-        }
-        int oddFound = 0;
-        for (int i = 1; i < 500; i += 2)
-        {
-            unsafe { scratch.Reset(); } // SAFETY: as above.
-            if (squareMap.TryGet(Str.Format(scratch, $"key{i}"), out long square) && square == (long)i * i)
-                oddFound++;
-        }
+            ScratchText key = scratch.Text();
+            for (int i = 0; i < 500; i++)
+            {
+                key.Clear();
+                key.Append($"key{i}");
+                work.Map.Set(key.AsSpan(), (long)i * i);
+            }
+            for (int i = 0; i < 500; i += 2)
+            {
+                key.Clear();
+                key.Append($"key{i}");
+                if (work.Map.Remove(key.AsSpan()))
+                    work.Removed++;
+            }
+            for (int i = 1; i < 500; i += 2)
+            {
+                key.Clear();
+                key.Append($"key{i}");
+                if (work.Map.TryGet(key.AsSpan(), out long square) && square == (long)i * i)
+                    work.OddFound++;
+            }
+        });
+        StrDict<long> squareMap = squareWork.Map;
+        int removed = squareWork.Removed;
+        int oddFound = squareWork.OddFound;
         long squareSum = 0;
         int squarePairs = 0;
         foreach (var pair in squareMap)
@@ -385,22 +401,21 @@ public static class Program
             squareSum += pair.Value;
             squarePairs++;
         }
-        unsafe { scratch.Destroy(); } // SAFETY: nothing from scratch is used after this.
-        Out.Line($"500 keys, {removed} even ones removed: Count {squareMap.Count}, odd keys intact: {oddFound}, foreach: {squarePairs} pairs summing to {squareSum}");
-        Out.Line($"key0 gone: {!squareMap.ContainsKey("key0")}, key499 = {(squareMap.TryGet("key499", out long last) ? last : -1)}");
+        Console.WriteLine($"500 keys, {removed} even ones removed: Count {squareMap.Count}, odd keys intact: {oddFound}, foreach: {squarePairs} pairs summing to {squareSum}");
+        Console.WriteLine($"key0 gone: {!squareMap.ContainsKey("key0")}, key499 = {(squareMap.TryGet("key499", out long last) ? last : -1)}");
 
         // docs:labels
         var labels = StrDict<string>.Create(arena); // values can be references too
         labels.Set("ok", "fine");
         labels.Set("ok", Str.Format(arena, $"fine x{2}"));
         // docs:end
-        Out.Line($"StrDict<string>: ok = {(labels.TryGet("ok", out string label) ? label : "missing")}, Count {labels.Count}");
+        Console.WriteLine($"StrDict<string>: ok = {(labels.TryGet("ok", out string label) ? label : "missing")}, Count {labels.Count}");
         StrDict<int> noCounts = default;
-        Out.Line($"default(StrDict): Count {noCounts.Count}, Set returns {noCounts.Set("x", 1)}, found: {noCounts.ContainsKey("x")}");
-        Out.Line();
+        Console.WriteLine($"default(StrDict): Count {noCounts.Count}, Set returns {noCounts.Set("x", 1)}, found: {noCounts.ContainsKey("x")}");
+        Console.WriteLine();
 
         // Unmanaged keys, reference values.
-        Out.Line("--- RefDict<int, string> ---");
+        Console.WriteLine("--- RefDict<int, string> ---");
         // docs:refdict
         var byId = RefDict<int, string>.Create(arena);
         byId.Set(7, "seven");
@@ -409,15 +424,15 @@ public static class Program
         // docs:end
         bool nineFound = byId.TryGet(9, out string nine);
         bool fourFound = byId.TryGet(4, out string four);
-        Out.Line($"3 = {(byId.TryGet(3, out string three) ? three : "missing")}, 9 found: {nineFound} and null: {nine is null}, 4 found: {fourFound} and null: {four is null}");
-        Out.Line($"Remove(7): {byId.Remove(7)}, again: {byId.Remove(7)}, Count: {byId.Count}");
+        Console.WriteLine($"3 = {(byId.TryGet(3, out string three) ? three : "missing")}, 9 found: {nineFound} and null: {nine is null}, 4 found: {fourFound} and null: {four is null}");
+        Console.WriteLine($"Remove(7): {byId.Remove(7)}, again: {byId.Remove(7)}, Count: {byId.Count}");
         int ids = 0;
         foreach (var pair in byId)
             ids += pair.Key;
-        Out.Line($"foreach: keys sum to {ids}");
-        Out.Line();
+        Console.WriteLine($"foreach: keys sum to {ids}");
+        Console.WriteLine();
 
-        Out.Line("--- Clone ---");
+        Console.WriteLine("--- Clone ---");
         // docs:clone
         Arena keep = Arena.Create(4096);
         StrDict<int> countsCopy = counts.Clone(keep); // keys are copied into keep too
@@ -426,24 +441,24 @@ public static class Program
         // docs:end
         numbers.Set(0, -1);
         scores.Set(2, 0);
-        Out.Line($"Original changed: numbers[0] = {numbers.Get(0)}, scores[2] = {(scores.TryGet(2, out value) ? value : -1)}");
-        Out.Line($"Clones unchanged: snapshot[0] = {snapshot.Get(0)}, scoresCopy[2] = {(scoresCopy.TryGet(2, out value) ? value : -1)}");
-        Out.Line($"Clone capacity fits its {snapshot.Count} items: {snapshot.Capacity}");
-        Out.Write("Clone of default(List) is not created: ");
-        Out.Write(!notCreated.Clone(keep).IsCreated);
-        Out.Line();
+        Console.WriteLine($"Original changed: numbers[0] = {numbers.Get(0)}, scores[2] = {(scores.TryGet(2, out value) ? value : -1)}");
+        Console.WriteLine($"Clones unchanged: snapshot[0] = {snapshot.Get(0)}, scoresCopy[2] = {(scoresCopy.TryGet(2, out value) ? value : -1)}");
+        Console.WriteLine($"Clone capacity fits its {snapshot.Count} items: {snapshot.Capacity}");
+        Console.Write("Clone of default(List) is not created: ");
+        Console.Write(!notCreated.Clone(keep).IsCreated);
+        Console.WriteLine();
 
-        Out.Line();
-        Out.Line("Arena used: ", (long)arena.Used, " bytes");
+        Console.WriteLine();
+        Console.WriteLine($"Arena used: {(long)arena.Used} bytes");
 
         unsafe { arena.Destroy(); } // SAFETY: only the clones, which live in `keep`, are used after this.
 
         snapshot.Add(1234); // the clone grows in its own arena
         countsCopy.Set("dog", 1);
-        Out.Line($"StrDict clone, keys copied: the = {Count(countsCopy, "the")}, dog = {Count(countsCopy, "dog")}, Count {countsCopy.Count}");
-        Out.Line($"After destroying the first arena, clones still work: {snapshot.Count} items, last = {snapshot.Get(snapshot.Count - 1)}, scoresCopy[-42] = {(scoresCopy.TryGet(-42, out value) ? value : -1)}");
+        Console.WriteLine($"StrDict clone, keys copied: the = {Count(countsCopy, "the")}, dog = {Count(countsCopy, "dog")}, Count {countsCopy.Count}");
+        Console.WriteLine($"After destroying the first arena, clones still work: {snapshot.Count} items, last = {snapshot.Get(snapshot.Count - 1)}, scoresCopy[-42] = {(scoresCopy.TryGet(-42, out value) ? value : -1)}");
         unsafe { keep.Destroy(); } // SAFETY: the clones are not used after this.
-        Out.Line("Done!");
+        Console.WriteLine("Done!");
         return 0;
     }
 
@@ -471,27 +486,27 @@ public static class Program
 
     static void PrintNames(RefList<string> names)
     {
-        Out.Write("[");
+        Console.Write("[");
         bool first = true;
         foreach (string name in names)
         {
             if (!first)
-                Out.Write(", ");
-            Out.Write(name is null ? "null" : name);
+                Console.Write(", ");
+            Console.Write(name is null ? "null" : name);
             first = false;
         }
-        Out.Line($"] ({names.Count} items)");
+        Console.WriteLine($"] ({names.Count} items)");
     }
 
     static void PrintList(List<int> list)
     {
-        Out.Write("[");
+        Console.Write("[");
         for (int i = 0; i < list.Count; i++)
         {
             if (i > 0)
-                Out.Write(", ");
-            Out.Write(list.Get(i));
+                Console.Write(", ");
+            Console.Write(list.Get(i));
         }
-        Out.Line("]");
+        Console.WriteLine("]");
     }
 }

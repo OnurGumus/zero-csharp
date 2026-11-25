@@ -31,7 +31,7 @@ public static class Program
         RefList<string> mistakes = RefList<string>.Create(keep);
         if (!mistakes.IsCreated)
         {
-            Out.Line("Arena.Create failed");
+            Console.WriteLine("Arena.Create failed");
             return 1;
         }
         // docs:end
@@ -40,51 +40,51 @@ public static class Program
         Span<char> buffer = stackalloc char[32];
         int right = 0, asked = 0;
 
-        Out.Line($"{Questions} questions. An empty answer skips one.");
+        Console.WriteLine($"{Questions} questions. An empty answer skips one.");
         for (int i = 1; i <= Questions; i++)
         {
             int a = Next(50), b = Next(50);
             asked++;
             while (true)
             {
-                // The prompt is formatted straight into Out's buffer; In.ReadLine
-                // flushes it, so it shows before the program waits.
-                Out.Write($"Q{i}: {a} + {b} = ");
+                // The prompt is formatted straight into the output buffer;
+                // In.ReadLine writes it out, so it shows before the program waits.
+                Console.Write($"Q{i}: {a} + {b} = ");
                 int length = In.ReadLine(buffer);
                 if (length < 0)
                 {
-                    Out.Line();
-                    Out.Line("(end of input)");
+                    Console.WriteLine();
+                    Console.WriteLine("(end of input)");
                     asked--;
                     goto Done;
                 }
                 if (length > buffer.Length)
                 {
-                    Out.Line($"that's {length} characters; answers are at most {buffer.Length}");
+                    Console.WriteLine($"that's {length} characters; answers are at most {buffer.Length}");
                     continue;
                 }
 
                 ReadOnlySpan<char> answer = buffer.Slice(0, length).Trim();
                 if (answer.Length == 0)
                 {
-                    Out.Line("skipped");
+                    Console.WriteLine("skipped");
                     break;
                 }
                 if (!Str.TryParse(answer, out long value))
                 {
-                    Out.Line($"\"{answer}\" isn't a number");
+                    Console.WriteLine($"\"{answer}\" isn't a number");
                     continue;
                 }
 
                 if (value == a + b)
                 {
                     right++;
-                    Out.Line("right");
+                    Console.WriteLine("right");
                 }
                 // docs:record
                 else
                 {
-                    Out.Line($"no, it's {a + b}");
+                    Console.WriteLine($"no, it's {a + b}");
                     // Kept until the end, so the string is built in `keep`, not in
                     // the buffer the next answer overwrites.
                     mistakes.Add(Str.Format(keep, $"  {a} + {b} = {a + b}, not {value}"));
@@ -96,15 +96,14 @@ public static class Program
 
     Done:
         // docs:report
-        Out.Line($"{right} of {asked} right");
+        Console.WriteLine($"{right} of {asked} right");
         if (mistakes.Count > 0)
         {
-            Out.Line("Mistakes:");
+            Console.WriteLine("Mistakes:");
             foreach (string mistake in mistakes)
-                Out.Line(mistake);
+                Console.WriteLine(mistake);
         }
         // docs:end
-        Out.Flush();
         return 0;
     }
 }

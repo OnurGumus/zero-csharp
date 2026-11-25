@@ -37,11 +37,12 @@ buffer on the stack and greets it:
 
 <!-- sample: sdk/ZeroCSharp.Templates/content/zero/Program.cs file -->
 ```csharp
-// A zero-mode program: no .NET runtime and no garbage collector. Out and In
-// write and read without allocating; the name is read into a stack buffer.
+// A zero-mode program: no .NET runtime and no garbage collector. Console.Write
+// and In.ReadLine write and read without allocating; the name is read into a
+// stack buffer.
 using System;
 
-Out.Write("What's your name? ");
+Console.Write("What's your name? ");
 Span<char> buffer = stackalloc char[64];
 int length = In.ReadLine(buffer);
 // length is -1 at the end of input, and more than the buffer holds when
@@ -52,9 +53,9 @@ ReadOnlySpan<char> name = length switch
     _ when length > buffer.Length => buffer,
     _ => buffer.Slice(0, length),
 };
-Out.Write("Hello, ");
-Out.Write(name);
-Out.Line("!");
+Console.Write("Hello, ");
+Console.Write(name);
+Console.WriteLine("!");
 ```
 
 `dotnet build` puts the native program in `bin/Debug/zero03/`, unoptimized for debugging

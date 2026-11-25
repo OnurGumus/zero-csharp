@@ -28,7 +28,7 @@ public static class Program
 
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -40,7 +40,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  failed: {name}");
+            Console.WriteLine($"  failed: {name}");
         }
     }
 
@@ -175,7 +175,8 @@ public static class Program
         foreach (Group<int, Order> group in byCustomer.AsQuery())
         {
             int sum = group.Items.AsQuery().Select(static o => o.Amount).Sum();
-            Out.Line($"customer {group.Key}: total {sum}, count {group.Items.Count}");
+            Console.WriteLine($"customer {group.Key}: total {sum}, "
+                + $"count {group.Items.Count}");
         }
         // docs:end
         Check("one group per customer", byCustomer.Count == 3);
@@ -228,11 +229,11 @@ public static class Program
         Check("the same lambda in an object scope leaves nothing behind", scoped == 0);
         Section("allocation");
 
-        Out.Line();
+        Console.WriteLine();
         if (s_failures == 0)
-            Out.Line("All checks passed.");
+            Console.WriteLine("All checks passed.");
         else
-            Out.Line($"{s_failures} checks FAILED.");
+            Console.WriteLine($"{s_failures} checks FAILED.");
         return s_failures;
     }
 }

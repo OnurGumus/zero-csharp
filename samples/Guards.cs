@@ -11,6 +11,8 @@
 // defines it in Debug builds); build.sh doesn't, so this file does.
 #define DEBUG
 
+using System;
+
 namespace GuardsSample;
 
 public static class Program
@@ -19,34 +21,42 @@ public static class Program
     {
         if (args.Length == 0)
         {
-            Out.Line("Usage: Guards <case>, where the case is one of:");
-            Out.Line("  restore-order        an older mark restored before a newer one");
-            Out.Line("  restore-other-arena  a mark restored in another arena");
-            Out.Line("  restore-after-reset  a mark from before a Reset()");
-            Out.Line("  list-after-reset     a list used after its arena was reset (DebugChecks)");
-            Out.Line("  list-grew-in-scope   an older list that grew inside a scope, used after it (DebugChecks)");
-            Out.Line("  list-grew-in-place   an older list that grew in place inside a scope, used after it (DebugChecks)");
-            Out.Line("  builder-grew-in-place  the same for a StrBuilder (DebugChecks)");
-            Out.Line("  list-index           a list index out of range");
-            Out.Line("  out-of-memory        an allocation the system can't satisfy (stopOnOutOfMemory)");
-            Out.Line("  lambda-in-scope      a lambda first run inside AllocateObjectsHere, cached in the arena (DebugChecks)");
-            Out.Line("  throw                a throw, inside a try with a matching catch");
-            Out.Line("  throw-null           throw null");
-            Out.Line("  union-no-case        a switch on a union that holds none of its cases");
-            Out.Line("  debug-assert         a Debug.Assert whose condition is false");
-            Out.Line("  debug-fail           a Debug.Fail");
-            Out.Line("  range-too-long       an array range that ends past the array");
-            Out.Line("  bad-base64           Convert.FromBase64String on text that isn't Base64");
-            Out.Line("  bad-pattern          Regex.Create with a pattern that isn't valid");
-            Out.Line("  scratch-outer-scope  an Arena.Scratch scope allocating inside a nested one");
-            Out.Line("  scratch-outer-list   a ScratchList added to inside a nested Arena.Scratch");
-            Out.Line("  scratch-outer-text   a ScratchText appended to inside a nested Arena.Scratch");
-            Out.Line("  ptr-null             the Value of a null Ptr");
-            Out.Line("  ptr-after-reset      a Ptr used after its arena was reset (DebugChecks)");
-            Out.Line("  pool-removed         a Pool handle used after its item was removed");
-            Out.Line("  pool-moved           a copy of a Pool handle used after Move");
-            Out.Line("  scratch-pool-outer   a ScratchPool added to inside a nested Arena.Scratch");
-            Out.Line("  pool-other           a Pool handle used with another pool");
+            Console.WriteLine("Usage: Guards <case>, where the case is one of:");
+            Console.WriteLine("  restore-order        an older mark restored before a newer one");
+            Console.WriteLine("  restore-other-arena  a mark restored in another arena");
+            Console.WriteLine("  restore-after-reset  a mark from before a Reset()");
+            Console.WriteLine("  list-after-reset     a list used after its arena was reset (DebugChecks)");
+            Console.WriteLine("  list-grew-in-scope   an older list that grew inside a scope, used after it (DebugChecks)");
+            Console.WriteLine("  list-grew-in-place   an older list that grew in place inside a scope, used after it (DebugChecks)");
+            Console.WriteLine("  builder-grew-in-place  the same for a StrBuilder (DebugChecks)");
+            Console.WriteLine("  list-index           a list index out of range");
+            Console.WriteLine("  out-of-memory        an allocation the system can't satisfy (stopOnOutOfMemory)");
+            Console.WriteLine("  lambda-in-scope      a lambda first run inside AllocateObjectsHere, cached in the arena (DebugChecks)");
+            Console.WriteLine("  throw                a throw, inside a try with a matching catch");
+            Console.WriteLine("  throw-null           throw null");
+            Console.WriteLine("  union-no-case        a switch on a union that holds none of its cases");
+            Console.WriteLine("  debug-assert         a Debug.Assert whose condition is false");
+            Console.WriteLine("  debug-fail           a Debug.Fail");
+            Console.WriteLine("  range-too-long       an array range that ends past the array");
+            Console.WriteLine("  bad-base64           Convert.FromBase64String on text that isn't Base64");
+            Console.WriteLine("  bad-pattern          Regex.Create with a pattern that isn't valid");
+            Console.WriteLine("  scratch-outer-scope  an Arena.Scratch scope allocating inside a nested one");
+            Console.WriteLine("  scratch-outer-list   a ScratchList added to inside a nested Arena.Scratch");
+            Console.WriteLine("  scratch-outer-text   a ScratchText appended to inside a nested Arena.Scratch");
+            Console.WriteLine("  ptr-null             the Value of a null Ptr");
+            Console.WriteLine("  ptr-after-reset      a Ptr used after its arena was reset (DebugChecks)");
+            Console.WriteLine("  pool-removed         a Pool handle used after its item was removed");
+            Console.WriteLine("  pool-moved           a copy of a Pool handle used after Move");
+            Console.WriteLine("  scratch-pool-outer   a ScratchPool added to inside a nested Arena.Scratch");
+            Console.WriteLine("  pool-other           a Pool handle used with another pool");
+            Console.WriteLine("  scratch-dict-outer   a new key in a ScratchDict inside a nested Arena.Scratch");
+            Console.WriteLine("  scratch-set-outer    a new item in a ScratchHashSet inside a nested Arena.Scratch");
+            Console.WriteLine("  builder-index        a StrBuilder index out of range");
+            Console.WriteLine("  builder-replace-empty  a StrBuilder Replace of an empty string");
+            Console.WriteLine("  scratch-outer-edit   a ScratchText inserted into inside a nested Arena.Scratch");
+            Console.WriteLine("  native-overflow      NativeMemory.Alloc with a count times size past the address space");
+            Console.WriteLine("  native-zeroed-overflow  the same for NativeMemory.AllocZeroed");
+            Console.WriteLine("  native-out-of-memory NativeMemory.Alloc of more than the system can give");
             return 0;
         }
 
@@ -75,19 +85,27 @@ public static class Program
             case "scratch-outer-text": ScratchOuterText(); break;
             case "ptr-null": PtrNull(); break;
             case "ptr-after-reset": PtrAfterReset(); break;
-            case "custom-format": Out.Line(Opaque(1.5).ToString("0.00")); break;
-            case "bad-format-item": Out.Line(string.Format("{0:F2", Opaque(1.5))); break;
+            case "custom-format": Console.WriteLine(Opaque(1.5).ToString("0.00")); break;
+            case "bad-format-item": Console.WriteLine(string.Format("{0:F2", Opaque(1.5))); break;
             case "pool-removed": PoolRemoved(); break;
             case "pool-moved": PoolMoved(); break;
             case "scratch-pool-outer": ScratchPoolOuter(); break;
             case "pool-other": PoolOther(); break;
+            case "scratch-dict-outer": ScratchDictOuter(); break;
+            case "scratch-set-outer": ScratchSetOuter(); break;
+            case "builder-index": BuilderIndex(); break;
+            case "builder-replace-empty": BuilderReplaceEmpty(); break;
+            case "scratch-outer-edit": ScratchOuterEdit(); break;
+            case "native-overflow": NativeOverflow(); break;
+            case "native-zeroed-overflow": NativeZeroedOverflow(); break;
+            case "native-out-of-memory": NativeOutOfMemory(); break;
             default:
-                Out.Line("Unknown case");
+                Console.WriteLine("Unknown case");
                 return 0;
         }
 
         // Every case above should have ended the program.
-        Out.Line("NOT STOPPED");
+        Console.WriteLine("NOT STOPPED");
         return 0;
     }
 
@@ -238,7 +256,7 @@ public static class Program
         catch (System.InvalidOperationException)
         {
             // Never runs: the throw has already ended the program.
-            Out.Line("caught");
+            Console.WriteLine("caught");
         }
         // docs:end
     }
@@ -318,6 +336,33 @@ public static class Program
         });
     }
 
+    static void BuilderIndex()
+    {
+        StrBuilder text = StrBuilder.Create(Arena.Create(256));
+        text.Append("abc");
+        text.Insert(4, "d");
+    }
+
+    static void BuilderReplaceEmpty()
+    {
+        StrBuilder text = StrBuilder.Create(Arena.Create(256));
+        text.Append("abc");
+        text.Replace("", "x");
+    }
+
+    static void ScratchOuterEdit()
+    {
+        Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            var outer = new OuterScratch { Text = scratch.Text() };
+            outer.Text.Append("bc");
+            Arena.Scratch(ref outer, static (scoped ScratchScope inner, scoped ref OuterScratch state) =>
+            {
+                state.Text.Insert(0, 'a');
+            });
+        });
+    }
+
     static void PtrNull()
     {
         Ptr<int> nothing = default;
@@ -361,6 +406,51 @@ public static class Program
         second[item] = 2;
     }
 
+    static void ScratchDictOuter()
+    {
+        Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            var outer = new OuterScratch { Dict = scratch.Dict<int, int>() };
+            outer.Dict.Set(1, 1);
+            Arena.Scratch(ref outer, static (scoped ScratchScope inner, scoped ref OuterScratch state) =>
+            {
+                state.Dict.Set(1, 2); // allowed: the key is there
+                state.Dict.Set(2, 2); // a new key: stops
+            });
+        });
+    }
+
+    // Where .NET throws OutOfMemoryException, zero mode stops the program.
+    static void NativeOverflow()
+    {
+        unsafe { System.Runtime.InteropServices.NativeMemory.Alloc(~(nuint)0 / 2, 4); }
+    }
+
+    static void NativeZeroedOverflow()
+    {
+        unsafe { System.Runtime.InteropServices.NativeMemory.AllocZeroed(3, ~(nuint)0 / 2); }
+    }
+
+    static void NativeOutOfMemory()
+    {
+        // More than half the address space: no system has that much to give.
+        unsafe { System.Runtime.InteropServices.NativeMemory.Alloc((nuint)nint.MaxValue + 1); }
+    }
+
+    static void ScratchSetOuter()
+    {
+        Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            var outer = new OuterScratch { Set = scratch.HashSet<int>() };
+            outer.Set.Add(1);
+            Arena.Scratch(ref outer, static (scoped ScratchScope inner, scoped ref OuterScratch state) =>
+            {
+                state.Set.Add(1); // allowed: already there
+                state.Set.Add(2); // a new item: stops
+            });
+        });
+    }
+
     static void ScratchPoolOuter()
     {
         Arena.Scratch(static (scoped ScratchScope scratch) =>
@@ -383,6 +473,8 @@ public ref struct OuterScratch
     public ScratchList<int> Items;
     public ScratchText Text;
     public ScratchPool<int> Pool;
+    public ScratchDict<int, int> Dict;
+    public ScratchHashSet<int> Set;
 }
 
 public struct Left { public int Value; }

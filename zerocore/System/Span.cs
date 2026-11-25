@@ -79,13 +79,10 @@ namespace System
             return new Span<T>(ref Unsafe.Add(ref _reference, start), length);
         }
 
-        public void Clear() => Fill(default);
+        public void Clear()
+            => SpanHelpers.Fill(ref Unsafe.As<T, byte>(ref _reference), 0, (nuint)_length * (nuint)Unsafe.SizeOf<T>());
 
-        public void Fill(T value)
-        {
-            for (int i = 0; i < _length; i++)
-                Unsafe.Add(ref _reference, i) = value;
-        }
+        public void Fill(T value) => SpanHelpers.Fill(ref _reference, value, (nuint)_length);
 
         public void CopyTo(Span<T> destination) => ((ReadOnlySpan<T>)this).CopyTo(destination);
 
@@ -191,24 +188,15 @@ namespace System
             return new ReadOnlySpan<T>(ref Unsafe.Add(ref _reference, start), length);
         }
 
-        // The ranges may overlap, so the direction of the copy depends on which
-        // one starts first.
-        public unsafe void CopyTo(Span<T> destination)
+        // The ranges may overlap.
+        public void CopyTo(Span<T> destination)
         {
             if ((uint)_length > (uint)destination.Length)
                 Environment.FailFast("ReadOnlySpan: destination too short");
-            ref T source = ref _reference;
-            ref T target = ref destination._reference;
-            if (Unsafe.AsPointer(ref target) <= Unsafe.AsPointer(ref source))
-            {
-                for (int i = 0; i < _length; i++)
-                    Unsafe.Add(ref target, i) = Unsafe.Add(ref source, i);
-            }
-            else
-            {
-                for (int i = _length - 1; i >= 0; i--)
-                    Unsafe.Add(ref target, i) = Unsafe.Add(ref source, i);
-            }
+            SpanHelpers.Memmove(
+                ref Unsafe.As<T, byte>(ref destination._reference),
+                ref Unsafe.As<T, byte>(ref _reference),
+                (nuint)_length * (nuint)Unsafe.SizeOf<T>());
         }
 
         // For `fixed (T* p = span)`.

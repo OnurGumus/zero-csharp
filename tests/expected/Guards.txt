@@ -26,3 +26,11 @@ Usage: Guards <case>, where the case is one of:
   pool-moved           a copy of a Pool handle used after Move
   scratch-pool-outer   a ScratchPool added to inside a nested Arena.Scratch
   pool-other           a Pool handle used with another pool
+  scratch-dict-outer   a new key in a ScratchDict inside a nested Arena.Scratch
+  scratch-set-outer    a new item in a ScratchHashSet inside a nested Arena.Scratch
+  builder-index        a StrBuilder index out of range
+  builder-replace-empty  a StrBuilder Replace of an empty string
+  scratch-outer-edit   a ScratchText inserted into inside a nested Arena.Scratch
+  native-overflow      NativeMemory.Alloc with a count times size past the address space
+  native-zeroed-overflow  the same for NativeMemory.AllocZeroed
+  native-out-of-memory NativeMemory.Alloc of more than the system can give

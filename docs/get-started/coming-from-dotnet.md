@@ -14,7 +14,7 @@ instead, and lists what compiles as usual but behaves differently.
 
 | In .NET | Here | More |
 |---|---|---|
-| `Console.Write`, `Console.WriteLine` | The same, through `Out`; `Console.WriteLine($"...")`, like `Out.Line($"...")`, writes each hole straight to stdout | [Format text](../how-to/format-text.html) |
+| `Console.Write`, `Console.WriteLine` | The same; `Console.WriteLine($"...")` writes each hole straight to stdout, without building a string | [Format text](../how-to/format-text.html) |
 | `Console.ReadLine()` | The same, a new string never freed; in a loop, `In.ReadLine(buffer)` into a `Span<char>` you provide | [Read input](../how-to/read-input.html) |
 | `Console.ReadKey`, `Console.KeyAvailable` | The same, on every target, the C64 and DOS included | [Read input](../how-to/read-input.html#read-keys-one-at-a-time) |
 | `Console.OpenStandardInput().Read` | `In.Read(bytes)` into a `Span<byte>` you provide | [Read input](../how-to/read-input.html#read-bytes-instead-of-lines) |
@@ -42,26 +42,28 @@ call it yourself with `[DllImport]`.
 
 ## Output and input
 
-`Out` buffers what you write and encodes it as UTF-8. `In.ReadLine` reads into a buffer you own, so
-reading a line allocates nothing; it returns the length, or a negative number at the end of input:
+`Console` buffers what you write and encodes it as UTF-8. For input, `In.ReadLine` reads into a
+buffer you own, so reading a line allocates nothing; it returns the length, or a negative number at
+the end of input:
 
 <!-- sample: samples/QuizStep2.cs ask -->
 ```csharp
-// In.ReadLine flushes Out first, so the prompt shows before the
-// program waits for the answer.
-Out.Write($"Q{i}: {a} + {b} = ");
+// Console.Write holds the prompt in a buffer; In.ReadLine writes it
+// out first, so it shows before the program waits for the answer.
+Console.Write($"Q{i}: {a} + {b} = ");
 int length = In.ReadLine(buffer);
 if (length < 0)
 {
-    Out.Line();
-    Out.Line("(end of input)");
+    Console.WriteLine();
+    Console.WriteLine("(end of input)");
     break;
 }
 asked++;
 ```
 
-`Console.WriteLine` and `Console.ReadLine` work too, but `ReadLine` returns a new string that is never
-freed: fine once, not in a loop. `Console` has no `Out`, `Error`, colors or cursor.
+`Console.ReadLine` works too, but it returns a new string that is never freed: fine once, not in a
+loop. `Console` has no `Out`, `Error`, colors or cursor. What's written without a newline is written
+out when the program ends, before `In.ReadLine` reads, or on `Out.Flush()`.
 
 ## Memory
 
@@ -234,6 +236,6 @@ Arenas and `lib/`'s collections aren't thread-safe, so give each thread its own;
 
 - [Install with dotnet](install-with-dotnet.html), if you haven't: `dotnet new zero` and
   `dotnet build`.
-- The [tutorial](../tutorial/index.html) builds a small program step by step with `Out`, `In` and
+- The [tutorial](../tutorial/index.html) builds a small program step by step with `Console`, `In` and
   `Str.TryParse`.
 - [Zero mode](../concepts/zero-mode.html) explains what replaced the runtime.

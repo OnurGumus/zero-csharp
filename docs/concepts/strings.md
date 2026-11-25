@@ -18,7 +18,7 @@ strings, and nothing else. String literals, static string fields and static stri
 works too, but it allocates with `calloc` and is never freed, like every allocation the core library
 makes. Use it for strings built once; in a loop, use the arena versions below.
 
-`lib/Str.cs`, `lib/StrBuilder.cs` and `lib/Out.cs` add the rest. The
+`lib/Str.cs`, `lib/StrBuilder.cs` and `lib/Console.cs` add the rest. The
 [Str reference](../reference/str.html) has the full table of .NET calls and their zero-mode
 counterparts.
 
@@ -54,25 +54,26 @@ ReadOnlySpan<char> answer = buffer.Slice(0, Math.Min(length, buffer.Length));
 if (Str.TryParse(answer.Trim(), out long value) && value == a + b)
 {
     right++;
-    Out.Line("right");
+    Console.WriteLine("right");
 }
 else
 {
-    Out.Line($"no, it's {a + b}");
+    Console.WriteLine($"no, it's {a + b}");
 }
 ```
 
-## Out: formatting straight to stdout
+## Console: formatting straight to stdout
 
-`lib/Out.cs` is a buffered writer that encodes text as UTF-8 and hands each line to `write()` in one
-call; `Console.Write` and `Console.WriteLine` go through it too. `Out.Line($"...")` uses a custom interpolated string handler, so every
-hole is formatted straight into the output buffer and no string is built:
+`Console.Write` and `Console.WriteLine` write through `lib/Out.cs`, a buffered writer that encodes text
+as UTF-8 and hands each line to `write()` in one call. `Console.WriteLine($"...")` uses a custom
+interpolated string handler, so every hole is formatted straight into the output buffer and no string
+is built:
 
 <!-- sample: samples/Strings.cs table -->
 ```csharp
-Out.Line($"{"item",-8}|{"qty",5}|{"price",9}");
-Out.Line($"{"apple",-8}|{3,5}|{1.25,9:F2}");
-Out.Line($"{"melon",-8}|{12,5}|{0.5,9:F2}");
+Console.WriteLine($"{"item",-8}|{"qty",5}|{"price",9}");
+Console.WriteLine($"{"apple",-8}|{3,5}|{1.25,9:F2}");
+Console.WriteLine($"{"melon",-8}|{12,5}|{0.5,9:F2}");
 ```
 
 Holes take every number type, `bool`, `char`, strings and spans, with an optional alignment
@@ -82,7 +83,7 @@ output. [Format text](../how-to/format-text.html) covers the details.
 ## Strings in an arena
 
 When you do need a string object, to store it or to pass it to something that takes `string`, build it
-in an arena. `Str.Format(arena, $"...")` formats into the arena with the same holes as `Out`, and
+in an arena. `Str.Format(arena, $"...")` formats into the arena with the same holes as `Console.WriteLine`, and
 `Str.Concat(arena, a, b)` joins spans. Both return null if the arena isn't created or is full.
 
 These are real strings. A zero-mode string object is a method-table pointer, a length and the
@@ -114,26 +115,30 @@ lives exactly as long as its arena**.
 
 ## Keeping a string past its arena
 
-That rule decides where a string should be built. If it is temporary, build it in a scratch arena, or
-after a `Save()`, and free it with the rest. If it has to be kept, build it in the arena that lives
-long enough, or copy it there.
+That rule decides where a string should be built. If it is temporary, build it in `Arena.Scratch`
+(a `ScratchText`), whose memory the compiler keeps you from using after the callback, or in an arena
+you free yourself. If it has to be kept, build it in the arena that lives long enough, or copy it
+there.
 
 Copying is explicit. `Str.ToArenaString(keep, s)` copies any string or span into the arena `keep`, and
-`sb.ToArenaString(keep)` copies a builder's text. A common shape is to do the messy work in a scratch
-arena and copy out only the result:
+`ToArenaString(keep)` on a `ScratchText` or `StrBuilder` copies its text. A common shape is to do the
+messy work in scratch memory and copy out only the result:
 
 <!-- sample: samples/Strings.cs scratch -->
 ```csharp
-// Or build in a scratch arena and copy only the result out.
-Arena scratch = Arena.Create(256);
-StrBuilder draft = StrBuilder.Create(scratch);
-for (int i = 0; i < 50; i++)
-    draft.Append($"{i} ");
-usedBefore = s_arena.Used;
-string kept = draft.ToArenaString(s_arena);
+// Or build in scratch memory and copy only the result out: the
+// draft goes when the callback returns, the copy stays in s_arena.
+string kept = Arena.Scratch(ref s_arena,
+    static (scoped ScratchScope scratch, scoped ref Arena keep) =>
+    {
+        ScratchText draft = scratch.Text();
+        for (int i = 0; i < 50; i++)
+            draft.Append($"{i} ");
+        return draft.ToArenaString(keep);
+    });
 ```
 
-After this, the scratch arena can be destroyed and `kept` still holds the text, in `s_arena`.
+The draft is freed when the callback returns, and `kept` still holds the text, in `s_arena`.
 
 Collections of strings follow the same rule. `RefList<string>` and `RefDict` hold references, not
 copies, so the strings they hold must live in an arena that outlives the collection's use of them. The
@@ -143,7 +148,7 @@ quiz keeps its mistakes this way, building each string directly in the long-live
 ```csharp
 else
 {
-    Out.Line($"no, it's {a + b}");
+    Console.WriteLine($"no, it's {a + b}");
     // Kept until the end, so the string is built in `keep`, not in
     // the buffer the next answer overwrites.
     mistakes.Add(Str.Format(keep, $"  {a} + {b} = {a + b}, not {value}"));

@@ -2,6 +2,7 @@
 // and timed. Exit code = number of failed checks.
 // Build: ./build.sh Kernels   (x64: -m x86-64-v3; arm64: -m dotprod for DotI8)
 
+using System;
 using System.Runtime.InteropServices;
 
 namespace KernelsSample;
@@ -35,12 +36,12 @@ public static class Program
 
     static void Check(string name, bool ok, string detail, double value)
     {
-        Out.Write(ok ? "PASS " : "FAIL ");
-        Out.Write(name);
-        Out.Write(" (");
-        Out.Write(detail);
+        Console.Write(ok ? "PASS " : "FAIL ");
+        Console.Write(name);
+        Console.Write(" (");
+        Console.Write(detail);
         WriteSci(value);
-        Out.Line(")");
+        Console.WriteLine(")");
         if (!ok)
             s_failures++;
     }
@@ -48,25 +49,25 @@ public static class Program
     // Prints a small positive number as m.mmm e-x.
     static void WriteSci(double v)
     {
-        if (v == 0) { Out.Write("0"); return; }
+        if (v == 0) { Console.Write("0"); return; }
         int e = 0;
         while (v < 1) { v *= 10; e--; }
         while (v >= 10) { v /= 10; e++; }
-        Out.Write((long)v);
-        Out.Write(".");
+        Console.Write((long)v);
+        Console.Write(".");
         long frac = (long)((v - (long)v) * 1000);
-        if (frac < 100) Out.Write("0");
-        if (frac < 10) Out.Write("0");
-        Out.Write(frac);
-        Out.Write("e");
-        Out.Write(e);
+        if (frac < 100) Console.Write("0");
+        if (frac < 10) Console.Write("0");
+        Console.Write(frac);
+        Console.Write("e");
+        Console.Write(e);
     }
 
     public static int Main()
     {
-        Out.Write("=== LLM kernels, path: ");
-        Out.Write(Kernels.Path);
-        Out.Line(" ===");
+        Console.Write("=== LLM kernels, path: ");
+        Console.Write(Kernels.Path);
+        Console.WriteLine(" ===");
         Arena arena = Arena.Create(1 << 20);
         if (!arena.IsCreated)
             return 1;
@@ -187,16 +188,16 @@ public static class Program
                 for (int i = 0; i < T; i++) t[i] *= inv;
             }
             long t2 = NowUs();
-            Out.Line();
-            Out.Line("Softmax 4096 x 20000: kernel ", (t1 - t0) / 1000, " ms");
-            Out.Line("                      scalar libm ", (t2 - t1) / 1000, " ms");
+            Console.WriteLine();
+            Console.WriteLine($"Softmax 4096 x 20000: kernel {(t1 - t0) / 1000} ms");
+            Console.WriteLine($"                      scalar libm {(t2 - t1) / 1000} ms");
             if (t1 > t0)
-                Out.Line("                      speedup ", (t2 - t1) / (t1 - t0), "x");
+                Console.WriteLine($"                      speedup {(t2 - t1) / (t1 - t0)}x");
         }
 
         unsafe { arena.Destroy(); } // SAFETY: nothing uses the buffers after this.
-        Out.Line();
-        Out.Line("failures: ", s_failures);
+        Console.WriteLine();
+        Console.WriteLine($"failures: {s_failures}");
         return s_failures;
     }
 }

@@ -79,15 +79,128 @@ public struct Job
 }
 // docs:end
 
+// docs:map
+// A map: towns joined by roads, in two pools. A town holds a handle to the
+// first of its roads and each road one to the next, so a town has as many
+// roads as it needs, and every link is a plain struct.
+public struct Town
+{
+    public int Id;
+    public Handle<Road> FirstRoad;
+}
+
+public struct Road
+{
+    public Handle<Town> To;
+    public int Km;
+    public Handle<Road> Next;
+}
+// docs:end
+
+public struct Map
+{
+    public Pool<Town> Towns;
+    public Pool<Road> Roads;
+
+    public static Map Create(Arena arena) => new Map
+    {
+        Towns = Pool<Town>.Create(arena),
+        Roads = Pool<Road>.Create(arena),
+    };
+
+    public Handle<Town> AddTown(int id) => Towns.Add(new Town { Id = id });
+
+    // A road both ways.
+    public void Join(Handle<Town> a, Handle<Town> b, int km)
+    {
+        OneWay(a, b, km);
+        OneWay(b, a, km);
+    }
+
+    void OneWay(Handle<Town> from, Handle<Town> to, int km)
+    {
+        ref Town town = ref Towns[from];
+        town.FirstRoad = Roads.Add(
+            new Road { To = to, Km = km, Next = town.FirstRoad });
+    }
+
+    // docs:map-remove
+    // The town and its own roads go. Roads to it from other towns stay,
+    // but their handle no longer finds it.
+    public void RemoveTown(Handle<Town> town)
+    {
+        Handle<Road> road = Towns[town].FirstRoad;
+        while (!road.IsNull)
+        {
+            Handle<Road> next = Roads[road].Next;
+            Roads.Remove(road);
+            road = next;
+        }
+        Towns.Remove(town);
+    }
+    // docs:end
+}
+
+public struct Trip
+{
+    public Map Map;
+    public Handle<Town> From;
+    public Handle<Town> To;
+}
+
 public static class Program
 {
     static int s_failures;
     static int s_sectionChecks;
     static int s_sectionFailures;
 
+    // docs:distance
+    // The shortest way by road, in km, or -1 if there is none. The search's
+    // own tables are scratch memory, gone when it returns.
+    static int Distance(Map map, Handle<Town> from, Handle<Town> to)
+    {
+        var trip = new Trip { Map = map, From = from, To = to };
+        return Arena.Scratch(ref trip,
+            static (scoped ScratchScope scratch, scoped ref Trip trip) =>
+            {
+                var best = scratch.Dict<Handle<Town>, int>();
+                var done = scratch.HashSet<Handle<Town>>();
+                best.Set(trip.From, 0);
+                while (true)
+                {
+                    // The nearest town not done yet (a scan, to keep it short).
+                    Handle<Town> here = default;
+                    int km = int.MaxValue;
+                    foreach (var entry in best)
+                        if (!done.Contains(entry.Key) && entry.Value < km)
+                        {
+                            here = entry.Key;
+                            km = entry.Value;
+                        }
+                    if (here.IsNull)
+                        return -1;
+                    if (here == trip.To)
+                        return km;
+                    done.Add(here);
+
+                    Handle<Road> road = trip.Map.Towns[here].FirstRoad;
+                    for (; !road.IsNull; road = trip.Map.Roads[road].Next)
+                    {
+                        Road r = trip.Map.Roads[road];
+                        if (!trip.Map.Towns.Contains(r.To))
+                            continue;           // a road to a removed town
+                        int via = km + r.Km;
+                        if (!best.TryGet(r.To, out int known) || via < known)
+                            best.Set(r.To, via);
+                    }
+                }
+            });
+    }
+    // docs:end
+
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -99,7 +212,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  FAIL: {name}");
+            Console.WriteLine($"  FAIL: {name}");
         }
     }
 
@@ -300,11 +413,38 @@ public static class Program
         Check("Clear", list.Count == 0 && list.First.IsNull && !list.Contains(four));
         Section("LinkedList");
 
-        Out.Line();
+        // docs:map-use
+        Map map = Map.Create(arena);
+        Handle<Town> harbor = map.AddTown(1), mill = map.AddTown(2);
+        Handle<Town> ford = map.AddTown(3), hill = map.AddTown(4);
+        Handle<Town> lake = map.AddTown(5);
+        map.Join(harbor, mill, 230);
+        map.Join(mill, ford, 150);
+        map.Join(ford, lake, 150);
+        map.Join(mill, lake, 330);
+        map.Join(harbor, hill, 260);
+        int before = Distance(map, harbor, lake);   // 530, through ford
+        map.RemoveTown(ford);
+        int after = Distance(map, harbor, lake);    // 560, mill to lake
+        // docs:end
+        Check("the shortest way", before == 530);
+        Check("around a removed town", after == 560);
+        // Ten one-way roads; ford's own two went with it, the two to it stay.
+        Check("a removed town's roads went with it", map.Towns.Count == 4 && map.Roads.Count == 8);
+        Check("a road to a removed town is skipped", Distance(map, mill, ford) == -1);
+        Handle<Town> island = map.AddTown(6);
+        Check("its slot went to a new town", map.Towns[island].Id == 6 && !map.Towns.Contains(ford));
+        Check("no way there", Distance(map, harbor, island) == -1);
+        Check("from a town to itself", Distance(map, hill, hill) == 0);
+        map.RemoveTown(mill);
+        Check("cut off", Distance(map, harbor, lake) == -1 && Distance(map, harbor, hill) == 260);
+        Section("a map");
+
+        Console.WriteLine();
         if (s_failures == 0)
-            Out.Line("All checks passed.");
+            Console.WriteLine("All checks passed.");
         else
-            Out.Line($"{s_failures} checks FAILED.");
+            Console.WriteLine($"{s_failures} checks FAILED.");
         return s_failures;
     }
 }

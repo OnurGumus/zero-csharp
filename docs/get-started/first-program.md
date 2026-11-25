@@ -5,8 +5,76 @@ index: 3
 
 # Your first program
 
-The repository's programs live in `samples/`, one file each. `Minimal` is the smallest one that prints
-something, and you don't need the repository to build it. This is all of it:
+The repository's programs live in `samples/`, one file each. `Hello` prints a line, and you don't
+need the repository to build it. This is all of it:
+
+<!-- sample: samples/Hello.cs file -->
+```csharp
+// Example: zero-mode "Hello World" through Console (~13 KB, no .NET runtime).
+// Build: ./build.sh Hello
+//
+// lib/ puts Console in zero mode: Console.WriteLine buffers its text and
+// writes it out as UTF-8, without the .NET runtime behind it.
+
+using System;
+
+namespace HelloSample;
+
+public static class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("Hello from zero-mode!");
+    }
+}
+```
+
+`Console.WriteLine` is the call you know from .NET, but no .NET runtime runs behind it. Zero mode
+has none: the program is compiled to machine code, and `lib/`, which every zero-mode program is built
+with, supplies `Console`. It holds the text in a buffer, encodes it as UTF-8 and writes each line to
+standard output in one call. [Coming from .NET](coming-from-dotnet.html) lists what else `Console`
+has, and what it doesn't.
+
+## Build and run it
+
+With the .NET 10 SDK and the templates ([Install with dotnet](install-with-dotnet.html)), make a
+project and put the program above in its `Program.cs`, in place of what's there:
+
+```bash
+dotnet new zero -o Hello
+cd Hello
+# Program.cs: the program above
+dotnet build
+bin/Debug/zero03/Hello
+```
+
+```text
+Hello from zero-mode!
+```
+
+`dotnet build` compiles the program for the machine you're on, on Linux, Windows (where it's
+`bin\Debug\zero03\Hello.exe`) or a Mac with Apple Silicon. `-p:ZeroTarget=` builds for another
+one: `linux-x64`, `linux-arm64`, `win-x64` or `osx-arm64`.
+
+With the [repository](install.html) instead, `./build.sh Hello` and `./run.sh Hello` do the same.
+`build.sh` compiles the core library (`zerocore/`) and the library (`lib/`) from source first, and it
+also builds for WebAssembly and DOS (next page).
+
+## What you built
+
+```bash
+ls -l bin/Debug/zero03/Hello
+```
+
+A Debug build is unoptimized and carries debug information, for debugging. `dotnet build -c Release`
+optimizes it and leaves out the debug information and the symbol table. Either needs nothing
+installed to run: no .NET, no runtime, only the C library every system has. In the repository,
+`./build.sh Hello` builds it optimized for size: 13 KB on Linux.
+
+## Calling C directly
+
+About 1 KB of that is `Console`'s buffer and its UTF-8 encoding. A program can do without them and
+call the C library itself. `Minimal` prints the same line through `puts`:
 
 <!-- sample: samples/Minimal.cs file -->
 ```csharp
@@ -39,68 +107,24 @@ public static class Program
 }
 ```
 
-It calls the C library's `puts` directly. That's possible because a zero-mode program is a native
-program: `[DllImport("libc")]` binds to the C function when the program is linked, with no
-marshalling layer in between. The message is a `stackalloc` byte array, which is safe to create; only
-the call that reads through the pointer needs an `unsafe` block, with a comment saying why it's safe.
-That is C# 15's [updated memory safety rules](../concepts/safety-rules.html) at work.
+That's possible because a zero-mode program is a native program: `[DllImport("libc")]` binds to the C
+function when the program is linked, with no marshalling layer in between. The message is a
+`stackalloc` byte array, which is safe to create; only the call that reads through the pointer needs
+an `unsafe` block, with a comment saying why it's safe. That is C# 15's
+[updated memory safety rules](../concepts/safety-rules.html) at work. `Tiny`, which prints `Hi` the
+same way, is the smallest sample: 12 KB.
 
-## Build and run it
-
-With the .NET 10 SDK and the templates ([Install with dotnet](install-with-dotnet.html)), make a
-project and put the program above in its `Program.cs`, in place of what's there:
-
-```bash
-dotnet new zero -o Minimal
-cd Minimal
-# Program.cs: the program above
-dotnet build
-bin/Debug/zero03/Minimal
-```
-
-```text
-Hello from zero-mode!
-```
-
-`dotnet build` compiles the program for the machine you're on, on Linux, Windows (where it's
-`bin\Debug\zero03\Minimal.exe`) or a Mac with Apple Silicon. `-p:ZeroTarget=` builds for another
-one: `linux-x64`, `linux-arm64`, `win-x64` or `osx-arm64`.
-
-With the [repository](install.html) instead, `./build.sh Minimal` and `./run.sh Minimal` do the same.
-`build.sh` compiles the core library (`zerocore/`) and the library (`lib/`) from source first, and it
-also builds for WebAssembly and DOS (next page).
-
-## What you built
-
-```bash
-ls -l bin/Debug/zero03/Minimal
-```
-
-About 57 KB on Linux, debug information included, as a Debug build: unoptimized, for debugging.
-`dotnet build -c Release` optimizes it and leaves out the debug information and
-the symbol table: about 15 KB. Either needs nothing installed to run: no
-.NET, no runtime, only the C library every system has. In the repository, `./build.sh Tiny` builds the smallest sample,
-optimized for size: 12 KB.
-
-## Without puts
-
-Most programs don't call `puts`. They use `lib/`, which gives zero mode the pieces it lacks: `Out` for
-output, `In` for input, arenas, strings and collections. With it, the same program is one line:
-
-```csharp no-sample
-Out.Line("Hello from zero-mode!");
-```
-
-The [tutorial](../tutorial/index.html) starts from there.
+Most programs use `Console` and the rest of `lib/`: arenas, strings and collections. The
+[tutorial](../tutorial/index.html) starts from there.
 
 ## Adding a program of your own
 
 `build.sh` builds the programs it knows by name. To add one:
 
-1. Create `samples/Hello.cs`. Give it its own namespace (`namespace HelloSample;`): the editor
+1. Create `samples/Greet.cs`. Give it its own namespace (`namespace GreetSample;`): the editor
    project compiles all the samples together.
-2. Add `Hello` to `ALL_SAMPLES` at the top of `build.sh`, and to `DOS_SAMPLES` if it should build
+2. Add `Greet` to `ALL_SAMPLES` at the top of `build.sh`, and to `DOS_SAMPLES` if it should build
    for DOS.
-3. `./build.sh Hello && ./run.sh Hello`.
+3. `./build.sh Greet && ./run.sh Greet`.
 
 Next: the same program [on WebAssembly](webassembly.html).

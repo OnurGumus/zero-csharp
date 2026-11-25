@@ -1,7 +1,8 @@
 PASS using it (3 checks)
 PASS its memory (3 checks)
 PASS your arenas (1 checks)
-PASS lists and text (4 checks)
+PASS lists and text (6 checks)
 PASS types of your own (2 checks)
+PASS dictionaries and sets (4 checks)
 
 All checks passed.

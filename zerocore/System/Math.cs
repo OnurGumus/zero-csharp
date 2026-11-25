@@ -26,6 +26,42 @@ namespace System
             return unchecked(i * j);
         }
 
+        // Checked conversions (`checked((int)x)`) where the compiler calls a
+        // helper instead of inlining the test: NativeAOT-LLVM (WebAssembly,
+        // DOS), for the tensor code's checked((int)length). The ranges are
+        // .NET's; NaN fails both comparisons.
+        private static int ConvertToInt32Checked(double value)
+        {
+            if (value > -2147483649.0 && value < 2147483648.0)
+                return (int)value;
+            Environment.FailFast("OverflowException");
+            return 0;
+        }
+
+        private static uint ConvertToUInt32Checked(double value)
+        {
+            if (value > -1.0 && value < 4294967296.0)
+                return (uint)value;
+            Environment.FailFast("OverflowException");
+            return 0;
+        }
+
+        private static long ConvertToInt64Checked(double value)
+        {
+            if (value > -9223372036854777856.0 && value < 9223372036854775808.0)
+                return (long)value;
+            Environment.FailFast("OverflowException");
+            return 0;
+        }
+
+        private static ulong ConvertToUInt64Checked(double value)
+        {
+            if (value > -1.0 && value < 18446744073709551616.0)
+                return (ulong)value;
+            Environment.FailFast("OverflowException");
+            return 0;
+        }
+
         private static long MultiplyChecked(long i, long j)
         {
             bool negative = (i < 0) != (j < 0);
@@ -52,6 +88,10 @@ namespace System
         public static long Max(long a, long b) => a > b ? a : b;
         public static ulong Min(ulong a, ulong b) => a < b ? a : b;
         public static ulong Max(ulong a, ulong b) => a > b ? a : b;
+        public static nint Min(nint a, nint b) => a < b ? a : b;
+        public static nint Max(nint a, nint b) => a > b ? a : b;
+        public static nuint Min(nuint a, nuint b) => a < b ? a : b;
+        public static nuint Max(nuint a, nuint b) => a > b ? a : b;
 
         // As in .NET, the result is NaN if either argument is.
         public static double Min(double a, double b) => a != a ? a : b != b ? b : a < b ? a : b;

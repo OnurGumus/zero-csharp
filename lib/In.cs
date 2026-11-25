@@ -1,7 +1,7 @@
 // Buffered stdin reader for zero mode, the counterpart of Out.
 //
 //   Span<char> buffer = stackalloc char[80];
-//   Out.Write($"Q{i}: {a} + {b} = ");          // In flushes Out before reading
+//   Console.Write($"Q{i}: {a} + {b} = ");   // In writes the prompt out first
 //   int length = In.ReadLine(buffer);
 //   if (length < 0) ...                         // end of input
 //   if (length > buffer.Length) ...             // too long; the rest was skipped

@@ -41,13 +41,87 @@ Check("foreach over the matches", total == 60);
 A match is a `ref struct` that refers to the text, so it lives only as long as that span does. To keep
 a match's text, copy it, for example with `Str.Format(arena, $"{m.Value}")`.
 
+## Replace and split
+
+`Replace` takes .NET's replacement patterns, and writes the result as a new string in the arena you
+pass:
+
+<!-- sample: samples/Patterns.cs replace -->
+```csharp
+string swapped = date.Replace(arena,
+    "on 2026-11-25 and 2025-01-02", "$3/$2/$1");
+// "on 25/11/2026 and 02/01/2025"
+```
+
+| In the replacement | Stands for |
+|---|---|
+| `$1`, `${1}` | group 1 (empty if it didn't take part) |
+| `${name}` | the group named `name` |
+| `$&` | the whole match |
+| `` $` ``, `$'` | the input before the match, after it |
+| `$+` | the last group |
+| `$_` | the whole input |
+| `$$` | a `$` |
+
+Anything else after a `$`, such as `$x` or a group the pattern doesn't have, is kept as it is, as
+.NET does. A last argument limits how many matches are replaced. Other overloads append to a
+`StrBuilder` instead, or to a `ScratchText` inside `Arena.Scratch`.
+
+For a replacement that depends on the match, pass a function, as .NET's `MatchEvaluator`. It
+appends what replaces each match to the builder it is given, so nothing is allocated per match:
+
+<!-- sample: samples/Patterns.cs evaluator -->
+```csharp
+// A MatchEvaluator: appends what replaces each match.
+static void Doubled(RegexMatch match, StrBuilder output)
+{
+    Str.TryParse(match.Value, out long number);
+    output.Append(2 * number);
+}
+```
+
+<!-- sample: samples/Patterns.cs evaluator-use -->
+```csharp
+string doubled = R(@"\d+").Replace(arena, "3 apples, 12 pears", &Doubled);
+```
+
+`Split` gives the pieces of the input between matches, as slices of it, so it allocates nothing. As
+in .NET, the text of each group that took part in a match comes between the pieces around it, and a
+count above 0 limits the number of pieces, the last one being the rest of the input:
+
+<!-- sample: samples/Patterns.cs split -->
+```csharp
+int fields = 0;
+foreach (ReadOnlySpan<char> field in R(@"\s*,\s*").Split("a , b,c,,d"))
+    fields++;           // "a", "b", "c", "", "d"
+```
+
+## Name the groups
+
+A group can have a name, which `Groups[...]` and `${...}` take in place of its number:
+
+<!-- sample: samples/Patterns.cs named -->
+```csharp
+Regex stamp = R(@"(?<year>\d{4})-(?<month>\d\d)");
+RegexMatch when = stamp.Match("since 2026-11");
+ReadOnlySpan<char> year = when.Groups["year"].Value;     // "2026"
+string swappedNamed = stamp.Replace(arena, "2026-11", "${month}/${year}");
+```
+
+Named groups are numbered as .NET numbers them: after all the unnamed ones, in the order their names
+first appear, so in `(?<y>\d)(\d)` the unnamed group is 1 and `y` is 2. Two groups with the same name
+are one group, which holds what the last of them to match captured. `GroupNumberFromName` and
+`GroupNameFromNumber` go from one to the other; the second gives null for a group without a name,
+where .NET gives its number as text.
+
 ## What the patterns can say
 
 - Literals, and escapes: `\t \n \r \f \v \e \0 \xHH \uHHHH`, and `\` before punctuation.
 - `.` (anything but `\n`), and classes: `[abc]`, `[a-z]`, `[^...]`, `\d \w \s` and `\D \W \S`.
   These are ASCII: `\d` is `[0-9]`, `\w` is `[A-Za-z0-9_]`.
 - Anchors: `^`, `$` (also before a final `\n`), `\A`, `\z`, `\Z`, `\b`, `\B`.
-- Groups: `(...)` captures, up to 15 of them; `(?:...)` doesn't. `|` between alternatives.
+- Groups: `(...)` captures, up to 15 of them; `(?:...)` doesn't. `(?<name>...)` and `(?'name'...)`
+  capture with a name (ASCII letters, digits and `_`). `|` between alternatives.
 - Quantifiers: `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`, each lazy with a `?` after it. A `{` that
   doesn't start a count is a literal `{`, as in .NET.
 
@@ -65,8 +139,8 @@ When several matches start at the same place, the one you get is the one .NET's 
 
 ## What they can't
 
-Backreferences (`\1`), lookahead and lookbehind (`(?=...)`, `(?<=...)` and their negations), named
-groups (`(?<name>...)`), atomic groups and inline options (`(?i)`). Each is refused with a reason
+Backreferences (`\1`), lookahead and lookbehind (`(?=...)`, `(?<=...)` and their negations), groups
+named by a number (`(?<2>...)`), atomic groups and inline options (`(?i)`). Each is refused with a reason
 rather than matched differently. `Regex.Create` ends the program for an invalid pattern, as .NET
 throws; for a pattern from a user, `TryCreate` returns the reason and where it is:
 

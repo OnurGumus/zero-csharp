@@ -18,7 +18,7 @@ public static class Program
     {
         if (!ok)
         {
-            Out.Line($"FAIL {what}");
+            Console.WriteLine($"FAIL {what}");
             s_failures++;
         }
     }
@@ -30,15 +30,16 @@ public static class Program
         {
             new Rect(4, 3), new Rect(2.5, 2), new Rect(5, 4),
         };
-        Out.Line($"Floor area: {Measure.TotalArea<Rect>(rooms):F2}");
+        Console.WriteLine($"Floor area: {Measure.TotalArea<Rect>(rooms):F2}");
 
         var table = new Circle(0.5);
-        Out.Line($"Table: area {table.Area:F2}, perimeter {table.Perimeter:F2}");
+        Console.WriteLine($"Table: area {table.Area:F2}, "
+            + $"perimeter {table.Perimeter:F2}");
 
         Arena arena = Arena.Create(1024, "shapes");
         List<Point> corners = Measure.Corners(rooms[0], arena);
         for (int i = 0; i < corners.Count; i++)
-            Out.Line(corners.Get(i).ToString());
+            Console.WriteLine(corners.Get(i).ToString());
         unsafe { arena.Destroy(); } // SAFETY: corners isn't used after this.
         // docs:end
 
@@ -46,7 +47,7 @@ public static class Program
         Check("same area", Measure.SameArea(new Rect(2, 8), new Rect(4, 4)));
         Check("different area", !Measure.SameArea(new Rect(2, 8), new Circle(2)));
         Check("record equality across the library", new Point(1, 2) == new Point(1, 2));
-        Out.Line(s_failures == 0 ? "PASS Geometry" : "FAIL Geometry");
+        Console.WriteLine(s_failures == 0 ? "PASS Geometry" : "FAIL Geometry");
         return s_failures;
     }
 }

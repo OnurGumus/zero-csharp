@@ -6,5 +6,6 @@ PASS a pool (5 checks)
 PASS moving (5 checks)
 PASS a scratch pool (1 checks)
 PASS LinkedList (6 checks)
+PASS a map (8 checks)
 
 All checks passed.

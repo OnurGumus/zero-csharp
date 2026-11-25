@@ -146,7 +146,8 @@ List<Group<int, Order>> byCustomer =
 foreach (Group<int, Order> group in byCustomer.AsQuery())
 {
     int sum = group.Items.AsQuery().Select(static o => o.Amount).Sum();
-    Out.Line($"customer {group.Key}: total {sum}, count {group.Items.Count}");
+    Console.WriteLine($"customer {group.Key}: total {sum}, "
+        + $"count {group.Items.Count}");
 }
 ```
 

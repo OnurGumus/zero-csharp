@@ -29,14 +29,14 @@ public static class Program
         {
             int a = Next(50), b = Next(50);
             // docs:ask
-            // In.ReadLine flushes Out first, so the prompt shows before the
-            // program waits for the answer.
-            Out.Write($"Q{i}: {a} + {b} = ");
+            // Console.Write holds the prompt in a buffer; In.ReadLine writes it
+            // out first, so it shows before the program waits for the answer.
+            Console.Write($"Q{i}: {a} + {b} = ");
             int length = In.ReadLine(buffer);
             if (length < 0)
             {
-                Out.Line();
-                Out.Line("(end of input)");
+                Console.WriteLine();
+                Console.WriteLine("(end of input)");
                 break;
             }
             asked++;
@@ -47,16 +47,16 @@ public static class Program
             if (Str.TryParse(answer.Trim(), out long value) && value == a + b)
             {
                 right++;
-                Out.Line("right");
+                Console.WriteLine("right");
             }
             else
             {
-                Out.Line($"no, it's {a + b}");
+                Console.WriteLine($"no, it's {a + b}");
             }
             // docs:end
         }
 
-        Out.Line($"{right} of {asked} right");
+        Console.WriteLine($"{right} of {asked} right");
         return 0;
     }
 }

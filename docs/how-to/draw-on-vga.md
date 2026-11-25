@@ -125,7 +125,7 @@ Machine.Sound(0);
 Machine.Text();
 if (s_best > bestBefore)
     SaveBest(s_best);
-Out.Line("Best score: ", s_best);
+Console.WriteLine($"Best score: {s_best}");
 ```
 
 `Dos.Sound(0)` turns the speaker off; a tone from `Dos.Sound(hertz)` sounds until the next call.

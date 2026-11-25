@@ -71,17 +71,16 @@ public static class Program
         SDL.DestroyWindow(window);
         SDL.Quit();
         // docs:end
-        Out.Line($"{frame} frames, square at {(int)x},{(int)y}");
-        Out.Flush();
+        Console.WriteLine($"{frame} frames, square at {(int)x},{(int)y}");
         return 0;
     }
 
     // SDL's message for what went wrong, after ours.
     static int Fail(string what)
     {
-        Out.Write(what);
+        Console.Write(what);
         Out.WriteUtf8(SDL.GetError());
-        Out.Line("");
+        Console.WriteLine();
         Out.Flush();
         SDL.Quit();
         return 1;

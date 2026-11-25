@@ -17,5 +17,10 @@ namespace System
     {
         public static long GetTotalAllocatedBytes(bool precise = false)
             => System.Threading.Volatile.Read(ref RuntimeExports.s_allocatedBytes);
+
+        // Nothing moves (there is no collector), so every array is pinned.
+        public static T[] AllocateArray<T>(int length, bool pinned = false) => new T[length];
+
+        public static T[] AllocateUninitializedArray<T>(int length, bool pinned = false) => new T[length];
     }
 }

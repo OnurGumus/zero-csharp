@@ -113,7 +113,7 @@ unsafe
     Move(ref a, 10, 0);                // a is (11, 2) now
     ref Point far = ref Farther(ref a, ref b);
     far.Y = 99;                        // writes to a, in the arena
-    Out.Line($"a = ({a.X}, {a.Y}), b = ({b.X}, {b.Y})");
+    Console.WriteLine($"a = ({a.X}, {a.Y}), b = ({b.X}, {b.Y})");
     CheckRefs(ref a, ref b);
 }
 ```
@@ -184,7 +184,7 @@ unsafe
     arena.Alloc<int>();     // the list's buffer isn't last any more,
     list.Add(new Point());  // so growing copies it somewhere new
     first.X = 42;           // and this writes to the old copy
-    Out.Line($"first.X = {first.X}, list[0].X = {list.Get(0).X}");
+    Console.WriteLine($"first.X = {first.X}, list[0].X = {list.Get(0).X}");
 }
 ```
 
@@ -209,7 +209,7 @@ unsafe
         leaked = ref NewPoint(arena, 7, 7);
     // The scope gave the memory back; the next point gets it.
     ref Point next = ref NewPoint(arena, 1, 1);
-    Out.Line($"leaked = ({leaked.X}, {leaked.Y})");
+    Console.WriteLine($"leaked = ({leaked.X}, {leaked.Y})");
 }
 ```
 

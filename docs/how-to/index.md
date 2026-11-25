@@ -69,6 +69,8 @@ the [tutorial](../tutorial/index.html) builds a quiz step by step.
   and the ready-made kernels in `lib/Kernels.cs`.
 - [Run a loop in parallel](run-in-parallel.html): `Parallel.For` over every processor, sharing a total
   with `Interlocked`, and one arena per thread.
+- [Work with tensors and matrices](use-tensors.html): `Tensor<T>` and `TensorSpan<T>` as in .NET,
+  broadcasting, views that share memory, matrix products, and freeing the temporaries.
 - [Run green threads](use-fibers.html): many fibers on one thread, each on its own stack, taking
   turns; channels between them, sleeping, and what they share.
 - [Run code on the GPU](run-code-on-the-gpu.html): C# kernels on an Apple Silicon Mac's GPU through

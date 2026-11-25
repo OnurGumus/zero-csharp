@@ -60,6 +60,7 @@ SMALL_SAMPLES=(
 SAMPLES=(
     Tiny
     Minimal
+    Hello
     Arena
     Collections
     VirtualTest
@@ -94,6 +95,7 @@ SAMPLES=(
     Keys
     Tensors
     TensorsAvx
+    TensorTypes
     "${SMALL_SAMPLES[@]}"
 )
 
@@ -110,6 +112,7 @@ POINTER_SIZED=" Arena Collections "
 DOS_SAMPLES=(
     Tiny
     Minimal
+    Hello
     Arena
     Collections
     VirtualTest
@@ -141,6 +144,7 @@ DOS_SAMPLES=(
     Formats
     Keys
     Tensors
+    TensorTypes
     "${SMALL_SAMPLES[@]}"
     Vga
 )
@@ -150,6 +154,7 @@ DOS_SAMPLES=(
 C64_SAMPLES=(
     Tiny
     Minimal
+    Hello
     VirtualTest
     QuizStep1
     QuizStep2
@@ -164,6 +169,7 @@ C64_SAMPLES=(
 ARM_SAMPLES=(
     Tiny
     Minimal
+    Hello
     Arena
     Collections
     VirtualTest
@@ -195,6 +201,7 @@ ARM_SAMPLES=(
     Formats
     Keys
     Tensors
+    TensorTypes
     "${SMALL_SAMPLES[@]}"
     Blink
 )
@@ -204,6 +211,7 @@ ARM_SAMPLES=(
 R4_SAMPLES=(
     Tiny
     Minimal
+    Hello
     VirtualTest
     Casts
     Core

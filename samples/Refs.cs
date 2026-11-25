@@ -29,7 +29,7 @@ public static class Program
 
     static void Section(string section)
     {
-        Out.Line($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
+        Console.WriteLine($"{(s_sectionFailures == 0 ? "PASS" : "FAIL")} {section} ({s_sectionChecks} checks)");
         s_sectionChecks = 0;
         s_sectionFailures = 0;
     }
@@ -41,7 +41,7 @@ public static class Program
         {
             s_failures++;
             s_sectionFailures++;
-            Out.Line($"  failed: {name}");
+            Console.WriteLine($"  failed: {name}");
         }
     }
 
@@ -112,7 +112,7 @@ public static class Program
             Move(ref a, 10, 0);                // a is (11, 2) now
             ref Point far = ref Farther(ref a, ref b);
             far.Y = 99;                        // writes to a, in the arena
-            Out.Line($"a = ({a.X}, {a.Y}), b = ({b.X}, {b.Y})");
+            Console.WriteLine($"a = ({a.X}, {a.Y}), b = ({b.X}, {b.Y})");
             CheckRefs(ref a, ref b);
         }
         // docs:end
@@ -148,7 +148,7 @@ public static class Program
             arena.Alloc<int>();     // the list's buffer isn't last any more,
             list.Add(new Point());  // so growing copies it somewhere new
             first.X = 42;           // and this writes to the old copy
-            Out.Line($"first.X = {first.X}, list[0].X = {list.Get(0).X}");
+            Console.WriteLine($"first.X = {first.X}, list[0].X = {list.Get(0).X}");
         }
         // docs:end
         Check("the list didn't see the write", list.Get(0).X == 0);
@@ -166,17 +166,17 @@ public static class Program
                 leaked = ref NewPoint(arena, 7, 7);
             // The scope gave the memory back; the next point gets it.
             ref Point next = ref NewPoint(arena, 1, 1);
-            Out.Line($"leaked = ({leaked.X}, {leaked.Y})");
+            Console.WriteLine($"leaked = ({leaked.X}, {leaked.Y})");
         }
         // docs:end
         Check("the leaked ref sees the next point", leaked.X == 1 && leaked.Y == 1);
         Section("a ref outlives an arena scope");
 
-        Out.Line();
+        Console.WriteLine();
         if (s_failures == 0)
-            Out.Line("All checks passed.");
+            Console.WriteLine("All checks passed.");
         else
-            Out.Line($"{s_failures} checks FAILED.");
+            Console.WriteLine($"{s_failures} checks FAILED.");
         return s_failures;
     }
 }

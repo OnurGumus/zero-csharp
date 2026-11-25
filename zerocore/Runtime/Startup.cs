@@ -18,6 +18,24 @@ namespace Internal.Runtime.CompilerHelpers
         private const nint HasPreInitializedData = 2;
         private const nint FlagsMask = 3;
 
+        // Main's return value, which Shutdown hands back.
+        private static int s_exitCode;
+
+        // The compiler's generated entry point calls these two after Main
+        // returns (both or neither must exist): SetLatchedExitCode with Main's
+        // int, if it returns one, then Shutdown, whose result is the exit code.
+        // Shutdown writes what lib/'s Out still holds, as Environment.Exit does,
+        // so a last Console.Write without a newline isn't lost.
+        internal static void SetLatchedExitCode(int exitCode) => s_exitCode = exitCode;
+
+        internal static int Shutdown()
+        {
+            delegate*<void> beforeExit = Environment.s_beforeExit;
+            if (beforeExit != null)
+                beforeExit();
+            return s_exitCode;
+        }
+
 #if WASM
         // WebAssembly can't take a data symbol's address from C#, so
         // wasm/runtime.c hands over the module header.

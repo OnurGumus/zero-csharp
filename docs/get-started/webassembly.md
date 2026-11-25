@@ -21,19 +21,20 @@ it the WASI SDK. It only has to run once.
 ## Build and run
 
 ```bash
-./build.sh --wasm Minimal
-./run.sh --wasm Minimal
+./build.sh --wasm Hello
+./run.sh --wasm Hello
 ```
 
 ```text
 Hello from zero-mode!
 ```
 
-The module is `bin/wasm/Minimal.wasm`, about 16 KB stripped. `run.sh --wasm` runs it with wasmtime,
+The module is `bin/wasm/Hello.wasm`, about 17 KB stripped. `run.sh --wasm` runs it with wasmtime,
 which is the runtime the repository tests; the module targets WASI 0.1.
 
-`[DllImport("libc")]` still works: on WebAssembly, `libc` is WASI's C library, and `puts` is in it.
-`lib/`'s `Out` and `In` use `write` and `read` the same way, so programs that use them run unchanged.
+`Console` and `In` write and read through WASI's C library, so programs that use them run unchanged.
+A program that calls the C library itself, as `Minimal` calls `puts`, works too: on WebAssembly,
+`[DllImport("libc")]` binds to WASI's C library.
 
 ## What's different
 

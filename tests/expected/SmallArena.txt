@@ -1,3 +1,4 @@
 PASS arena and spans (9 checks)
+PASS NativeMemory (4 checks)
 
 All checks passed.

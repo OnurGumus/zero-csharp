@@ -1,10 +1,11 @@
 // Test: what Out prints, sized for a small machine: whole numbers in every
-// width and base, alignment and text, through $"..." and through Out.Write.
+// width and base, alignment and text, through $"..." and through Console.Write.
 // Its output is compared with tests/expected character for character, on
 // every target; on a Commodore 64 (./build.sh --c64) the 64-bit divisions
 // behind it run on an 8-bit processor. SmallFloats.cs prints floating point.
 // Build: ./build.sh SmallText
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace SmallTextSample;
@@ -22,22 +23,22 @@ public static class Program
     {
         s_never = false;
         int answer = (int)L(42);
-        Out.Line($"int: {answer}, negative: {-answer}, zero: {(int)L(0)}");
-        Out.Line($"limits: {(int)L(int.MinValue)} to {(int)L(int.MaxValue)}");
-        Out.Line($"long: {L(long.MinValue)} to {L(long.MaxValue)}");
-        Out.Line($"ulong: {(ulong)L(-1)}, uint: {(uint)L(4000000000)}");
-        Out.Line($"small: {(byte)L(255)} {(sbyte)L(-128)} {(short)L(-32768)} {(ushort)L(65535)}");
-        Out.Line($"hex: {answer:x} {255:X} {answer:x4} {L(0xDEADBEEF):x8} {L(-1):x}");
-        Out.Line($"padded: [{answer,6}] [{answer,-6}] [{-answer,6}] [{answer:d5}]");
-        Out.Line($"text: [{"left",-8}] [{"right",8}] {'c'} {true} {false}");
+        Console.WriteLine($"int: {answer}, negative: {-answer}, zero: {(int)L(0)}");
+        Console.WriteLine($"limits: {(int)L(int.MinValue)} to {(int)L(int.MaxValue)}");
+        Console.WriteLine($"long: {L(long.MinValue)} to {L(long.MaxValue)}");
+        Console.WriteLine($"ulong: {(ulong)L(-1)}, uint: {(uint)L(4000000000)}");
+        Console.WriteLine($"small: {(byte)L(255)} {(sbyte)L(-128)} {(short)L(-32768)} {(ushort)L(65535)}");
+        Console.WriteLine($"hex: {answer:x} {255:X} {answer:x4} {L(0xDEADBEEF):x8} {L(-1):x}");
+        Console.WriteLine($"padded: [{answer,6}] [{answer,-6}] [{-answer,6}] [{answer:d5}]");
+        Console.WriteLine($"text: [{"left",-8}] [{"right",8}] {'c'} {true} {false}");
 
-        Out.Write("Write: ");
-        Out.Write(answer);
-        Out.Write(' ');
-        Out.Write(L(-9000000000));
-        Out.Write(' ');
-        Out.Write(true);
-        Out.Line();
+        Console.Write("Write: ");
+        Console.Write(answer);
+        Console.Write(' ');
+        Console.Write(L(-9000000000));
+        Console.Write(' ');
+        Console.Write(true);
+        Console.WriteLine();
         return 0;
     }
 }

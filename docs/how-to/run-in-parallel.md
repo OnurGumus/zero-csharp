@@ -122,7 +122,7 @@ starts instead.
 ## What isn't thread-safe
 
 - **Arenas and collections**: one per thread, as above.
-- **Output**: `Out` buffers, so write results after the loop rather than from inside it.
+- **Output**: `Console` buffers, so write results after the loop rather than from inside it.
 
 Allocation with `new`, interface calls, `Interlocked`, `Volatile` and static constructors are safe
 on any thread: the first thread to reach a type runs its static constructor, and the others wait for
