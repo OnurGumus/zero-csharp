@@ -109,6 +109,9 @@ ALL_SAMPLES=(
     TensorsAvx
     "${SMALL_SAMPLES[@]}"
 )
+# Samples WebAssembly can't run: Fibers switches stacks, which a WebAssembly
+# program has no way to do.
+NOT_WASM=" Fibers "
 # Programs with kernels for the GPU (Metal): only --gpu builds them.
 GPU_SAMPLES=(Gpu)
 # Simd and Kernels benchmark SIMD instructions, which a 386 doesn't have.
@@ -1164,6 +1167,11 @@ if [ $# -eq 0 ]; then
         set -- "${UEFI_SAMPLES[@]}"
     elif [ "$TARGET" = gpu ] || [ "$TARGET" = gpu-air ]; then
         set -- "${GPU_SAMPLES[@]}"
+    elif [ "$TARGET" = wasm ]; then
+        set --
+        for name in "${ALL_SAMPLES[@]}"; do
+            [[ "$NOT_WASM" == *" $name "* ]] || set -- "$@" "$name"
+        done
     else
         set -- "${ALL_SAMPLES[@]}"
     fi
@@ -1177,6 +1185,9 @@ for name in "$@"; do
         fi
     elif [[ " ${GPU_SAMPLES[*]} " == *" $name "* ]]; then
         echo "$name runs kernels on the GPU: ./build.sh --gpu $name" >&2
+        exit 1
+    elif [ "$TARGET" = wasm ] && [[ "$NOT_WASM" == *" $name "* ]]; then
+        echo "$name isn't built for WebAssembly: it switches stacks, which WebAssembly can't do." >&2
         exit 1
     elif [ "$TARGET" = dos ]; then
         if [[ " ${DOS_SAMPLES[*]} " != *" $name "* ]]; then
