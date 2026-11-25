@@ -13,6 +13,10 @@
 // Each fiber's stack comes from the C library, with a guard page at its
 // bottom, so a fiber that overflows its stack stops the program with a
 // segmentation fault instead of overwriting memory. Spawn takes the size.
+// The stack's lowest bytes also hold a pattern that Run checks each time the
+// fiber switches back: it stops the program, naming the fiber, if the
+// pattern has changed. That catches an overflow where there's no guard page
+// (UEFI), and a frame big enough to jump over the guard page elsewhere.
 // A switch saves and restores the registers a function must keep (the
 // assembly in zerocore/native) and costs a few nanoseconds; there's no
 // garbage collector to tell about the stacks.
@@ -32,7 +36,9 @@
 // - When every fiber left is waiting on a channel, none can ever run again:
 //   Run stops the program with a message saying so.
 // - Linux (x64, arm64), macOS (arm64), Windows (x64) and UEFI (x64, arm64). On
-//   UEFI there's no guard page: an overflow overwrites the memory below.
+//   UEFI there's no guard page: an overflow is only noticed when the fiber
+//   next switches back, by the pattern check, and one that goes past the
+//   (unprotected) guard page may already have overwritten other memory.
 
 using System;
 using System.Runtime.InteropServices;
@@ -58,6 +64,10 @@ public static class Fiber
     // nothing (the firmware's memory has no guard pages).
     const int ProtectNone = 0, ProtectReadWrite = 3;
 
+    // The pattern at the bottom of every fiber's stack, in this many words.
+    const ulong Canary = 0x5AFE_57AC_CAFE_F1BE;
+    const int CanaryWords = 8;
+
     /// <summary>The stack size Spawn gives a fiber unless told otherwise: 256 KB.</summary>
     public const int DefaultStackSize = 256 * 1024;
 
@@ -69,6 +79,7 @@ public static class Fiber
         public void* StackPointer;  // while switched out
         public byte* Memory;        // what malloc gave
         public byte* Guard;         // the guard page, the first whole page in it
+        public ulong* Bottom;       // the stack's lowest bytes, just above the guard page: the pattern
         public nuint GuardSize;
         public Record* Next;        // in the run queue, the sleepers or a channel's waiters
         public long WakeAt;         // Clock.Monotonic, while sleeping
@@ -156,6 +167,9 @@ public static class Fiber
             f->Body = body;
             f->Run = &RunBody<TState>;
             f->Id = ++s->NextId;
+            f->Bottom = (ulong*)(guard + page);
+            for (int i = 0; i < CanaryWords; i++)
+                f->Bottom[i] = Canary;
             f->StackPointer = ZeroFiberInit(top, guard + page, &Entry, f);
             s->Live++;
             Enqueue(s, f);
@@ -215,6 +229,9 @@ public static class Fiber
                 s->Switches++;
                 ZeroFiberSwitch(&s->MainStack, f->StackPointer);
                 s->Current = null;
+                for (int i = 0; i < CanaryWords; i++)
+                    if (f->Bottom[i] != Canary)
+                        StackOverflowed(f);
                 f->Scratch = Arena.SwapScratch(mainScratch);
                 System.Runtime.ObjectAllocator.Get(out f->Allocate, out f->AllocateContext);
                 if (f->Allocate != mainAllocate || f->AllocateContext != mainContext)
@@ -230,6 +247,13 @@ public static class Fiber
                     WakeSleepers(s, wait: false);
             }
         }
+    }
+
+    static void StackOverflowed(Record* f)
+    {
+        int id;
+        unsafe { id = f->Id; } // SAFETY: the record of the fiber that just switched back
+        Environment.FailFast("Fiber " + id.ToString() + " overflowed its stack: give it a bigger one (Spawn's stackSize)");
     }
 
     /// <summary>Lets the other fibers that are ready run before this one carries on.</summary>

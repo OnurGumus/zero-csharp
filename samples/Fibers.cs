@@ -1,6 +1,10 @@
 // Example: fibers (lib/Fibers.cs), green threads that take turns on one
 // system thread, and channels between them. Exit code = number of failed checks.
 // Build: ./build.sh Fibers
+//
+// `Fibers overflow` overflows a fiber's stack on purpose, and must be stopped:
+// by the guard page (a crash) where there is one, and by Run's check of the
+// stack's bottom, with a message, on UEFI. test.sh checks both.
 
 using System;
 using System.Runtime;
@@ -75,10 +79,29 @@ public static class Program
     }
     // docs:end
 
+    // Uses about 18 KB of a 16 KB stack, then yields, so Run looks at the
+    // stack's bottom. Without a guard page the overflow lands in the guard
+    // page's memory, which is still the fiber's own.
+    static void Overflow(int seed)
+    {
+        Span<byte> big = stackalloc byte[18 * 1024];
+        big.Fill((byte)seed);
+        Fiber.Yield();
+        Out.Line("not stopped: ", big[seed]);
+    }
+
     static int Depth(int n) => n == 0 ? 0 : 1 + Depth(n - 1);
 
-    public static int Main()
+    public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "overflow")
+        {
+            Fiber.Spawn(args.Length, static seed => Overflow(seed),
+                stackSize: 16 * 1024);
+            Fiber.Run();
+            return 0;
+        }
+
         // docs:yield
         // Three fibers take turns: each logs its number and yields, so the
         // log interleaves them, in the order they were spawned.

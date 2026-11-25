@@ -138,8 +138,13 @@ opened in one fiber doesn't send another fiber's objects to its arena.
 
 A fiber's stack is 256 KB unless `Spawn` is told otherwise (`stackSize: 16 * 1024`). Below the stack
 is a guard page, so a fiber that overflows its stack stops the program with a segmentation fault
-instead of overwriting memory. UEFI can't protect a page, so there an overflow does overwrite the
-memory below.
+instead of overwriting memory.
+
+UEFI can't protect a page, so there the guard page is only reserved memory. Each time a fiber switches
+back, `Run` also checks a pattern at the bottom of its stack, and stops the program with
+`Fiber 1 overflowed its stack` if the pattern has changed. That catches the overflow, but only at the
+next switch. A fiber that goes more than a page past its stack before switching may already have
+overwritten other memory, so give fibers on UEFI room to spare.
 
 ## What to watch out for
 

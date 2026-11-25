@@ -330,6 +330,24 @@ run_all() {
         fi
         rm -f -- "$name"
     fi
+
+    # A fiber that overflows its stack must stop the program: the guard page
+    # does it where there is one, and on UEFI, which has none, the check of
+    # the stack's bottom does, with a message.
+    if [[ " ${samples[*]} " == *" Fibers "* ]]; then
+        status=0
+        out=$("${run[@]}" Fibers overflow < /dev/null 2>&1) || status=$?
+        if [ "$status" = 0 ]; then
+            echo "FAIL Fibers overflow: the program wasn't stopped"
+            failures=$((failures + 1))
+        elif [ "$target" = uefi ] && [[ "$out" != *"Fiber 1 overflowed its stack"* ]]; then
+            echo "FAIL Fibers overflow: stopped (exit code $status) without the message"
+            echo "$out" | tail -3 | sed 's/^/       /'
+            failures=$((failures + 1))
+        else
+            echo "ok   Fibers overflow (stopped, as it must be)"
+        fi
+    fi
 }
 
 test_native() {
