@@ -4,7 +4,7 @@
 //
 // `Fibers overflow` overflows a fiber's stack on purpose, and must be stopped:
 // by the guard page (a crash) where there is one, and by Run's check of the
-// stack's bottom, with a message, on UEFI. test.sh checks both.
+// stack's bottom, with a message, on UEFI and DOS. test.sh checks both.
 
 using System;
 using System.Runtime;
@@ -80,7 +80,7 @@ public static class Program
     // docs:end
 
     // Uses an eighth more than the smallest stack (18 KB of 16, or 1.1 KB of
-    // 1 on a microcontroller), then yields, so Run looks at the stack's
+    // 1 on DOS or a microcontroller), then yields, so Run looks at the stack's
     // bottom. Without a guard page the overflow lands in the guard page's
     // memory (a page: 4 KB, or 1 KB), which is still the fiber's own.
     static void Overflow(int seed)
@@ -104,8 +104,8 @@ public static class Program
             return 0;
         }
 
-        // A microcontroller has a few hundred KB of RAM, or less: fewer
-        // fibers, on smaller stacks.
+        // A microcontroller has a few hundred KB of RAM, or less, and a DOS
+        // machine a few MB: fewer fibers, on smaller stacks.
         bool small = Fiber.DefaultStackSize < 64 * 1024;
 
         // docs:yield
@@ -199,8 +199,8 @@ public static class Program
         Check("30 ms or more in all", took >= 30 && took < 2000);
         Section("Sleep");
 
-        // Many fibers at once, each on the smallest stack: 2000, or 6 on a
-        // microcontroller (the Uno R4 has 32 KB of RAM).
+        // Many fibers at once, each on the smallest stack: 2000, or 6 on DOS
+        // or a microcontroller (the Uno R4 has 32 KB of RAM).
         var counter = new Log();
         int many = small ? 6 : 2000;
         for (int i = 0; i < many; i++)

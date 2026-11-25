@@ -291,11 +291,20 @@ void *ZeroGetModuleHeader(void *shadowStack)
 // enough to leave a 2 MB machine room for the program, roomy for recursion.
 static char shadow_stack[256 << 10] __attribute__((aligned(16)));
 
+// A fiber's shadow stack, while the fiber starts (see ZeroFiberStart below):
+// its entry's RhpReversePInvoke takes it, once.
+void *zero_fiber_entry_shadow_stack; // not static: ZeroFiberStart's assembly uses it
+
 void *RhpReversePInvokeAndPushSparseVirtualUnwindFrame(void *frame, void *a, void *b)
 {
     (void)frame;
     (void)a;
     (void)b;
+    if (zero_fiber_entry_shadow_stack) {
+        void *fiber = zero_fiber_entry_shadow_stack;
+        zero_fiber_entry_shadow_stack = 0;
+        return fiber;
+    }
     return shadow_stack;
 }
 
@@ -548,6 +557,115 @@ void dos_sleep(u32 milliseconds)
     u32 start = dos_ticks();
     while (dos_ticks() - start < milliseconds) { }
 }
+
+// ---- fibers (lib/Fibers.cs) ----------------------------------------------------
+//
+// Switching from one stack to another: save the registers a function must
+// keep (ebx, esi, edi, ebp) and the coprocessor's control word, change
+// stacks, restore them.
+//
+// A fiber's memory is [guard][pattern][shadow stack ->   <- stack][record]:
+// managed code keeps its references on a shadow stack (see above), so each
+// fiber needs one of its own, and gets the bottom quarter of its stack. It
+// grows up, the machine stack down. Fibers.cs writes a pattern below both and
+// checks it on every switch back. Nothing stops the shadow stack growing into
+// the machine stack.
+//
+// HX gives a program no way to protect a page, so there's no guard page, and
+// getpagesize reports 1 KB: Fibers.cs reserves that much below each stack,
+// which an overflow lands in before anything else, and sizes stacks for a
+// machine of a few MB. mprotect does nothing.
+//
+// The frame a switch leaves, from the saved esp up (24 bytes):
+//   0   the coprocessor's control word
+//   4   edi, esi, ebx, ebp
+//   20  where the switch returns to
+
+int getpagesize(void) { return 1024; }
+
+int mprotect(void *address, size_t length, int protection)
+{
+    (void)address; (void)length; (void)protection;
+    return 0;
+}
+
+int usleep(u32 microseconds)
+{
+    dos_sleep((microseconds + 999) / 1000);
+    return 0;
+}
+
+// [esp+4]: where to store this stack's pointer; [esp+8]: the one to resume.
+__attribute__((naked)) void ZeroFiberSwitch(void **save, void *resume)
+{
+    __asm__ volatile(
+        "movl    4(%esp), %eax\n"
+        "movl    8(%esp), %edx\n"
+        "pushl   %ebp\n"
+        "pushl   %ebx\n"
+        "pushl   %esi\n"
+        "pushl   %edi\n"
+        "subl    $4, %esp\n"
+        "fnstcw  (%esp)\n"
+        "movl    %esp, (%eax)\n"
+        "movl    %edx, %esp\n"
+        "fldcw   (%esp)\n"
+        "addl    $4, %esp\n"
+        "popl    %edi\n"
+        "popl    %esi\n"
+        "popl    %ebx\n"
+        "popl    %ebp\n"
+        "ret\n");
+}
+
+// Where a new fiber's first switch returns to: ebx its argument, esi its
+// entry, edi its shadow stack, which the entry's RhpReversePInvoke picks up.
+// The entry never returns: it switches away for good.
+__attribute__((naked)) static void ZeroFiberStart(void)
+{
+    __asm__ volatile(
+        "movl    %edi, _zero_fiber_entry_shadow_stack\n"
+        "pushl   %ebx\n"
+        "call    *%esi\n"
+        "int3\n");
+}
+
+// top: the stack's top; bottom: its lowest byte, where Fibers.cs's pattern
+// (64 bytes) starts. Returns the stack pointer to give ZeroFiberSwitch.
+void *ZeroFiberInit(char *top, char *bottom, void (*entry)(void *), void *argument)
+{
+    u32 stack_top = (u32)top & ~(u32)15;
+    u32 *frame = (u32 *)(stack_top - 32);
+    char *shadow = bottom + 64;
+    memset(frame, 0, 32);
+    frame[0] = 0x027F;                  // the control word start() sets
+    frame[1] = (u32)shadow;             // edi
+    frame[2] = (u32)entry;              // esi
+    frame[3] = (u32)argument;           // ebx
+    frame[5] = (u32)ZeroFiberStart;     // the return address
+    return frame;
+}
+
+// A stackalloc whose size isn't a constant calls this, with the size in eax,
+// to move esp down: a page at a time, touching each, as Windows expects.
+__asm__(
+    ".globl  __alloca\n"
+    "__alloca:\n"
+    "        pushl   %ecx\n"
+    "        leal    8(%esp), %ecx\n"
+    "1:      cmpl    $0x1000, %eax\n"
+    "        jb      2f\n"
+    "        subl    $0x1000, %ecx\n"
+    "        orl     $0, (%ecx)\n"
+    "        subl    $0x1000, %eax\n"
+    "        jmp     1b\n"
+    "2:      subl    %eax, %ecx\n"
+    "        orl     $0, (%ecx)\n"
+    "        movl    %esp, %eax\n"
+    "        movl    %ecx, %esp\n"
+    "        movl    (%eax), %ecx\n"
+    "        pushl   4(%eax)\n"
+    "        ret\n");
 
 // Ports, for hardware this file has no function for.
 int dos_in(int port) { return in_byte((unsigned short)port); }

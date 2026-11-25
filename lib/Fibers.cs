@@ -63,26 +63,28 @@ public static class Fiber
 
     // mprotect's flags, the same on Linux and macOS. Windows and UEFI have no
     // mprotect: win/runtime.c's calls VirtualProtect, efi/runtime.c's does
-    // nothing (the firmware's memory has no guard pages).
+    // nothing (the firmware's memory has no guard pages), and so do DOS's
+    // and a microcontroller's.
     const int ProtectNone = 0, ProtectReadWrite = 3;
 
     // The pattern at the bottom of every fiber's stack, in this many words.
     const ulong Canary = 0x5AFE_57AC_CAFE_F1BE;
     const int CanaryWords = 8;
 
-    // A target without virtual memory (a microcontroller: arm/runtime.c)
-    // reports pages smaller than 4 KB, and gets stacks sized for its RAM.
+    // A small machine without guard pages (a microcontroller: arm/runtime.c;
+    // DOS: dos/runtime.c) reports pages smaller than 4 KB, and gets stacks
+    // sized for its RAM.
     static bool SmallMachine => getpagesize() < 4096;
 
     /// <summary>
     /// The stack size Spawn gives a fiber unless told otherwise: 256 KB, or
-    /// 4 KB on a microcontroller.
+    /// 4 KB on DOS and microcontrollers.
     /// </summary>
     public static int DefaultStackSize => SmallMachine ? 4 * 1024 : 256 * 1024;
 
     /// <summary>
     /// The smallest stack Spawn gives a fiber, whatever it's asked for: 16 KB,
-    /// or 1 KB on a microcontroller.
+    /// or 1 KB on DOS and microcontrollers.
     /// </summary>
     public static int MinStackSize => SmallMachine ? 1024 : 16 * 1024;
 

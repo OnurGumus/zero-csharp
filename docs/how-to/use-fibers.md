@@ -10,9 +10,9 @@ take turns: a fiber runs until it yields, sleeps, waits on a channel or ends, an
 line runs. `Channel<T>` passes values between them. Switching is cooperative, so fibers need no locks
 among themselves. `samples/Fibers.cs` runs every example below.
 
-Fibers work on Linux (x64 and arm64), macOS, Windows, UEFI and microcontrollers (the Raspberry Pi
-Pico 2 and the Arduino Uno R4). They need a way to switch stacks, so there are none on WebAssembly,
-and none yet on DOS or the C64.
+Fibers work on Linux (x64 and arm64), macOS, Windows, UEFI, DOS and microcontrollers (the Raspberry
+Pi Pico 2 and the Arduino Uno R4). They need a way to switch stacks, so there are none on
+WebAssembly, and none yet on the C64.
 
 ## Take turns
 
@@ -138,13 +138,13 @@ opened in one fiber doesn't send another fiber's objects to its arena.
 ## Choose a stack size
 
 A fiber's stack is `Fiber.DefaultStackSize` unless `Spawn` is told otherwise
-(`stackSize: 16 * 1024`): 256 KB, or 4 KB on a microcontroller. Spawn never gives less than
-`Fiber.MinStackSize`: 16 KB, or 1 KB on a microcontroller. Below the stack is a guard page, so a
-fiber that overflows its stack stops the program with a segmentation fault instead of overwriting
-memory.
+(`stackSize: 16 * 1024`): 256 KB, or 4 KB on DOS and microcontrollers. Spawn never gives less than
+`Fiber.MinStackSize`: 16 KB, or 1 KB on DOS and microcontrollers. Below the stack is a guard page,
+so a fiber that overflows its stack stops the program with a segmentation fault instead of
+overwriting memory.
 
-UEFI and microcontrollers can't protect a page, so there the guard page is only reserved memory (a
-page: 4 KB on UEFI, 1 KB on a microcontroller). Each time a fiber switches back, `Run` also checks a
+UEFI, DOS and microcontrollers can't protect a page, so there the guard page is only reserved
+memory (a page: 4 KB on UEFI, 1 KB on DOS and microcontrollers). Each time a fiber switches back, `Run` also checks a
 pattern at the bottom of its stack, and stops the program with `Fiber 1 overflowed its stack` if the
 pattern has changed. That catches the overflow, but only at the next switch. A fiber that goes more
 than a page past its stack before switching may already have overwritten other memory, so give fibers
@@ -154,7 +154,8 @@ stops the program with a fault at once.
 
 ## Fibers on a microcontroller
 
-The Pico 2 has 520 KB of RAM and the Uno R4 32 KB, so count what fibers cost. Each takes its stack, a
+The Pico 2 has 520 KB of RAM and the Uno R4 32 KB, so count what fibers cost. (DOS gets the same
+small stacks, for a machine of a few MB; what follows about the shadow stack holds there too.) Each takes its stack, a
 page below it, and about a hundred bytes for its record and state, all freed when it ends. Six fibers
 at the default size come to about 30 KB, more than an Uno R4 has to spare. Give them small stacks
 there (`stackSize: 1024`), or run fewer at once.

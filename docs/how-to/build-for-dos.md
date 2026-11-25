@@ -112,7 +112,8 @@ without a coprocessor isn't supported.
 - **Floating point is the 387's,** set to 53-bit precision. `+ - * /` and `Sqrt` on doubles match other
   targets. A `long` above 2^53 converted to `double`, `float` arithmetic, and `Exp`, `Log`, `Pow`,
   `Sin` and the like can differ in the last digits.
-- **32-bit pointers and one thread,** as on WebAssembly.
+- **32-bit pointers and one thread,** as on WebAssembly. [Fibers](use-fibers.html) do work: many
+  functions taking turns on that thread, on stacks of 4 KB unless told otherwise.
 - **C# can call only the C functions `dos/runtime.c` defines.** `[DllImport("libc")]` of anything else
   fails to link.
 

@@ -141,6 +141,7 @@ DOS_SAMPLES=(
     Shapes
     Refs
     Patterns
+    Fibers
     Scratch
     Links
     Llama
