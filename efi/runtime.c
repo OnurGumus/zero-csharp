@@ -626,3 +626,25 @@ int pthread_setspecific(u64 key, void *value)
     key_values[key] = value;
     return 0;
 }
+
+// ---- fiber stacks -----------------------------------------------------------
+//
+// What lib/Fibers.cs calls. The firmware runs with its memory identity-mapped
+// and no way for a program to protect a page, so a fiber's stack has no guard
+// page here: mprotect succeeds and does nothing.
+
+int getpagesize(void) { return 4096; }
+
+int mprotect(void *address, usize length, int protection)
+{
+    (void)address;
+    (void)length;
+    (void)protection;
+    return 0;
+}
+
+int usleep(u32 microseconds)
+{
+    efi_system->boot_services->stall(microseconds);
+    return 0;
+}

@@ -134,4 +134,66 @@ RhpStackProbe:
     pop     rbp
     ret
 
+// Fibers (../lib/Fibers.cs): switching from one stack to another.
+//
+// ZeroFiberSwitch saves what a function must keep for its caller (the
+// callee-saved registers, and the SSE and x87 control words) on the current
+// stack, stores the stack pointer in *rdi, and resumes the stack rsi points
+// at, which an earlier switch, or ZeroFiberInit, left the same way.
+// rdi: where to store this stack's pointer
+// rsi: the stack pointer to resume
+    .global ZeroFiberSwitch
+    .type ZeroFiberSwitch, @function
+ZeroFiberSwitch:
+    push    rbp
+    push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    sub     rsp, 8
+    stmxcsr [rsp]
+    fnstcw  [rsp + 4]
+    mov     [rdi], rsp
+    mov     rsp, rsi
+    ldmxcsr [rsp]
+    fldcw   [rsp + 4]
+    add     rsp, 8
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rbx
+    pop     rbp
+    ret
+
+// Prepares a new stack so that switching to it calls entry(argument) there:
+// the frame ZeroFiberSwitch would have left, returning to ZeroFiberStart.
+// rdi: the stack's top; rsi: its bottom (unused here: see win-x64.S);
+// rdx: entry; rcx: argument
+// rax: the stack pointer to give ZeroFiberSwitch
+    .global ZeroFiberInit
+    .type ZeroFiberInit, @function
+ZeroFiberInit:
+    and     rdi, -16
+    lea     rax, [rdi - 64]
+    mov     dword ptr [rax], 0x1F80     # mxcsr: the default
+    mov     dword ptr [rax + 4], 0x037F # x87 control word: the default
+    mov     qword ptr [rax + 8], 0      # r15
+    mov     qword ptr [rax + 16], 0     # r14
+    mov     [rax + 24], rdx             # r13: entry
+    mov     [rax + 32], rcx             # r12: argument
+    mov     qword ptr [rax + 40], 0     # rbx
+    mov     qword ptr [rax + 48], 0     # rbp
+    lea     rdx, [rip + ZeroFiberStart]
+    mov     [rax + 56], rdx             # where the switch returns to
+    ret
+
+// rsp is the stack's top here, 16-byte aligned, as a call needs.
+// The entry never returns: it switches away for good.
+ZeroFiberStart:
+    mov     rdi, r12
+    call    r13
+    ud2
+
     .section .note.GNU-stack, "", @progbits

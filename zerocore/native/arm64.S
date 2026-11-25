@@ -91,4 +91,70 @@ RhpInitialDynamicInterfaceDispatch:
     ldp     x29, x30, [sp], #224
     br      x9
 
+// Fibers (../lib/Fibers.cs): switching from one stack to another.
+//
+// ZeroFiberSwitch saves what a function must keep for its caller (x19-x30
+// and the low halves of v8-v15) on the current stack, stores the stack
+// pointer in *x0, and resumes the stack x1 points at, which an earlier switch,
+// or ZeroFiberInit, left the same way. x18 is left alone: it is the
+// platform's on macOS and Windows.
+// x0: where to store this stack's pointer
+// x1: the stack pointer to resume
+    .globl ZeroFiberSwitch
+    .type ZeroFiberSwitch, %function
+ZeroFiberSwitch:
+    sub     sp, sp, #160
+    stp     x19, x20, [sp]
+    stp     x21, x22, [sp, #16]
+    stp     x23, x24, [sp, #32]
+    stp     x25, x26, [sp, #48]
+    stp     x27, x28, [sp, #64]
+    stp     x29, x30, [sp, #80]
+    stp     d8, d9, [sp, #96]
+    stp     d10, d11, [sp, #112]
+    stp     d12, d13, [sp, #128]
+    stp     d14, d15, [sp, #144]
+    mov     x9, sp
+    str     x9, [x0]
+    mov     sp, x1
+    ldp     x19, x20, [sp]
+    ldp     x21, x22, [sp, #16]
+    ldp     x23, x24, [sp, #32]
+    ldp     x25, x26, [sp, #48]
+    ldp     x27, x28, [sp, #64]
+    ldp     x29, x30, [sp, #80]
+    ldp     d8, d9, [sp, #96]
+    ldp     d10, d11, [sp, #112]
+    ldp     d12, d13, [sp, #128]
+    ldp     d14, d15, [sp, #144]
+    add     sp, sp, #160
+    ret
+
+// Prepares a new stack so that switching to it calls entry(argument) there:
+// the frame ZeroFiberSwitch would have left, returning to ZeroFiberStart.
+// x0: the stack's top; x1: its bottom (unused here); x2: entry; x3: argument
+// x0 on return: the stack pointer to give ZeroFiberSwitch
+    .globl ZeroFiberInit
+    .type ZeroFiberInit, %function
+ZeroFiberInit:
+    and     x0, x0, #0xfffffffffffffff0
+    sub     x0, x0, #160
+    mov     x9, x0
+    add     x10, x0, #160
+1:
+    stp     xzr, xzr, [x9], #16
+    cmp     x9, x10
+    b.ne    1b
+    stp     x3, x2, [x0]            // x19: argument, x20: entry
+    adr     x9, ZeroFiberStart
+    str     x9, [x0, #88]           // x30: where the switch returns to
+    ret
+
+// sp is the stack's top here, 16-byte aligned.
+// The entry never returns: it switches away for good.
+ZeroFiberStart:
+    mov     x0, x19
+    blr     x20
+    brk     #1
+
     .section .note.GNU-stack, "", %progbits

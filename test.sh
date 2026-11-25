@@ -78,6 +78,7 @@ SAMPLES=(
     Guards
     Queries
     Threads
+    Fibers
     Records
     Shapes
     Refs
@@ -95,7 +96,7 @@ SAMPLES=(
 )
 
 # Simd and Kernels print timings, so only their exit code is checked.
-TIMED=" Simd Kernels "
+TIMED=" Simd Kernels Fibers "
 # Arena and Collections print byte counts that depend on the pointer size, so
 # on WebAssembly, DOS and microcontrollers (32-bit) only their exit code is checked.
 POINTER_SIZED=" Arena Collections "

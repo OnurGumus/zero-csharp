@@ -49,7 +49,11 @@ IMPORT void *TlsGetValue(u32 index);
 IMPORT int TlsSetValue(u32 index, void *value);
 IMPORT u32 GetActiveProcessorCount(unsigned short group);
 IMPORT int SwitchToThread(void);
+IMPORT int VirtualProtect(void *address, u64 size, u32 protection, u32 *old);
+IMPORT void Sleep(u32 milliseconds);
 
+#define PAGE_NOACCESS 0x01
+#define PAGE_READWRITE 0x04
 #define CP_UTF8 65001
 #define STD_INPUT_HANDLE ((u32)-10)
 #define STD_OUTPUT_HANDLE ((u32)-11)

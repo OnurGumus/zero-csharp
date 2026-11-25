@@ -480,6 +480,37 @@ public partial struct Arena
         }
     }
 
+    // Fibers (Fibers.cs) each have a scratch arena of their own: a fiber that
+    // waits inside Scratch would otherwise share the thread's, and whichever
+    // scope closed first would free the other's memory. The scheduler swaps
+    // the thread's scratch state on every switch: this puts thread (null:
+    // none yet, made on first use) in place and returns what was there.
+    internal static void* SwapScratch(void* thread)
+    {
+        if (Volatile.Read(ref s_scratchKeyState) != 2)
+        {
+            if (thread == null)
+                return null; // nobody has used Scratch yet: nothing to swap
+            CreateScratchKey();
+        }
+        unsafe
+        {
+            // SAFETY: the key only ever holds null or a live ScratchThread.
+            void* previous = Platform.pthread_getspecific(s_scratchKey);
+            if (previous != thread && Platform.pthread_setspecific(s_scratchKey, thread) != 0)
+                Environment.FailFast("Arena.Scratch: can't keep the thread's scratch arena");
+            return previous;
+        }
+    }
+
+    // A fiber's scratch arena, once the fiber has ended.
+    internal static void FreeScratch(void* thread)
+    {
+        // SAFETY: the fiber has ended; nothing uses its scratch memory.
+        if (thread != null)
+            unsafe { ((ScratchThread*)thread)->Arena.Destroy(); }
+    }
+
     // Called by the system when a thread with a scratch arena ends.
     [UnmanagedCallersOnly]
     static void DestroyScratch(void* thread)

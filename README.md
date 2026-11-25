@@ -100,7 +100,7 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - Static fields and static constructors, `Main(string[] args)`, top-level statements
 - P/Invoke and `[UnmanagedCallersOnly]` callbacks
 - Files, a monotonic clock and the date, and seeded random numbers, from `lib/`, on every target
-- SIMD intrinsics (NEON, AVX2, FMA), `Interlocked`, `Volatile`, and threads through `Parallel.For`
+- SIMD intrinsics (NEON, AVX2, FMA), `Interlocked`, `Volatile`, threads through `Parallel.For`, and green threads (fibers) with channels
 
 Every `new` is a `calloc` that is never freed. There is no async/await, no LINQ from .NET (`lib/Seq.cs`
 has `Where`, `Select` and friends without allocating), no culture-aware formatting, and casts that need
@@ -134,7 +134,7 @@ was freed. See [Memory without a GC](https://onurgumus.github.io/zero-csharp/con
 | Folder | What |
 |---|---|
 | [`zerocore/`](zerocore/README.md) | The core library: `object`, `string`, casts, allocation. About 2,400 lines of C#, MIT licensed |
-| [`lib/`](lib/) | Arenas, collections, strings, input and output, files, the clock, random numbers, SIMD kernels, `Parallel.For`, DOS and UEFI graphics, the Commodore 64's screen and sprites, a microcontroller board's LED, registers and timer interrupt, GPU buffers and kernel launches ([reference](https://onurgumus.github.io/zero-csharp/reference/index.html)) |
+| [`lib/`](lib/) | Arenas, collections, strings, input and output, files, the clock, random numbers, SIMD kernels, `Parallel.For`, fibers (green threads) and channels, DOS and UEFI graphics, the Commodore 64's screen and sprites, a microcontroller board's LED, registers and timer interrupt, GPU buffers and kernel launches ([reference](https://onurgumus.github.io/zero-csharp/reference/index.html)) |
 | [`samples/`](samples/) | The programs below |
 | [`sdk/`](sdk/) | The `ZeroCSharp.*` NuGet packages |
 | [`docs/`](docs/) | The documentation site |
@@ -162,6 +162,7 @@ nothing AGPL is linked into them.
 | `Guards` | One mistake per run that `lib/` stops the program for, such as marks restored out of order | 56 KB |
 | `Queries` | LINQ-style queries with `lib/Seq.cs`, checked to allocate nothing | 44 KB |
 | `Threads` | `Parallel.For` with one arena per thread | 28 KB |
+| `Fibers` | `lib/Fibers.cs`: green threads taking turns, channels, sleeping, 2,000 fibers at once, and the cost of a switch | 52 KB |
 | `Files` | `lib/File.cs`: whole files, and an open file read, written and moved through | 31 KB |
 | `Dice` | `lib/Random.cs` and `lib/Clock.cs`: seeded dice rolls that match on every target, durations, the date | 29 KB |
 | `Env` | `System.Environment`: variables, `Exit` from anywhere (writing what `Out` holds), the processor count | 20 KB |

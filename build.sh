@@ -93,6 +93,7 @@ ALL_SAMPLES=(
     Guards
     Queries
     Threads
+    Fibers
     Records
     Shapes
     Refs
@@ -955,7 +956,8 @@ build_uefi_objects() {
         "$clang" -target "$triple" "${UEFI_CFLAGS[@]}" -Wall -Wextra -c "efi/$name.c" -o "$UEFI_OBJ/$name.obj"
     done
     "$clang" -target "$triple" -c "efi/$BFLAT_ARCH.S" -o "$UEFI_OBJ/stack.obj"
-    "$clang" -target "$triple" -c "zerocore/native/win-$BFLAT_ARCH.S" -o "$UEFI_OBJ/zerocore.obj"
+    # ZERO_UEFI: no thread information block for the fiber switch to update.
+    "$clang" -target "$triple" -DZERO_UEFI -c "zerocore/native/win-$BFLAT_ARCH.S" -o "$UEFI_OBJ/zerocore.obj"
     echo "[clang] efi/libm/*.c -> $UEFI_OBJ/libm"
     for source in efi/libm/*.c; do
         object=$UEFI_OBJ/libm/$(basename "$source" .c).obj

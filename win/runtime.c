@@ -219,3 +219,22 @@ int clock_gettime(int clock, i64 *timespec)
 int fseeko(void *stream, i64 offset, int origin) { return _fseeki64(stream, offset, origin); }
 
 i64 ftello(void *stream) { return _ftelli64(stream); }
+
+// ---- fiber stacks -----------------------------------------------------------
+//
+// lib/Fibers.cs puts a guard page under each fiber's stack, with the POSIX
+// calls: mprotect with Linux's flags (0: no access, 3: read and write).
+
+int getpagesize(void) { return 4096; }
+
+int mprotect(void *address, u64 length, int protection)
+{
+    u32 old;
+    return VirtualProtect(address, length, protection == 0 ? PAGE_NOACCESS : PAGE_READWRITE, &old) ? 0 : -1;
+}
+
+int usleep(u32 microseconds)
+{
+    Sleep((microseconds + 999) / 1000);
+    return 0;
+}

@@ -108,3 +108,121 @@ RhpStackProbe:
     cmp     rax, r11
     jg      3b
     ret
+
+
+// Fibers (../lib/Fibers.cs): switching from one stack to another (see x64.S).
+// Windows' calling convention has the callee keep more: rdi, rsi and
+// xmm6-xmm15 as well. And Windows keeps each thread's stack bounds in its
+// thread information block (gs:[8] the top, gs:[16] the lowest committed
+// address, gs:[0x1478] the bottom of the allocation), which code compiled for
+// Windows checks: the C library's stack probe, for one, would walk from the
+// thread's stack limit down to a fiber's stack, through memory that isn't a
+// stack. So the switch swaps them with the stack. UEFI has no such block (gs
+// isn't set up), and efi/'s build defines ZERO_UEFI to leave them out.
+//
+// The frame, from the saved stack pointer up (272 bytes, 16-byte aligned):
+//   0    xmm6-xmm15
+//   160  mxcsr, x87 control word
+//   168  stack top, 176 stack limit, 184 allocation bottom (Windows only)
+//   192  (padding)
+//   200  r15, r14, r13, r12, rsi, rdi, rbx, rbp
+//   264  return address
+// rcx: where to store this stack's pointer
+// rdx: the stack pointer to resume
+    .globl ZeroFiberSwitch
+ZeroFiberSwitch:
+    push    rbp
+    push    rbx
+    push    rdi
+    push    rsi
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    sub     rsp, 200
+    movaps  [rsp], xmm6
+    movaps  [rsp + 16], xmm7
+    movaps  [rsp + 32], xmm8
+    movaps  [rsp + 48], xmm9
+    movaps  [rsp + 64], xmm10
+    movaps  [rsp + 80], xmm11
+    movaps  [rsp + 96], xmm12
+    movaps  [rsp + 112], xmm13
+    movaps  [rsp + 128], xmm14
+    movaps  [rsp + 144], xmm15
+    stmxcsr [rsp + 160]
+    fnstcw  [rsp + 164]
+#ifndef ZERO_UEFI
+    mov     rax, gs:[8]
+    mov     [rsp + 168], rax
+    mov     rax, gs:[16]
+    mov     [rsp + 176], rax
+    mov     rax, gs:[0x1478]
+    mov     [rsp + 184], rax
+#endif
+    mov     [rcx], rsp
+    mov     rsp, rdx
+#ifndef ZERO_UEFI
+    mov     rax, [rsp + 168]
+    mov     gs:[8], rax
+    mov     rax, [rsp + 176]
+    mov     gs:[16], rax
+    mov     rax, [rsp + 184]
+    mov     gs:[0x1478], rax
+#endif
+    ldmxcsr [rsp + 160]
+    fldcw   [rsp + 164]
+    movaps  xmm6, [rsp]
+    movaps  xmm7, [rsp + 16]
+    movaps  xmm8, [rsp + 32]
+    movaps  xmm9, [rsp + 48]
+    movaps  xmm10, [rsp + 64]
+    movaps  xmm11, [rsp + 80]
+    movaps  xmm12, [rsp + 96]
+    movaps  xmm13, [rsp + 112]
+    movaps  xmm14, [rsp + 128]
+    movaps  xmm15, [rsp + 144]
+    add     rsp, 200
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rsi
+    pop     rdi
+    pop     rbx
+    pop     rbp
+    ret
+
+// Prepares a new stack so that switching to it calls entry(argument) there.
+// rcx: the stack's top; rdx: its bottom (above the guard page); r8: entry;
+// r9: argument
+// rax: the stack pointer to give ZeroFiberSwitch
+    .globl ZeroFiberInit
+ZeroFiberInit:
+    and     rcx, -16
+    lea     rax, [rcx - 272]
+    xor     r10, r10
+    mov     r11, rax
+1:
+    mov     [r11], r10              # zero the frame: registers start at 0
+    add     r11, 8
+    cmp     r11, rcx
+    jne     1b
+    mov     dword ptr [rax + 160], 0x1F80 # mxcsr: the default
+    mov     dword ptr [rax + 164], 0x027F # x87 control word: Windows' default
+    mov     [rax + 168], rcx        # stack top
+    mov     [rax + 176], rdx        # stack limit: all of it is committed
+    mov     [rax + 184], rdx        # allocation bottom
+    mov     [rax + 216], r8         # r13: entry
+    mov     [rax + 224], r9         # r12: argument
+    lea     r10, [rip + ZeroFiberStart]
+    mov     [rax + 264], r10        # where the switch returns to
+    ret
+
+// rsp is the stack's top here, 16-byte aligned. The call gets its 32 bytes of
+// shadow space. The entry never returns: it switches away for good.
+ZeroFiberStart:
+    sub     rsp, 32
+    mov     rcx, r12
+    call    r13
+    int3
