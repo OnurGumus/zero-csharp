@@ -191,6 +191,7 @@ ARM_SAMPLES=(
     Guards
     Queries
     Threads
+    Fibers
     Records
     Shapes
     Refs
@@ -206,8 +207,9 @@ ARM_SAMPLES=(
     "${SMALL_SAMPLES[@]}"
     Blink
 )
-# Arena, Collections, Files, Strings, Queries, Threads, Patterns, Scratch and
-# Unicode need more (Arena, for one, allocates a 16 KB array).
+# Arena, Collections, Files, Strings, Queries, Threads, Fibers, Patterns,
+# Scratch and Unicode need more (Arena, for one, allocates a 16 KB array;
+# Fibers runs three fibers of 5 KB at once).
 R4_SAMPLES=(
     Tiny
     Minimal

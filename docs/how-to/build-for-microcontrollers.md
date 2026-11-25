@@ -140,6 +140,11 @@ written.
 Board.Write(0xd0000018, 1u << 15);   // Pico 2: GP15 high (SIO GPIO_OUT_SET)
 ```
 
+For several things going on at once (blink one LED, watch a button, print), [fibers](use-fibers.html)
+give each its own loop: `Fiber.Spawn` each one, call `Fiber.Sleep` or `Fiber.Yield` in its loop, and
+`Fiber.Run`. A fiber's stack is 4 KB by default here; see
+[Fibers on a microcontroller](use-fibers.html#fibers-on-a-microcontroller) for what they cost.
+
 ## On a real Pico 2
 
 `./build.sh --pico2` writes each program twice: `bin/pico2/<Sample>.elf` for QEMU, and

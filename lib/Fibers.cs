@@ -35,10 +35,12 @@
 //   Send or Receive that would wait stops the program.
 // - When every fiber left is waiting on a channel, none can ever run again:
 //   Run stops the program with a message saying so.
-// - Linux (x64, arm64), macOS (arm64), Windows (x64) and UEFI (x64, arm64). On
-//   UEFI there's no guard page: an overflow is only noticed when the fiber
-//   next switches back, by the pattern check, and one that goes past the
-//   (unprotected) guard page may already have overwritten other memory.
+// - Linux (x64, arm64), macOS (arm64), Windows (x64), UEFI (x64, arm64) and
+//   Cortex-M microcontrollers. UEFI and microcontrollers have no guard page:
+//   an overflow is only noticed when the fiber next switches back, by the
+//   pattern check, and one that goes past the (unprotected) guard page may
+//   already have overwritten other memory. The Pico 2's Cortex-M33 stops the
+//   machine stack in hardware (arm/runtime.c).
 
 using System;
 using System.Runtime.InteropServices;
@@ -68,8 +70,21 @@ public static class Fiber
     const ulong Canary = 0x5AFE_57AC_CAFE_F1BE;
     const int CanaryWords = 8;
 
-    /// <summary>The stack size Spawn gives a fiber unless told otherwise: 256 KB.</summary>
-    public const int DefaultStackSize = 256 * 1024;
+    // A target without virtual memory (a microcontroller: arm/runtime.c)
+    // reports pages smaller than 4 KB, and gets stacks sized for its RAM.
+    static bool SmallMachine => getpagesize() < 4096;
+
+    /// <summary>
+    /// The stack size Spawn gives a fiber unless told otherwise: 256 KB, or
+    /// 4 KB on a microcontroller.
+    /// </summary>
+    public static int DefaultStackSize => SmallMachine ? 4 * 1024 : 256 * 1024;
+
+    /// <summary>
+    /// The smallest stack Spawn gives a fiber, whatever it's asked for: 16 KB,
+    /// or 1 KB on a microcontroller.
+    /// </summary>
+    public static int MinStackSize => SmallMachine ? 1024 : 16 * 1024;
 
     // One fiber. It lives at the top of its own stack's memory, followed by
     // the state Spawn was given:
@@ -133,9 +148,10 @@ public static class Fiber
     /// runs once Run is called (or, from a fiber, when that fiber next yields).
     /// Pass what the fiber needs as <paramref name="state"/> and use a static
     /// lambda: Spawn copies the state onto the fiber's stack and allocates
-    /// nothing else. Returns the fiber's id, from 1.
+    /// nothing else. <paramref name="stackSize"/> 0 means DefaultStackSize.
+    /// Returns the fiber's id, from 1.
     /// </summary>
-    public static int Spawn<TState>(TState state, Action<TState> body, int stackSize = DefaultStackSize)
+    public static int Spawn<TState>(TState state, Action<TState> body, int stackSize = 0)
     {
         Scheduler* s = This;
         unsafe
@@ -146,13 +162,18 @@ public static class Fiber
             nuint page = (nuint)getpagesize();
             nuint stateSize = ((nuint)sizeof(TState) + 15) & ~(nuint)15;
             nuint recordSize = ((nuint)sizeof(Record) + 15) & ~(nuint)15;
-            nuint stack = ((nuint)Math.Max(stackSize, 16 * 1024) + page - 1) & ~(page - 1);
+            if (stackSize == 0)
+                stackSize = DefaultStackSize;
+            nuint stack = ((nuint)Math.Max(stackSize, MinStackSize) + page - 1) & ~(page - 1);
             // A page more than needed, so the guard page can start on a page
             // boundary (posix_memalign would do it, but Windows hasn't one).
-            byte* memory = (byte*)malloc(page + page + stack + recordSize + stateSize);
+            // A microcontroller has nothing to protect a page with, so its
+            // guard needs no aligning, and its RAM no page to spare.
+            nuint slack = SmallMachine ? 0 : page;
+            byte* memory = (byte*)malloc(slack + page + stack + recordSize + stateSize);
             if (memory == null)
                 Environment.FailFast("Fiber.Spawn: out of memory");
-            byte* guard = (byte*)(((nuint)memory + page - 1) & ~(page - 1));
+            byte* guard = SmallMachine ? memory : (byte*)(((nuint)memory + page - 1) & ~(page - 1));
             if (mprotect(guard, page, ProtectNone) != 0)
                 Environment.FailFast("Fiber.Spawn: can't make the guard page");
 

@@ -79,12 +79,14 @@ public static class Program
     }
     // docs:end
 
-    // Uses about 18 KB of a 16 KB stack, then yields, so Run looks at the
-    // stack's bottom. Without a guard page the overflow lands in the guard
-    // page's memory, which is still the fiber's own.
+    // Uses an eighth more than the smallest stack (18 KB of 16, or 1.1 KB of
+    // 1 on a microcontroller), then yields, so Run looks at the stack's
+    // bottom. Without a guard page the overflow lands in the guard page's
+    // memory (a page: 4 KB, or 1 KB), which is still the fiber's own.
     static void Overflow(int seed)
     {
-        Span<byte> big = stackalloc byte[18 * 1024];
+        int size = Fiber.MinStackSize + Fiber.MinStackSize / 8;
+        Span<byte> big = stackalloc byte[size];
         big.Fill((byte)seed);
         Fiber.Yield();
         Out.Line("not stopped: ", big[seed]);
@@ -97,10 +99,14 @@ public static class Program
         if (args.Length > 0 && args[0] == "overflow")
         {
             Fiber.Spawn(args.Length, static seed => Overflow(seed),
-                stackSize: 16 * 1024);
+                stackSize: Fiber.MinStackSize);
             Fiber.Run();
             return 0;
         }
+
+        // A microcontroller has a few hundred KB of RAM, or less: fewer
+        // fibers, on smaller stacks.
+        bool small = Fiber.DefaultStackSize < 64 * 1024;
 
         // docs:yield
         // Three fibers take turns: each logs its number and yields, so the
@@ -193,27 +199,31 @@ public static class Program
         Check("30 ms or more in all", took >= 30 && took < 2000);
         Section("Sleep");
 
-        // Many fibers at once, each on a small stack.
+        // Many fibers at once, each on the smallest stack: 2000, or 6 on a
+        // microcontroller (the Uno R4 has 32 KB of RAM).
         var counter = new Log();
-        for (int i = 0; i < 2000; i++)
+        int many = small ? 6 : 2000;
+        for (int i = 0; i < many; i++)
             Fiber.Spawn(counter, static c =>
             {
                 Fiber.Yield();
                 c.Count++;
-            }, stackSize: 16 * 1024);
-        Check("2000 alive", Fiber.Count == 2000);
+            }, stackSize: Fiber.MinStackSize);
+        Check("all alive", Fiber.Count == many);
         Fiber.Run();
-        Check("2000 ran", counter.Count == 2000);
+        Check("all ran", counter.Count == many);
         Section("Many fibers");
 
         // A fiber's stack is its own: deep recursion on one, while another
         // yields in between.
         var depths = new Log();
-        Fiber.Spawn(depths, static d => { Fiber.Yield(); d.Add(Depth(5000)); },
-            stackSize: 1024 * 1024);
+        int deep = small ? 60 : 5000;
+        Fiber.Spawn((depths, deep),
+            static d => { Fiber.Yield(); d.depths.Add(Depth(d.deep)); },
+            stackSize: small ? 4 * 1024 : 1024 * 1024);
         Fiber.Spawn(depths, static d => { Fiber.Yield(); d.Add(Depth(10)); });
         Fiber.Run();
-        Check("deep", depths.Entries[0] == 5000);
+        Check("deep", depths.Entries[0] == deep);
         Check("shallow", depths.Entries[1] == 10);
         Section("Stacks");
 
@@ -268,19 +278,19 @@ public static class Program
         Section("Scratch");
 
         // How long a switch takes: two fibers yielding to each other.
-        const int Yields = 1_000_000;
+        int yields = small ? 100_000 : 1_000_000;
         long switchesBefore = Fiber.Switches;
         for (int f = 0; f < 2; f++)
-            Fiber.Spawn(0, static _ =>
+            Fiber.Spawn(yields, static count =>
             {
-                for (int i = 0; i < Yields; i++)
+                for (int i = 0; i < count; i++)
                     Fiber.Yield();
             });
         start = Clock.Monotonic;
         Fiber.Run();
         long nanos = Clock.Monotonic - start;
         long switches = Fiber.Switches - switchesBefore;
-        Check("every yield switched", switches >= 2 * Yields);
+        Check("every yield switched", switches >= 2 * yields);
         Out.Line($"  {switches} switches in {nanos / 1_000_000} ms: {nanos / switches} ns each, there and back");
         Section("Speed");
 

@@ -162,7 +162,7 @@ nothing AGPL is linked into them.
 | `Guards` | One mistake per run that `lib/` stops the program for, such as marks restored out of order | 56 KB |
 | `Queries` | LINQ-style queries with `lib/Seq.cs`, checked to allocate nothing | 44 KB |
 | `Threads` | `Parallel.For` with one arena per thread | 28 KB |
-| `Fibers` | `lib/Fibers.cs`: green threads taking turns, channels, sleeping, 2,000 fibers at once, and the cost of a switch | 52 KB |
+| `Fibers` | `lib/Fibers.cs`: green threads taking turns, channels, sleeping, 2,000 fibers at once (6 on a microcontroller), and the cost of a switch | 52 KB |
 | `Files` | `lib/File.cs`: whole files, and an open file read, written and moved through | 31 KB |
 | `Dice` | `lib/Random.cs` and `lib/Clock.cs`: seeded dice rolls that match on every target, durations, the date | 29 KB |
 | `Env` | `System.Environment`: variables, `Exit` from anywhere (writing what `Out` holds), the processor count | 20 KB |
