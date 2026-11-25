@@ -54,6 +54,8 @@ SMALL_SAMPLES=(
     SmallDoubleFormats
     SmallDecimalFormats
     SmallKeys
+    SmallFibers
+    SmallChannels
 )
 SAMPLES=(
     Tiny
@@ -95,8 +97,8 @@ SAMPLES=(
     "${SMALL_SAMPLES[@]}"
 )
 
-# Samples WebAssembly can't run (as in build.sh): Fibers switches stacks.
-NOT_WASM=" Fibers "
+# Samples WebAssembly can't run (as in build.sh): the fiber samples switch stacks.
+NOT_WASM=" Fibers SmallFibers SmallChannels "
 # Simd and Kernels print timings, so only their exit code is checked.
 TIMED=" Simd Kernels Fibers "
 # Arena and Collections print byte counts that depend on the pointer size, so

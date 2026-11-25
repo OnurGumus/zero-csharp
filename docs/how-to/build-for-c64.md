@@ -116,6 +116,7 @@ programs `./test.sh --c64` runs:
 | `Refs`, `SmallLists`, `SmallStrDicts`, `SmallObjects` | 32 to 34 KB | 15 to 17 KB |
 | `C64Demo` | 36 KB | 13 KB |
 | `SmallUnicode` | 37 KB | 12 KB |
+| `SmallChannels`, `SmallFibers` | 42 to 43 KB | 7 to 8 KB |
 | `SmallBuilders` | 43 KB | 6 KB |
 | `SmallDoubles` | 47 KB | 2.4 KB |
 | `SmallFloats` | 49 KB | 0.6 KB |
@@ -456,7 +457,7 @@ that `c64/runtime.c` defines with 32-bit parameters: C#'s `calloc` is `cs_calloc
 - **40 columns, and ASCII.** Text prints in the C64's character set with both cases. Characters outside
   ASCII come out as something else.
 - **No arguments, files, environment or threads.** `Environment` has no variables; `lib/File.cs` and
-  `Parallel.For` don't link.
+  `Parallel.For` don't link. [Fibers](use-fibers.html#fibers-on-a-commodore-64) work, on small stacks.
 - **No `Sin`, `Pow`, `Log` and the like:** a program that calls them doesn't link. `+ - * /`, `%`, `Sqrt`,
   `Floor`, `Ceiling`, `Truncate` and the conversions work, in software; `SmallDoubles` checks that they
   give the same results as on other targets.
@@ -475,6 +476,9 @@ that `c64/runtime.c` defines with 32-bit parameters: C#'s `calloc` is `cs_calloc
 - **A long method can be too much for llvm-mos:** the 6502 has three registers, and the error is
   "ran out of registers". `build.sh` then compiles that method's module separately and tries again; if
   it still fails, split the method.
+- **No pointers to generic methods over classes.** `&Method<SomeClass>` is a "fat" pointer, marked by
+  the top bit of 32, which a 16-bit pointer can't keep; the build stops with a message saying so.
+  Call through a generic class's virtual method instead, as `lib/Fibers.cs` does.
 - **The compiler versions are a set,** as for WebAssembly and DOS, and llvm-mos is one more.
 - **A C64 build is always optimized for size.** `ZeroOptimizeFor` doesn't apply, nor do
   `ZeroInstructionSet` and `ZeroDllImports`.

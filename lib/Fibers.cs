@@ -43,6 +43,7 @@
 //   machine stack in hardware (arm/runtime.c).
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 /// <summary>Green threads: functions that take turns on one system thread, each on its own stack.</summary>
@@ -52,7 +53,7 @@ public static class Fiber
     static unsafe extern void ZeroFiberSwitch(void** save, void* resume);
 
     [DllImport("*"), SuppressGCTransition]
-    static unsafe extern void* ZeroFiberInit(void* top, void* bottom, delegate* unmanaged<void*, void> entry, void* argument);
+    static unsafe extern void* ZeroFiberInit(void* top, void* bottom, delegate*<void*, void> entry, void* argument);
 
     [DllImport("libc")] static unsafe extern void* malloc(nuint size);
     [DllImport("libc")] static unsafe extern void free(void* memory);
@@ -71,22 +72,35 @@ public static class Fiber
     const ulong Canary = 0x5AFE_57AC_CAFE_F1BE;
     const int CanaryWords = 8;
 
-    // A small machine without guard pages (a microcontroller: arm/runtime.c;
-    // DOS: dos/runtime.c) reports pages smaller than 4 KB, and gets stacks
-    // sized for its RAM.
+    // A machine without guard pages reports pages smaller than 4 KB: the
+    // memory Spawn reserves below each stack, and a hint of how much RAM
+    // there is. 256 bytes: a C64 (c64/runtime.c); 1 KB: a microcontroller
+    // (arm/runtime.c); 2 KB: DOS (dos/runtime.c), a few MB.
     static bool SmallMachine => getpagesize() < 4096;
 
     /// <summary>
     /// The stack size Spawn gives a fiber unless told otherwise: 256 KB, or
-    /// 4 KB on DOS and microcontrollers.
+    /// 32 KB on DOS, 4 KB on a microcontroller and 2 KB on a C64.
     /// </summary>
-    public static int DefaultStackSize => SmallMachine ? 4 * 1024 : 256 * 1024;
+    public static int DefaultStackSize => getpagesize() switch
+    {
+        <= 256 => 2 * 1024,
+        <= 1024 => 4 * 1024,
+        < 4096 => 32 * 1024,
+        _ => 256 * 1024,
+    };
 
     /// <summary>
     /// The smallest stack Spawn gives a fiber, whatever it's asked for: 16 KB,
-    /// or 1 KB on DOS and microcontrollers.
+    /// or 4 KB on DOS, 1 KB on a microcontroller and 512 bytes on a C64.
     /// </summary>
-    public static int MinStackSize => SmallMachine ? 1024 : 16 * 1024;
+    public static int MinStackSize => getpagesize() switch
+    {
+        <= 256 => 512,
+        <= 1024 => 1024,
+        < 4096 => 4 * 1024,
+        _ => 16 * 1024,
+    };
 
     // One fiber. It lives at the top of its own stack's memory, followed by
     // the state Spawn was given:
@@ -100,7 +114,7 @@ public static class Fiber
         public nuint GuardSize;
         public Record* Next;        // in the run queue, the sleepers or a channel's waiters
         public long WakeAt;         // Clock.Monotonic, while sleeping
-        public delegate*<Record*, void> Run; // RunBody<TState>'s instantiation
+        public Runner Run;          // Runner<TState>.Instance
         public object Body;         // the Action<TState>
         public void* State;         // where the TState is
         public delegate*<void*, nuint, void*> Allocate; // its ObjectAllocator setting
@@ -153,6 +167,10 @@ public static class Fiber
     /// nothing else. <paramref name="stackSize"/> 0 means DefaultStackSize.
     /// Returns the fiber's id, from 1.
     /// </summary>
+    // Spawn, Yield, Sleep and Park aren't inlined: a call costs little next
+    // to what they do, and one copy of each keeps a small machine's program
+    // smaller.
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static int Spawn<TState>(TState state, Action<TState> body, int stackSize = 0)
     {
         Scheduler* s = This;
@@ -188,7 +206,7 @@ public static class Fiber
             f->State = top + recordSize;
             *(TState*)f->State = state;
             f->Body = body;
-            f->Run = &RunBody<TState>;
+            f->Run = Runner<TState>.Instance;
             f->Id = ++s->NextId;
             f->Bottom = (ulong*)(guard + page);
             for (int i = 0; i < CanaryWords; i++)
@@ -280,6 +298,7 @@ public static class Fiber
     }
 
     /// <summary>Lets the other fibers that are ready run before this one carries on.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void Yield()
     {
         Scheduler* s = This;
@@ -292,6 +311,7 @@ public static class Fiber
     }
 
     /// <summary>Lets the other fibers run for at least <paramref name="milliseconds"/>.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public static void Sleep(long milliseconds)
     {
         Scheduler* s = This;
@@ -326,7 +346,12 @@ public static class Fiber
             long now = Clock.Monotonic;
             if (wait && s->Sleepers->WakeAt > now)
             {
-                usleep((uint)((s->Sleepers->WakeAt - now + 999) / 1000));
+                // Nanoseconds to microseconds, rounded up: * 1049 / 2^20 is a
+                // hair more than / 1000 (by 0.04%), and saves a small
+                // machine the code for 64-bit division (1 KB on a C64).
+                // At most 1000 s at a time; the loop in Run comes back.
+                long nanos = Math.Min(s->Sleepers->WakeAt - now, 1_000_000_000_000L);
+                usleep((uint)((nanos * 1049 >> 20) + 1));
                 now = Clock.Monotonic;
             }
             while (s->Sleepers != null && s->Sleepers->WakeAt <= now)
@@ -346,6 +371,7 @@ public static class Fiber
 
     // Blocks the current fiber until Wake. Called by Channel with the fiber
     // already on its list of waiters. Returns what Wake was told.
+    [MethodImpl(MethodImplOptions.NoInlining)]
     internal static bool Park(string operation)
     {
         Scheduler* s = This;
@@ -410,14 +436,21 @@ public static class Fiber
 
     // Where a fiber starts, on its own stack (ZeroFiberStart calls it). It
     // never returns: the last switch leaves the stack for Run to free.
-    [UnmanagedCallersOnly]
+    //
+    // An ordinary C# method, not [UnmanagedCallersOnly]: compiled to native
+    // code, its convention is C's (one pointer argument), and compiled to
+    // bitcode (DOS, microcontrollers, the C64) it takes its shadow stack
+    // first, which ZeroFiberStart passes it: the fiber's own. Leaving the
+    // runtime's entry from native code alone matters there: it hands every
+    // entry the same shadow stack, which lets the optimizer build that
+    // address into all the code (2 KB smaller on a C64).
     static void Entry(void* record)
     {
         unsafe
         {
             // SAFETY: Spawn's record, alive until Run frees it after this switch.
             Record* f = (Record*)record;
-            f->Run(f);
+            f->Run.Run(f);
             f->Done = true;
             f->Body = null;
             Scheduler* s = This;
@@ -426,17 +459,32 @@ public static class Fiber
         }
     }
 
-    static void RunBody<TState>(Record* f)
+    // Calls a fiber's body with its state, which Spawn knew the type of. A
+    // class per type, called virtually, rather than a pointer to a generic
+    // RunBody<TState>: for a class TState that would be a "fat" pointer (to
+    // code shared by all classes, plus which class), whose mark, the top bit
+    // of 32, a C64's 16-bit pointers can't keep.
+    internal abstract class Runner
     {
-        Action<TState> body;
-        TState state;
-        unsafe
+        public abstract void Run(Record* f);
+    }
+
+    sealed class Runner<TState> : Runner
+    {
+        public static readonly Runner<TState> Instance = new Runner<TState>();
+
+        public override void Run(Record* f)
         {
-            // SAFETY: Spawn stored an Action<TState> and a TState here.
-            body = System.Runtime.CompilerServices.Unsafe.As<Action<TState>>(f->Body);
-            state = *(TState*)f->State;
+            Action<TState> body;
+            TState state;
+            unsafe
+            {
+                // SAFETY: Spawn stored an Action<TState> and a TState here.
+                body = System.Runtime.CompilerServices.Unsafe.As<Action<TState>>(f->Body);
+                state = *(TState*)f->State;
+            }
+            body(state);
         }
-        body(state);
     }
 }
 

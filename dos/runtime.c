@@ -291,20 +291,11 @@ void *ZeroGetModuleHeader(void *shadowStack)
 // enough to leave a 2 MB machine room for the program, roomy for recursion.
 static char shadow_stack[256 << 10] __attribute__((aligned(16)));
 
-// A fiber's shadow stack, while the fiber starts (see ZeroFiberStart below):
-// its entry's RhpReversePInvoke takes it, once.
-void *zero_fiber_entry_shadow_stack; // not static: ZeroFiberStart's assembly uses it
-
 void *RhpReversePInvokeAndPushSparseVirtualUnwindFrame(void *frame, void *a, void *b)
 {
     (void)frame;
     (void)a;
     (void)b;
-    if (zero_fiber_entry_shadow_stack) {
-        void *fiber = zero_fiber_entry_shadow_stack;
-        zero_fiber_entry_shadow_stack = 0;
-        return fiber;
-    }
     return shadow_stack;
 }
 
@@ -566,22 +557,22 @@ void dos_sleep(u32 milliseconds)
 //
 // A fiber's memory is [guard][pattern][shadow stack ->   <- stack][record]:
 // managed code keeps its references on a shadow stack (see above), so each
-// fiber needs one of its own, and gets the bottom quarter of its stack. It
-// grows up, the machine stack down. Fibers.cs writes a pattern below both and
-// checks it on every switch back. Nothing stops the shadow stack growing into
-// the machine stack.
+// fiber needs one of its own, and gets the bottom of its stack. It grows up,
+// the machine stack down. Fibers.cs writes a pattern below both and checks
+// it on every switch back. Nothing stops the shadow stack growing into the
+// machine stack.
 //
 // HX gives a program no way to protect a page, so there's no guard page, and
-// getpagesize reports 1 KB: Fibers.cs reserves that much below each stack,
+// getpagesize reports 2 KB: Fibers.cs reserves that much below each stack,
 // which an overflow lands in before anything else, and sizes stacks for a
-// machine of a few MB. mprotect does nothing.
+// machine of a few MB (32 KB, at least 4 KB). mprotect does nothing.
 //
 // The frame a switch leaves, from the saved esp up (24 bytes):
 //   0   the coprocessor's control word
 //   4   edi, esi, ebx, ebp
 //   20  where the switch returns to
 
-int getpagesize(void) { return 1024; }
+int getpagesize(void) { return 2048; }
 
 int mprotect(void *address, size_t length, int protection)
 {
@@ -619,13 +610,14 @@ __attribute__((naked)) void ZeroFiberSwitch(void **save, void *resume)
 }
 
 // Where a new fiber's first switch returns to: ebx its argument, esi its
-// entry, edi its shadow stack, which the entry's RhpReversePInvoke picks up.
-// The entry never returns: it switches away for good.
+// entry, edi its shadow stack. The entry is an ordinary C# method, which
+// takes its shadow stack as a hidden first argument. It never returns: it
+// switches away for good.
 __attribute__((naked)) static void ZeroFiberStart(void)
 {
     __asm__ volatile(
-        "movl    %edi, _zero_fiber_entry_shadow_stack\n"
         "pushl   %ebx\n"
+        "pushl   %edi\n"
         "call    *%esi\n"
         "int3\n");
 }

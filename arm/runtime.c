@@ -264,24 +264,14 @@ static char shadow_stack[SHADOW_STACK_SIZE] __attribute__((aligned(16)));
 // enough. A quarter of the other.
 static char interrupt_shadow_stack[SHADOW_STACK_SIZE / 4] __attribute__((aligned(16)));
 
-// A fiber's shadow stack, while the fiber starts (see ZeroFiberStart below):
-// its entry point is an [UnmanagedCallersOnly] method, which asks for one.
-void *zero_fiber_entry_shadow_stack; // not static: ZeroFiberStart's assembly uses it
-
 // Where C calls into C#: from main, or from an interrupt (IPSR holds the
-// number of the exception being handled, 0 for none), or a fiber starting.
+// number of the exception being handled, 0 for none). A fiber starts
+// differently: ZeroFiberStart below passes its entry its shadow stack.
 static void *entry_shadow_stack(void)
 {
     uint32_t exception;
     __asm__ volatile("mrs %0, ipsr" : "=r"(exception));
-    if (exception)
-        return interrupt_shadow_stack;
-    if (zero_fiber_entry_shadow_stack) {
-        void *fiber = zero_fiber_entry_shadow_stack;
-        zero_fiber_entry_shadow_stack = 0;
-        return fiber;
-    }
-    return shadow_stack;
+    return exception ? interrupt_shadow_stack : shadow_stack;
 }
 
 // The program's entry point, which has a catch or fault block to register.
@@ -412,15 +402,14 @@ __attribute__((naked)) void ZeroFiberSwitch(void **save, void *resume)
 }
 
 // Where a new fiber's first switch returns to: r4 its argument, r5 its entry,
-// r6 its shadow stack, which the entry's RhpReversePInvoke picks up. The
-// entry never returns: it switches away for good.
+// r6 its shadow stack. The entry is an ordinary C# method, which takes its
+// shadow stack as a hidden first argument. It never returns: it switches
+// away for good.
 __attribute__((naked)) static void ZeroFiberStart(void)
 {
     __asm__ volatile(
-        "movw    r0, #:lower16:zero_fiber_entry_shadow_stack\n"
-        "movt    r0, #:upper16:zero_fiber_entry_shadow_stack\n"
-        "str     r6, [r0]\n"
-        "mov     r0, r4\n"
+        "mov     r0, r6\n"
+        "mov     r1, r4\n"
         "blx     r5\n"
         "udf     #0\n");
 }

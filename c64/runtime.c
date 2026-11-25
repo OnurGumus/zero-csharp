@@ -630,3 +630,173 @@ i32 cs_c64_key(void)
 }
 
 u32 cs_c64_ticks(void) { return jiffies(); }
+
+// ---- fibers (lib/Fibers.cs) ---------------------------------------------------------
+//
+// A 6502 program has two stacks. llvm-mos keeps locals on a stack of its own
+// in memory, whose pointer is __rc0/__rc1 in the zero page, and a fiber gets
+// one of those like on any machine: its own memory. But JSR, RTS and the
+// registers functions save go on the processor's stack, which is always page
+// 1 ($0100-$01FF), 256 bytes for everyone. So a switch copies the part of
+// page 1 in use (from the stack pointer S up to $01FF) onto the fiber's own
+// stack, next to the registers a function must keep (__rc20 to __rc31), and
+// copies the next fiber's part back. Interrupts are off while page 1 is
+// being rewritten.
+//
+// The frame a switch leaves, from the saved stack pointer up:
+//   0   __rc20 to __rc31
+//   12  n, the number of bytes of page 1 in use
+//   13  those bytes, from S+1 to $01FF; the first two are where the switch
+//       returns to
+//
+// A fiber's memory is [guard][pattern][shadow stack ->  <- stack][record]:
+// managed code keeps its references on a shadow stack, which grows up from
+// above the pattern Fibers.cs checks; the stack above grows down. Nothing
+// stops either growing into the other.
+//
+// No memory protection, so no guard page: getpagesize reports the 6502's
+// page, 256 bytes, which Fibers.cs reserves below each stack and takes for a
+// small machine (stacks of 2 KB, at least 512 bytes). mprotect does nothing.
+//
+// ZeroFiberSwitch is assembly at the top level of this file, so the link-time
+// optimizer can't look into it. That matters: llvm-mos gives a function that
+// can't be running twice at once static memory for its locals instead of
+// stack. To the optimizer, a function that might reach the switch might call
+// back into any fiber's entry, so its locals stay on the stack, and two
+// fibers waiting inside it each keep their own.
+
+i32 cs_getpagesize(void) { return 256; }
+
+i32 cs_mprotect(void *address, u32 length, i32 protection)
+{
+    (void)address; (void)length; (void)protection;
+    return 0;
+}
+
+i32 cs_usleep(u32 microseconds)
+{
+    u32 start = jiffies(), wait = (microseconds + 16666) / 16667;
+    while (jiffies() - start < wait) { }
+    return 0;
+}
+
+void cs_ZeroFiberSwitch(void **save, void *resume);
+void ZeroFiberStart(void);
+
+// top: the stack's top; bottom: its lowest byte, where Fibers.cs's pattern
+// (64 bytes) starts. Returns the stack pointer to give ZeroFiberSwitch, a
+// frame whose page 1 holds only the return into ZeroFiberStart, with __rc20
+// the entry, __rc22 its argument and __rc24 the shadow stack.
+void *cs_ZeroFiberInit(char *top, char *bottom, void (*entry)(void *), void *argument)
+{
+    unsigned char *frame = (unsigned char *)top - 15;
+    unsigned start = (unsigned)ZeroFiberStart - 1; // RTS adds 1
+    memset(frame, 0, 15);
+    *(void **)&frame[0] = (void *)entry;
+    *(void **)&frame[2] = argument;
+    *(void **)&frame[4] = bottom + 64;
+    frame[12] = 2;
+    frame[13] = (unsigned char)start;
+    frame[14] = (unsigned char)(start >> 8);
+    return frame;
+}
+
+__asm__(
+    ".section .text.cs_ZeroFiberSwitch,\"ax\",@progbits\n"
+    ".globl cs_ZeroFiberSwitch\n"
+    "cs_ZeroFiberSwitch:\n"
+    // __rc2/__rc3: where to store this stack's pointer; __rc4/__rc5: the
+    // one to resume. __rc16 to __rc19 are free to use (the caller's).
+    "    php\n"
+    "    pla\n"
+    "    sta __rc16\n"            // the flags, interrupts on or off
+    "    sei\n"
+    "    tsx\n"
+    "    txa\n"
+    "    eor #$ff\n"
+    "    sta __rc18\n"            // n = $FF - S
+    "    sec\n"                   // make room: 13 + n bytes
+    "    lda __rc0\n"
+    "    sbc #13\n"
+    "    sta __rc0\n"
+    "    bcs 1f\n"
+    "    dec __rc1\n"
+    "1:  sec\n"
+    "    lda __rc0\n"
+    "    sbc __rc18\n"
+    "    sta __rc0\n"
+    "    bcs 2f\n"
+    "    dec __rc1\n"
+    "2:  ldy #0\n"
+    "3:  lda mos16(__rc20),y\n"
+    "    sta (__rc0),y\n"
+    "    iny\n"
+    "    cpy #12\n"
+    "    bne 3b\n"
+    "    lda __rc18\n"
+    "    sta (__rc0),y\n"
+    "4:  cpx #$ff\n"              // page 1, from S+1 up
+    "    beq 5f\n"
+    "    inx\n"
+    "    iny\n"
+    "    lda $100,x\n"
+    "    sta (__rc0),y\n"
+    "    jmp 4b\n"
+    "5:  ldy #0\n"                // *save = the stack pointer
+    "    lda __rc0\n"
+    "    sta (__rc2),y\n"
+    "    iny\n"
+    "    lda __rc1\n"
+    "    sta (__rc2),y\n"
+    "    lda __rc4\n"             // the other fiber's stack
+    "    sta __rc0\n"
+    "    lda __rc5\n"
+    "    sta __rc1\n"
+    "    ldy #0\n"
+    "6:  lda (__rc0),y\n"
+    "    sta mos16(__rc20),y\n"
+    "    iny\n"
+    "    cpy #12\n"
+    "    bne 6b\n"
+    "    lda (__rc0),y\n"
+    "    sta __rc18\n"
+    "    eor #$ff\n"
+    "    tax\n"
+    "    txs\n"                   // S = $FF - n
+    "7:  cpx #$ff\n"
+    "    beq 8f\n"
+    "    inx\n"
+    "    iny\n"
+    "    lda (__rc0),y\n"
+    "    sta $100,x\n"
+    "    jmp 7b\n"
+    "8:  clc\n"                   // drop the frame
+    "    lda __rc0\n"
+    "    adc #13\n"
+    "    sta __rc0\n"
+    "    bcc 9f\n"
+    "    inc __rc1\n"
+    "9:  clc\n"
+    "    lda __rc0\n"
+    "    adc __rc18\n"
+    "    sta __rc0\n"
+    "    bcc 10f\n"
+    "    inc __rc1\n"
+    "10: lda __rc16\n"
+    "    pha\n"
+    "    plp\n"
+    "    rts\n"
+    // Where a new fiber's first switch returns to: the entry is an ordinary
+    // C# method, which takes its shadow stack as a hidden first argument, and
+    // the argument after it. It never returns: it switches away for good.
+    ".globl ZeroFiberStart\n"
+    "ZeroFiberStart:\n"
+    "    lda __rc24\n"
+    "    sta __rc2\n"
+    "    lda __rc25\n"
+    "    sta __rc3\n"
+    "    lda __rc22\n"
+    "    sta __rc4\n"
+    "    lda __rc23\n"
+    "    sta __rc5\n"
+    "    jmp (__rc20)\n");

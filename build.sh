@@ -69,6 +69,8 @@ SMALL_SAMPLES=(
     SmallDoubleFormats
     SmallDecimalFormats
     SmallKeys
+    SmallFibers
+    SmallChannels
 )
 ALL_SAMPLES=(
     Tiny
@@ -109,9 +111,9 @@ ALL_SAMPLES=(
     TensorsAvx
     "${SMALL_SAMPLES[@]}"
 )
-# Samples WebAssembly can't run: Fibers switches stacks, which a WebAssembly
+# Samples WebAssembly can't run: the fiber samples switch stacks, which a WebAssembly
 # program has no way to do.
-NOT_WASM=" Fibers "
+NOT_WASM=" Fibers SmallFibers SmallChannels "
 # Programs with kernels for the GPU (Metal): only --gpu builds them.
 GPU_SAMPLES=(Gpu)
 # Simd and Kernels benchmark SIMD instructions, which a 386 doesn't have.

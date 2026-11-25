@@ -8,11 +8,12 @@ index: 26
 `Fiber` from `lib/Fibers.cs` runs many functions on one system thread, each on a stack of its own. They
 take turns: a fiber runs until it yields, sleeps, waits on a channel or ends, and then the next one in
 line runs. `Channel<T>` passes values between them. Switching is cooperative, so fibers need no locks
-among themselves. `samples/Fibers.cs` runs every example below.
+among themselves. `samples/Fibers.cs` runs every example below; `SmallFibers` and `SmallChannels`
+test the same on machines too small for it.
 
-Fibers work on Linux (x64 and arm64), macOS, Windows, UEFI, DOS and microcontrollers (the Raspberry
-Pi Pico 2 and the Arduino Uno R4). They need a way to switch stacks, so there are none on
-WebAssembly, and none yet on the C64.
+Fibers work on Linux (x64 and arm64), macOS, Windows, UEFI, DOS, microcontrollers (the Raspberry Pi
+Pico 2 and the Arduino Uno R4) and the Commodore 64. They need a way to switch stacks, so there are
+none on WebAssembly.
 
 ## Take turns
 
@@ -138,32 +139,52 @@ opened in one fiber doesn't send another fiber's objects to its arena.
 ## Choose a stack size
 
 A fiber's stack is `Fiber.DefaultStackSize` unless `Spawn` is told otherwise
-(`stackSize: 16 * 1024`): 256 KB, or 4 KB on DOS and microcontrollers. Spawn never gives less than
-`Fiber.MinStackSize`: 16 KB, or 1 KB on DOS and microcontrollers. Below the stack is a guard page,
-so a fiber that overflows its stack stops the program with a segmentation fault instead of
-overwriting memory.
+(`stackSize: 16 * 1024`), and never less than `Fiber.MinStackSize`. Both depend on the machine:
 
-UEFI, DOS and microcontrollers can't protect a page, so there the guard page is only reserved
-memory (a page: 4 KB on UEFI, 1 KB on DOS and microcontrollers). Each time a fiber switches back, `Run` also checks a
+| Machine | `DefaultStackSize` | `MinStackSize` | Reserved below each stack |
+|---|---|---|---|
+| Linux, macOS, Windows, UEFI | 256 KB | 16 KB | a page, 4 KB or more |
+| DOS | 32 KB | 4 KB | 2 KB |
+| Pico 2, Uno R4 | 4 KB | 1 KB | 1 KB |
+| Commodore 64 | 2 KB | 512 bytes | 256 bytes |
+
+On Linux, macOS and Windows the page below the stack is a guard page, so a fiber that overflows its
+stack stops the program with a segmentation fault instead of overwriting memory.
+
+UEFI, DOS, microcontrollers and the C64 can't protect a page, so there the memory below the stack is
+only reserved. Each time a fiber switches back, `Run` also checks a
 pattern at the bottom of its stack, and stops the program with `Fiber 1 overflowed its stack` if the
-pattern has changed. That catches the overflow, but only at the next switch. A fiber that goes more
-than a page past its stack before switching may already have overwritten other memory, so give fibers
-there room to spare. The Pico 2's processor (a Cortex-M33) does better: it has a register for the
+pattern has changed. That catches the overflow, but only at the next switch. A fiber that goes past
+the reserved memory before switching may already have overwritten other memory, so give fibers there
+room to spare. The Pico 2's processor (a Cortex-M33) does better: it has a register for the
 lowest address the stack may reach, the switch sets it for each fiber, and a fiber that goes past it
 stops the program with a fault at once.
 
 ## Fibers on a microcontroller
 
-The Pico 2 has 520 KB of RAM and the Uno R4 32 KB, so count what fibers cost. (DOS gets the same
-small stacks, for a machine of a few MB; what follows about the shadow stack holds there too.) Each takes its stack, a
-page below it, and about a hundred bytes for its record and state, all freed when it ends. Six fibers
-at the default size come to about 30 KB, more than an Uno R4 has to spare. Give them small stacks
-there (`stackSize: 1024`), or run fewer at once.
+The Pico 2 has 520 KB of RAM and the Uno R4 32 KB, so count what fibers cost. Each takes its stack,
+the memory reserved below it, and about a hundred bytes for its record and state, all freed when it
+ends. Six fibers at the default size come to about 30 KB, more than an Uno R4 has to spare. Give
+them small stacks there (`stackSize: 1024`), or run fewer at once.
 
 The bottom quarter of a microcontroller fiber's stack holds its shadow stack: there, C# code keeps
-the local variables that refer to objects in a stack of their own, and each fiber needs one. An
-interrupt that arrives while a fiber runs uses the fiber's stack for its handler, so leave room for
-that too.
+the local variables that refer to objects in a stack of their own, and each fiber needs one. (On DOS
+and the C64 the shadow stack also starts at the bottom of the fiber's stack, without a fixed share.)
+An interrupt that arrives while a fiber runs uses the fiber's stack for its handler, so leave room
+for that too.
+
+## Fibers on a Commodore 64
+
+A program and its heap share 50 KB, and fibers' code takes several of them: `SmallFibers` leaves
+about 7 KB of heap, room for seven fibers on the smallest stacks (900 bytes each, with what's
+reserved below the stack and the fiber's record). Spawn them with `stackSize: Fiber.MinStackSize`,
+and make the objects they're given before spawning: an object made between two spawns stays between
+the memory the fibers free, and can split it into pieces too small for the next ones.
+
+The 6502 keeps return addresses and saved registers on its own stack, which is always the same 256
+bytes of memory. So a switch copies the part of it in use onto the fiber's stack, and the next
+fiber's part back: the deeper the calls when a fiber waits, the slower the switch, and the more of
+its stack the copy takes.
 
 ## What to watch out for
 
