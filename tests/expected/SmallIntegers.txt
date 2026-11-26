@@ -1,4 +1,5 @@
 PASS 32-bit integers (8 checks)
 PASS 64-bit integers (6 checks)
+PASS Division and multiplication tables (2 checks)
 
 All checks passed.

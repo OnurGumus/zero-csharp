@@ -470,6 +470,188 @@ char *cs_getenv(const char *name) { (void)name; return 0; } // no environment
 i32 cs_sched_yield(void) { return 0; }                      // no other thread to yield to
 i32 cs_get_nprocs(void) { return 1; }
 
+// ---- integer division and multiplication ---------------------------------------------
+//
+// The 6502 can't multiply or divide, and llvm-mos's routines for C#'s 32-bit
+// numbers are slow: 1,300 cycles to divide 16-bit numbers, 5,400 larger
+// ones, 1,450 to multiply, of the 19,700 cycles in a frame. Most divisors
+// and factors in a program are small (10 for a digit, 40 for a screen row),
+// so ll2mos (sdk/ZeroCSharp.Bitcode/Ll2Mos.cs) sends C#'s 32-bit divisions,
+// and its multiplications of two variables, here. A divisor under 256 or a
+// factor under 65,536 takes one of the two routines in assembly below:
+// dividing costs about 800 cycles for a 16-bit number and 1,400 for a
+// larger one, multiplying by a byte about 550. Anything larger goes to
+// llvm-mos's routines, the 16-bit one when both numbers fit. C# has already
+// checked for a zero divisor and for int.MinValue / -1.
+
+// n / d for a divisor of 1-255, in the 6502's own instructions: shift the
+// dividend left a bit at a time into an 8-bit remainder, subtracting d
+// whenever it fits, which sets the quotient's next bit (shifted in at the
+// bottom). About 35 cycles a bit, and leading zero bytes are skipped first,
+// so a 16-bit number takes 16 steps. llvm-mos passes n in A, X, __rc2 and
+// __rc3 (low byte first) and d in __rc4, and expects the quotient back in
+// the same four; the remainder is left in zero_division_rest.
+u32 zero_divide_by_byte(u32 n, unsigned char d);
+extern unsigned char zero_division_rest;
+__asm__(
+    "  .section .noinit.zero_division_rest,\"aw\",@nobits\n"
+    "  .globl zero_division_rest\n"
+    "zero_division_rest:\n"
+    "  .zero 1\n"
+    "  .section .text.zero_divide_by_byte,\"ax\",@progbits\n"
+    "  .globl zero_divide_by_byte\n"
+    "zero_divide_by_byte:\n"
+    "  sta __rc6\n"                  // the dividend, low byte first: __rc6-__rc9
+    "  stx __rc7\n"
+    "  lda __rc2\n"
+    "  sta __rc8\n"
+    "  lda __rc3\n"
+    "  sta __rc9\n"
+    "  ldy #32\n"                    // bits left to divide
+    ".Lzero_skip:\n"                 // a zero top byte: move the bytes up
+    "  lda __rc9\n"
+    "  bne .Lzero_divide\n"
+    "  cpy #8\n"
+    "  beq .Lzero_divide\n"
+    "  lda __rc8\n"
+    "  sta __rc9\n"
+    "  lda __rc7\n"
+    "  sta __rc8\n"
+    "  lda __rc6\n"
+    "  sta __rc7\n"
+    "  lda #0\n"
+    "  sta __rc6\n"
+    "  tya\n"
+    "  sec\n"
+    "  sbc #8\n"
+    "  tay\n"
+    "  jmp .Lzero_skip\n"
+    ".Lzero_divide:\n"
+    "  lda #0\n"                     // the remainder
+    ".Lzero_bit:\n"
+    "  asl __rc6\n"
+    "  rol __rc7\n"
+    "  rol __rc8\n"
+    "  rol __rc9\n"
+    "  rol a\n"
+    "  bcs .Lzero_subtract\n"        // a ninth bit: more than d for sure
+    "  cmp __rc4\n"
+    "  bcc .Lzero_next\n"
+    ".Lzero_subtract:\n"
+    "  sbc __rc4\n"                  // carry is set on both ways here
+    "  inc __rc6\n"
+    ".Lzero_next:\n"
+    "  dey\n"
+    "  bne .Lzero_bit\n"
+    "  sta zero_division_rest\n"
+    "  lda __rc8\n"
+    "  sta __rc2\n"
+    "  lda __rc9\n"
+    "  sta __rc3\n"
+    "  lda __rc6\n"
+    "  ldx __rc7\n"
+    "  rts\n"
+    "  .text\n");
+
+// n * m for m of 0-65535: add n, shifted, for each bit of m, stopping when
+// m runs out of bits: 8 steps for a byte. llvm-mos's routine takes about
+// 1,450 cycles for any product. n comes as for the division, m in __rc4
+// (low) and __rc5.
+u32 zero_multiply_short(u32 n, unsigned m);
+__asm__(
+    "  .section .text.zero_multiply_short,\"ax\",@progbits\n"
+    "  .globl zero_multiply_short\n"
+    "zero_multiply_short:\n"
+    "  sta __rc6\n"                  // n, shifted left as m's bits go by
+    "  stx __rc7\n"
+    "  lda __rc2\n"
+    "  sta __rc8\n"
+    "  lda __rc3\n"
+    "  sta __rc9\n"
+    "  lda #0\n"                     // the product: __rc10-__rc13
+    "  sta __rc10\n"
+    "  sta __rc11\n"
+    "  sta __rc12\n"
+    "  sta __rc13\n"
+    ".Lzero_multiply:\n"
+    "  lda __rc4\n"
+    "  ora __rc5\n"
+    "  beq .Lzero_product\n"
+    "  lsr __rc5\n"
+    "  ror __rc4\n"
+    "  bcc .Lzero_shift\n"
+    "  clc\n"
+    "  lda __rc10\n"
+    "  adc __rc6\n"
+    "  sta __rc10\n"
+    "  lda __rc11\n"
+    "  adc __rc7\n"
+    "  sta __rc11\n"
+    "  lda __rc12\n"
+    "  adc __rc8\n"
+    "  sta __rc12\n"
+    "  lda __rc13\n"
+    "  adc __rc9\n"
+    "  sta __rc13\n"
+    ".Lzero_shift:\n"
+    "  asl __rc6\n"
+    "  rol __rc7\n"
+    "  rol __rc8\n"
+    "  rol __rc9\n"
+    "  jmp .Lzero_multiply\n"
+    ".Lzero_product:\n"
+    "  lda __rc12\n"
+    "  sta __rc2\n"
+    "  lda __rc13\n"
+    "  sta __rc3\n"
+    "  lda __rc10\n"
+    "  ldx __rc11\n"
+    "  rts\n"
+    "  .text\n");
+
+// The low 32 bits of a product are the same for signed and unsigned numbers.
+u32 zero_mul32(u32 a, u32 b)
+{
+    if (b < 65536)
+        return zero_multiply_short(a, (unsigned)b);
+    if (a < 65536)
+        return zero_multiply_short(b, (unsigned)a);
+    return a * b;
+}
+
+u32 zero_udiv32(u32 a, u32 b)
+{
+    if (b < 256)
+        return zero_divide_by_byte(a, (unsigned char)b);
+    if ((a | b) < 65536)
+        return (unsigned)a / (unsigned)b;
+    return a / b;
+}
+
+u32 zero_urem32(u32 a, u32 b)
+{
+    if (b < 256) {
+        zero_divide_by_byte(a, (unsigned char)b);
+        return zero_division_rest;
+    }
+    if ((a | b) < 65536)
+        return (unsigned)a % (unsigned)b;
+    return a % b;
+}
+
+// Rounded towards zero, the remainder with the dividend's sign, as C# does.
+i32 zero_sdiv32(i32 a, i32 b)
+{
+    u32 q = zero_udiv32(a < 0 ? 0 - (u32)a : (u32)a, b < 0 ? 0 - (u32)b : (u32)b);
+    return (i32)((a < 0) != (b < 0) ? 0 - q : q);
+}
+
+i32 zero_srem32(i32 a, i32 b)
+{
+    u32 r = zero_urem32(a < 0 ? 0 - (u32)a : (u32)a, b < 0 ? 0 - (u32)b : (u32)b);
+    return (i32)(a < 0 ? 0 - r : r);
+}
+
 // ---- floating point ------------------------------------------------------------------
 //
 // The 6502 has none; llvm-mos computes float and double in software, slowly

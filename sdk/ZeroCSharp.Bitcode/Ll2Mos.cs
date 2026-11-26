@@ -19,11 +19,11 @@
 //                            way. NativeAOT-LLVM only uses packed structs, so
 //                            nothing else in a layout depends on the target.
 //
-// Five more things, each explained where it is done: the exception flag is
-// folded away, imported functions are called directly, every function is
-// marked to be compiled for size,
-// float-to-integer conversions call the runtime, and functions whose
-// declaration and definition disagree are refused.
+// Six more things, each explained where it is done: the exception flag is
+// folded away, imported functions are called directly, 32-bit division and
+// multiplication call the runtime, every function is marked to be compiled
+// for size, float-to-integer conversions call the runtime, and functions
+// whose declaration and definition disagree are refused.
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -244,6 +244,7 @@ static class Ll2Mos
         static readonly Regex Group = new(@" (#\d+) \{$", Options);
         static readonly Regex AllocaPtr = new(@"= alloca ptr\b", Options);
         static readonly Regex GepPtr = new(@"(getelementptr(?: inbounds| nuw| nusw)* \(?)ptr,", Options);
+        static readonly Regex Arithmetic = new(@"^(\s*%[\w.$]+) = (udiv|urem|sdiv|srem|mul)(?: exact| nuw| nsw)* i32 (.*)$", Options);
         static readonly Regex FpToIntSat = new(@"@llvm\.fpto([su])i\.sat\.(i\d+)\.(f\d+)", Options);
 
         // Constructs that would need a rewrite of their own, and don't occur.
@@ -255,6 +256,8 @@ static class Ll2Mos
         readonly SortedDictionary<string, string?> _imports = new(StringComparer.Ordinal);
         // In the function being read: the values that hold one, by name.
         readonly Dictionary<string, string> _importIn = new(StringComparer.Ordinal);
+        // The arithmetic helpers this module now calls (zero_udiv32, ...).
+        readonly SortedSet<string> _helpers = new(StringComparer.Ordinal);
         // The attribute groups ("attributes #1 = { noinline optnone }") that
         // switch optimization off.
         readonly HashSet<string> _unoptimized;
@@ -265,11 +268,14 @@ static class Ll2Mos
         // Declarations of the functions that replaced cells, unless the
         // module has them. Each has the type its calls use: the optimizer
         // treats a call to a function of another type as undefined.
+        // And of the arithmetic helpers (zero_udiv32, ...).
         public IEnumerable<string> Declarations(string text) =>
             _imports.Where(i => !text.Contains($"@cs_{i.Key}(", StringComparison.Ordinal))
                 .Select(i => i.Value is { } type
                     ? $"declare {type[..type.IndexOf(' ')]} @cs_{i.Key}{type[(type.IndexOf(' ') + 1)..]}"
-                    : $"declare void @cs_{i.Key}()");
+                    : $"declare void @cs_{i.Key}()")
+                .Concat(_helpers.Where(name => !text.Contains($"@{name}(", StringComparison.Ordinal))
+                    .Select(name => $"declare i32 @{name}(i32, i32)"));
 
         public List<string> Line(string line)
         {
@@ -351,6 +357,28 @@ static class Ll2Mos
                 _imports.TryAdd(name, null);
                 _importIn[value] = name;
                 return [$"{m.Groups[1].Value} = getelementptr i8, ptr @cs_{name}, i32 0"];
+            }
+
+            // C#'s 32-bit divisions, and multiplications of two variables,
+            // call c64/runtime.c, which is several times faster than
+            // llvm-mos's routines when the divisor or a factor fits in 16 bits,
+            // as it usually does. A division by a power of two stays: the
+            // optimizer makes it a shift. So does a multiplication by a
+            // constant (an array index times the element's size): the
+            // optimizer makes it a few shifts and adds.
+            m = Arithmetic.Match(line);
+            if (m.Success)
+            {
+                List<string> operands = Operands(m.Groups[3].Value);
+                bool constant = operands.Count == 2 && (m.Groups[2].Value == "mul"
+                    ? operands.Any(o => long.TryParse(o, out _))
+                    : long.TryParse(operands[1], out long divisor) && divisor > 0 && (divisor & (divisor - 1)) == 0);
+                if (operands.Count == 2 && !constant)
+                {
+                    string helper = $"zero_{m.Groups[2].Value}32";
+                    _helpers.Add(helper);
+                    return [$"{m.Groups[1].Value} = call i32 @{helper}(i32 {operands[0]}, i32 {operands[1]})"];
+                }
             }
 
             m = Store.Match(line);

@@ -55,6 +55,54 @@ public static class Program
     [MethodImpl(MethodImplOptions.NoInlining)] static long L(long value) => s_never ? 0 : value;
     [MethodImpl(MethodImplOptions.NoInlining)] static ulong UL(ulong value) => s_never ? 0 : value;
 
+    // Numbers at the edges of what division and multiplication do in pieces
+    // (a byte, 16 bits, the sign), for every pair of which the C64 runtime's
+    // fast paths and llvm-mos's routines must agree with .NET.
+    static readonly int[] s_values =
+    [
+        0, 1, -1, 2, 3, 7, 10, -10, 37, 40, 255, 256, 257, -255, -256, 1000, 65535, 65536,
+        -65536, 123456, 9999999, int.MaxValue, int.MinValue, int.MinValue + 1,
+    ];
+
+    // FNV-1a over the results, the same on every target.
+    static uint s_hash = 2166136261;
+    static void Mix(int value) => s_hash = (s_hash ^ (uint)value) * 16777619;
+
+    static void DivisionTable()
+    {
+        bool identities = true;
+        foreach (int x in s_values)
+        {
+            int a = I(x);
+            foreach (int y in s_values)
+            {
+                int b = I(y);
+                Mix(a * b);
+                if (b == 0)
+                    continue;
+                uint ua = (uint)a, ub = (uint)b;
+                Mix((int)(ua / ub));
+                Mix((int)(ua % ub));
+                identities &= (ua / ub) * ub + ua % ub == ua && ua % ub < ub;
+                if (a == int.MinValue && b == -1)
+                    continue;           // .NET throws OverflowException
+                Mix(a / b);
+                Mix(a % b);
+                identities &= (a / b) * b + a % b == a && (a % b == 0 || (a % b < 0) == (a < 0));
+            }
+            // By constants: C# folds nothing here, the compiler may.
+            Mix(a / 10);
+            Mix(a % 10);
+            Mix(a / -3);
+            Mix(a * 37);
+            Mix(a * -5);
+            Mix((int)((uint)a / 40));
+            Mix((int)((uint)a % 40));
+        }
+        Check("quotient * divisor + remainder == dividend, for every pair", identities);
+        Check("the same results as .NET, for every pair", s_hash == 0xEF03E68Bu);
+    }
+
     public static int Main()
     {
         s_never = false;
@@ -80,6 +128,9 @@ public static class Program
         Check("long compares", L(-1) < L(1) && UL(ulong.MaxValue) > UL(1) && L(1L << 32) > L(int.MaxValue));
         Check("long to int", (int)L(0x1_2345_6789) == 0x2345_6789 && (long)I(-1) == -1 && (long)U(uint.MaxValue) == 4294967295);
         End("64-bit integers");
+
+        DivisionTable();
+        End("Division and multiplication tables");
 
         Console.WriteLine();
         if (s_failures == 0)
