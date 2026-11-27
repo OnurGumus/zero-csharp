@@ -61,6 +61,11 @@
 // Parallel.For iteration, or out of a microcontroller's interrupt handler
 // (Board.StartTicks) into the code it interrupted.
 //
+// Async code: each step of an async method runs as a Catch.Run of its own
+// (lib/Tasks.cs), so a throw in one faults the method's task, and awaiting
+// the task throws again. In async code, Catch.RunAsync awaits and gives the
+// exception back.
+//
 // On WebAssembly nothing can jump back up the stack: there a `throw` still
 // ends the program.
 //
@@ -168,6 +173,38 @@ public static class Catch
         socket.KeepOpen();
     }
 
+    /// <summary>
+    /// Catch.Run for async code: awaits what <paramref name="body"/> returns
+    /// and gives back what it threw, before or after any await, or null. A
+    /// canceled one gives back its OperationCanceledException. Each step of
+    /// an async method runs as a Catch.Run of its own (lib/Tasks.cs), so
+    /// what a step opened is closed when it throws.
+    /// </summary>
+    public static async System.Threading.Tasks.Task<Exception> RunAsync(Func<System.Threading.Tasks.Task> body)
+    {
+        if (body == null)
+            throw new ArgumentNullException(nameof(body));
+        // A lambda that isn't async can throw before it has a task.
+        Exception thrown = Run(body, out System.Threading.Tasks.Task task);
+        if (thrown != null)
+            return thrown;
+        await task.ConfigureAwait(System.Threading.Tasks.ConfigureAwaitOptions.SuppressThrowing);
+        return task.Failure;
+    }
+
+    // For lib/Tasks.cs: one step of an async method (its state machine's
+    // MoveNext) as a Catch.Run. Returns what the step threw, or null.
+    internal static Exception RunStep<TStateMachine>(ref TStateMachine stateMachine)
+        where TStateMachine : System.Runtime.CompilerServices.IAsyncStateMachine
+    {
+        unsafe
+        {
+            // SAFETY: the state machine is the caller's (on its stack, or in
+            // a box it holds), which outlives the call.
+            return Invoke(StepInvoker<TStateMachine>.Instance, Unsafe.AsPointer(ref stateMachine));
+        }
+    }
+
     // ---- how ------------------------------------------------------------------
 
     // ZeroCatchCall calls a plain function with one pointer: Trampoline, with
@@ -224,6 +261,16 @@ public static class Catch
                 ref FuncFrame<TResult> f = ref Unsafe.AsRef<FuncFrame<TResult>>(frame);
                 f.Result = f.Body();
             }
+        }
+    }
+
+    sealed class StepInvoker<TStateMachine> : Invoker where TStateMachine : System.Runtime.CompilerServices.IAsyncStateMachine
+    {
+        public static readonly StepInvoker<TStateMachine> Instance = new StepInvoker<TStateMachine>();
+
+        public override unsafe void Invoke(void* frame)
+        {
+            unsafe { Unsafe.AsRef<TStateMachine>(frame).MoveNext(); } // SAFETY: RunStep passes its state machine's address.
         }
     }
 

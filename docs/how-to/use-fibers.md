@@ -309,8 +309,9 @@ static async Task<int> Sleeper(int times)
   channel has reused it ends the program with a message. `AsTask()` or `Preserve()` gives
   something to keep. `IAsyncEnumerable<T>` works with `await foreach`, but there are no async
   iterators (`yield return` in an async method).
-- `throw` ends the program, so a task is never faulted. There's no `ContinueWith` or
-  `SynchronizationContext`. `ConfigureAwait(bool)` changes nothing, since there's no context to
+- A throw in an async method faults its task, and awaiting it, `Wait()` or `.Result` throws the
+  exception again, as in .NET; see [Recover from errors](recover-from-errors.html#async-code).
+  A faulted task that nothing awaited is reported on stderr when `Main` returns or `Environment.Exit` is called. There's no `ContinueWith` or `SynchronizationContext`. `ConfigureAwait(bool)` changes nothing, since there's no context to
   return to.
 - Tasks are ordinary objects, and zero mode never frees them. An async method's box is made once
   and reused for every await in it, and timers and channels reuse their tasks. But `Task.Delay`
@@ -369,10 +370,11 @@ doesn't link their code.
 `CancelAfter`, `Register`, linked sources, and token overloads of `Task.Delay`, `Task.Run` and
 `WaitAsync`. A canceled delay leaves the timer, so `Fiber.Run` doesn't wait for it.
 
-The difference is what a canceled task does to its awaiter. .NET throws `OperationCanceledException`,
-and zero mode has no exceptions, so a plain `await` of a canceled task ends the program, as an
-unhandled exception would. So do `.Result`, `Wait()` and `ThrowIfCancellationRequested`. To carry on
-instead, await with .NET 8's `SuppressThrowing` and look at `IsCanceled`:
+A canceled task throws at its awaiter, as in .NET: an `OperationCanceledException` (a
+`TaskCanceledException` if nothing threw one). Zero mode has no `catch` blocks, so outside a
+[`Catch.Run`](recover-from-errors.html) that ends the program, and so do `.Result`, `Wait()` and
+`ThrowIfCancellationRequested`. To carry on instead, await with .NET 8's `SuppressThrowing` and look
+at `IsCanceled`:
 
 <!-- sample: samples/Tasks.cs cancel -->
 ```csharp
@@ -404,7 +406,8 @@ static async Task<int> Work(CancellationToken token)
 }
 ```
 
-Code ported from .NET that catches `OperationCanceledException` has to be changed to one of these.
+Code ported from .NET that catches `OperationCanceledException` has to be changed to one of these,
+or to `Catch.RunAsync`.
 `SuppressThrowing` works on a `Task`, not a `Task<T>` (there would be no result to return), as in
 .NET: cast to `Task` first. Fibers' own waits take a token too: `Fiber.Sleep(ms, token)` and
 `channel.Receive(out value, token)` return `false` if canceled.

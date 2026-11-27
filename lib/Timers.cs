@@ -112,14 +112,23 @@ internal abstract class TimerFiber
             s_running--;
             return;
         }
-        if (s_running++ == 0)
-            unsafe { Environment.s_atMainReturn = &CheckAtMainReturn; } // SAFETY: a static method
+        if (s_running++ == 0 && s_installed == 0 && System.Threading.Interlocked.CompareExchange(ref s_installed, 1, 0) == 0)
+            unsafe { s_next = Environment.AddAtMainReturn(&CheckAtMainReturn); } // SAFETY: a static method
     }
+
+    static int s_installed;
+    static unsafe delegate*<void> s_next;
 
     // Main returned with a timer running: it would never have fired again
     // (or at all), which in .NET it would have, on its own thread.
     static void CheckAtMainReturn()
     {
+        unsafe
+        {
+            // SAFETY: the check this one replaced, a static method.
+            if (s_next != null)
+                s_next();
+        }
         if (s_running > 0)
             Environment.FailFast("Timer: Main returned with a timer still running. Timers fire only inside Fiber.Run(): call it after starting them, instead of waiting in Console.ReadLine. Stop timers that shouldn't fire.");
     }
