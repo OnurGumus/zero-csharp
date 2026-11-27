@@ -192,6 +192,47 @@ let failAfter () =
     }
 printfn "handler after a scope allocates outside it: %b" (Async.RunSynchronously(failAfter ()))
 
+// docs:scoped-agent
+// The library runs this agent's loop: each message's handler gets a scope of
+// perMessage, across its waits, and the loop makes nothing per message.
+// State lives outside the handler.
+let seen = ref 0
+
+[<Safety "a message's values stay in its scope; only an int is kept">]
+let startSummer () =
+    MailboxProcessor<int>.StartScoped(perMessage, fun n ->
+        async {
+            let squares = [ for i in 1 .. n -> i * i ]
+            do! Async.SwitchToThreadPool() // a wait inside the scope
+            seen.Value <- seen.Value + List.sum squares % 1000
+        })
+// docs:end
+
+let summer = startSummer ()
+for _ in 1 .. 3 do // the first messages make the loop's objects
+    summer.Post 50
+    Fiber.Run()
+let beforeScoped = GC.GetTotalAllocatedBytes()
+for _ in 1 .. 1000 do
+    summer.Post 50
+    Fiber.Run()
+let leftScoped = GC.GetTotalAllocatedBytes() - beforeScoped
+printfn "scoped agent: %d, left behind for 1000 messages: %d bytes" seen.Value leftScoped
+
+// Canceling its token stops a scoped agent: later messages stay queued.
+let handled = ref 0
+let stopScoped = new System.Threading.CancellationTokenSource()
+[<Safety "the handler keeps only an int">]
+let startStoppable () =
+    MailboxProcessor<int>.StartScoped(perMessage, (fun n -> async { handled.Value <- handled.Value + n }), stopScoped.Token)
+let stoppable = startStoppable ()
+stoppable.Post 1
+Fiber.Run()
+stopScoped.Cancel()
+stoppable.Post 1000
+Fiber.Run()
+printfn "stopped scoped agent: handled %d, %d still queued" handled.Value stoppable.CurrentQueueLength
+
 // Canceled inside the scope: its finally runs, then the scope is freed.
 [<Safety "the scope returns an int">]
 let sleepy () =

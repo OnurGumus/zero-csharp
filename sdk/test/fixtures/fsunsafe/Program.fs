@@ -114,6 +114,8 @@ let markedArena (n: int) = arena frame { return n + 1 }
 
 let unmarkedInArena () = Async.InArena(frame, async { return 1 }) // warns
 
+let unmarkedScoped () = MailboxProcessor<int>.StartScoped(frame, fun _ -> async { return () }) // warns
+
 let game = Game()
 printfn "%d %d %d" (playFrame 10) (nested 2) (game.Peak + game.Unmarked)
 printfn "%d %d" (unmarkedLambda 3) (unmarkedInner 4)

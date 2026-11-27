@@ -60,8 +60,8 @@ namespace Microsoft.FSharp.Control
         // back the one from when its frame began, which may be an arena
         // whose scope has ended since.
         let mutable scoped = home
-        // Its Task holds the box lib makes for this runner, the first time.
-        [<DefaultValue>] val mutable Builder: AsyncTaskMethodBuilder
+        // What lib's dispatcher resumes: made at the first wait, at home.
+        [<DefaultValue>] val mutable internal Waiting: RunnerStep
         [<DefaultValue>] val mutable Next: unit -> unit
         // Where a throw goes now: the innermost try's handler. Null outside
         // any: a throw goes on out.
@@ -76,27 +76,22 @@ namespace Microsoft.FSharp.Control
         member internal _.Home = home
         member internal _.Scoped with get () = scoped and set value = scoped <- value
 
-        /// Goes on with k once t (not completed) has.
-        member internal r.Await(t: Task, k: unit -> unit) =
+        // The step lib's dispatcher resumes, once it's told to.
+        member private r.Suspend(k: unit -> unit) : RunnerStep =
             r.Next <- k
-            let current = Arena.CurrentAllocator()
-            r.Resume <- current
-            Arena.SetAllocator home
-            let mutable awaiter = t.GetAwaiter()
-            let mutable me = r
-            r.Builder.AwaitUnsafeOnCompleted(&awaiter, &me)
-            Arena.SetAllocator current
+            r.Resume <- Arena.CurrentAllocator()
+            if isNull r.Waiting then
+                Arena.SetAllocator home
+                r.Waiting <- RunnerStep(r)
+                Arena.SetAllocator r.Resume
+            r.Waiting
 
-        /// Goes on with k from the dispatcher, after the other fibers have run.
-        member internal r.Yield(k: unit -> unit) =
-            r.Next <- k
-            let current = Arena.CurrentAllocator()
-            r.Resume <- current
-            Arena.SetAllocator home
-            let mutable awaiter = Task.Yield().GetAwaiter()
-            let mutable me = r
-            r.Builder.AwaitUnsafeOnCompleted(&awaiter, &me)
-            Arena.SetAllocator current
+        /// Goes on with k once t (not completed) has: the dispatcher resumes
+        /// this runner then. Lib's own Continuation, so a wait makes nothing.
+        member internal r.Await(t: Task, k: unit -> unit) = t.AddObserver(r.Suspend k)
+
+        /// Goes on with k from the dispatcher, after what's ready already.
+        member internal r.Yield(k: unit -> unit) = AsyncMethods.Ready(r.Suspend k)
 
         /// Runs f with the allocator where the computation started: for
         /// objects that may outlive an arena it's in now.
@@ -117,13 +112,19 @@ namespace Microsoft.FSharp.Control
                 Runner.steps <- Runner.steps + 1
                 k ()
 
+        // Catch.Run's form with a state, so a guarded step makes no delegate
+        // (an Action per step would be 48 bytes, outside any arena).
+        static member private Invoke(step: byref<unit -> unit>) = step ()
+        static member val private InvokeStep = CatchAction<unit -> unit>(fun step -> Runner.Invoke(&step))
+
         /// Runs f, inside a try (Error set) under a Catch.Run, whose throw
         /// goes to Error as it is then.
         member internal r.Guard(f: unit -> unit) =
             if isNull (box r.Error) then
                 f ()
             else
-                match Catch.Run(Action(f)) with
+                let mutable step = f
+                match Catch.Run(&step, Runner.InvokeStep) with
                 | null -> ()
                 | e ->
                     Arena.SetAllocator scoped
@@ -134,17 +135,22 @@ namespace Microsoft.FSharp.Control
             let handler = r.Error
             if isNull (box handler) then raise e else handler e
 
-        interface IAsyncStateMachine with
-            member r.MoveNext() =
-                Runner.steps <- 0
-                let k = r.Next
-                r.Next <- Unchecked.defaultof<_>
-                let dispatcher = Arena.CurrentAllocator()
-                Arena.SetAllocator r.Resume
-                r.Guard k
-                Arena.SetAllocator dispatcher
+        /// The dispatcher goes on with the computation.
+        member internal r.Resumed() =
+            Runner.steps <- 0
+            let k = r.Next
+            r.Next <- Unchecked.defaultof<_>
+            let dispatcher = Arena.CurrentAllocator()
+            Arena.SetAllocator r.Resume
+            r.Guard k
+            Arena.SetAllocator dispatcher
 
-            member _.SetStateMachine(_) = ()
+    /// A Runner as lib's dispatcher sees it: what a task it waits for tells
+    /// when it completes (Observer.Completed queues it), and what the
+    /// dispatcher calls then.
+    and [<Sealed; AllowNullLiteral>] internal RunnerStep(runner: Runner) =
+        inherit Continuation()
+        override _.Resume() = runner.Resumed()
 
     // ---------------------------------------------------------------- async
 
@@ -623,8 +629,8 @@ namespace Microsoft.FSharp.Control
                 entry <- entry.Next
 
     [<Sealed; AllowNullLiteral>]
-    type internal Message<'Msg>(value: 'Msg) =
-        member _.Value = value
+    type internal Message<'Msg>() =
+        [<DefaultValue>] val mutable Value: 'Msg
         [<DefaultValue>] val mutable Next: Message<'Msg>
 
     /// An agent: a computation that takes the messages posted to it, in
@@ -639,6 +645,11 @@ namespace Microsoft.FSharp.Control
         let mutable count = 0
         // Set while the body waits for a message.
         let mutable arrived: TaskCompletionSource = null
+        // StartScoped's loop's task, set while it waits for a message.
+        let mutable wake: Task = null
+        // Nodes taken off the queue, for Post to use again: a busy agent
+        // makes none once it has as many as it ever holds at once.
+        let mutable spare: Message<'Msg> = null
         let mutable started = false
         let token = defaultArg cancellationToken AsyncCode.defaultSource.Token
         // The allocator where the agent was made: its queue's nodes come from
@@ -674,6 +685,9 @@ namespace Microsoft.FSharp.Control
                     if isNull prev then first <- m.Next else prev.Next <- m.Next
                     if Object.ReferenceEquals(m, last) then last <- prev
                     count <- count - 1
+                    m.Value <- Unchecked.defaultof<'Msg>
+                    m.Next <- spare
+                    spare <- m
                 | ValueNone ->
                     prev <- m
                     m <- m.Next
@@ -740,15 +754,51 @@ namespace Microsoft.FSharp.Control
         /// must not be made in its arena, as the agent may take it later: a
         /// struct (copied) is fine, as is PostAndReply's.
         member _.Post(message: 'Msg) =
-            atHome (fun () ->
-                let m = Message(message)
-                if isNull last then first <- m else last.Next <- m
-                last <- m
-                count <- count + 1
-                if not (isNull arrived) then
-                    let a = arrived
-                    arrived <- null
-                    a.TrySetResult() |> ignore)
+            // Not through atHome: its closure would be an object per Post.
+            let current = Arena.CurrentAllocator()
+            Arena.SetAllocator home
+            let m =
+                if isNull spare then
+                    Message()
+                else
+                    let m = spare
+                    spare <- m.Next
+                    m.Next <- null
+                    m
+            m.Value <- message
+            if isNull last then first <- m else last.Next <- m
+            last <- m
+            count <- count + 1
+            if not (isNull arrived) then
+                let a = arrived
+                arrived <- null
+                a.TrySetResult() |> ignore
+            elif not (isNull wake) then
+                let w = wake
+                wake <- null
+                w.Complete(false) |> ignore
+            Arena.SetAllocator current
+
+        // For StartScoped (fsharp/control/Arena.fs).
+        member internal _.TryTakeFirst() : 'Msg voption =
+            let m = first
+            if isNull m then
+                ValueNone
+            else
+                first <- m.Next
+                if isNull first then last <- null
+                count <- count - 1
+                let value = m.Value
+                m.Value <- Unchecked.defaultof<'Msg>
+                m.Next <- spare
+                spare <- m
+                ValueSome value
+
+        member internal _.Wake with set (task: Task) = wake <- task
+        member internal _.Token = token
+        member internal _.MarkStarted() =
+            if started then invalidOp "The MailboxProcessor has already been started."
+            started <- true
 
         /// Waits for the next message (in the body). A timeout ends the program
         /// (TimeoutException in .NET).

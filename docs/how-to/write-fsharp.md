@@ -532,15 +532,48 @@ let startWorker () =
 ```
 
 The result follows `arena { }`'s rule: a number, a struct of numbers or a string (copied out). Here
-an agent left 1.2 KB behind per message instead of 3.1 KB: the list and its closures went into the
-arena, and what's left is the agent's own work for each message, its queue node, `Receive` and the
-loop. Some things are made outside the arena on purpose, because they can outlive the message: the
+an agent left 1.1 KB behind per message instead of 3.1 KB: the list and its closures went into the
+arena, and what's left is the agent's own work for each message, `Receive` and the loop. There's
+no garbage collector, so an agent written this way still grows by that much per message, as any
+`async` code does at each `let!`: for one that runs for long, use `StartScoped` (below). Some things are made outside the arena on purpose, because they can outlive the message: the
 objects behind each wait, the timer behind `Sleep`, an agent's queue nodes, and the message and
 reply channel `PostAndReply` makes. A string reply is copied to where the waiting computation
 started. After a throw nothing is freed, so the exception stays readable until the arena is reset.
 Cancellation runs the `finally` parts, then frees the scope.
 
-`InArena` is unsafe to call, as `OpenObjectScope` is. Besides the usual rule, mind what you `Post`
+`MailboxProcessor.StartScoped(frame, handler)` makes an agent that leaves nothing behind per
+message. The loop is the library's, made once: it takes each message, opens a scope of `frame`,
+calls `handler` with the message there (so the computation it returns, and every closure for its
+steps, is in the arena), and frees the scope when the handler is done, across its waits. Queue
+nodes are reused, and so is what the loop waits on. State lives outside the handler:
+
+<!-- sample: sdk/test/fixtures/fsmemory/Program.fs scoped-agent -->
+```fsharp no-check reason="uses the zero library: the SDK tests build and run it"
+// The library runs this agent's loop: each message's handler gets a scope of
+// perMessage, across its waits, and the loop makes nothing per message.
+// State lives outside the handler.
+let seen = ref 0
+
+[<Safety "a message's values stay in its scope; only an int is kept">]
+let startSummer () =
+    MailboxProcessor<int>.StartScoped(perMessage, fun n ->
+        async {
+            let squares = [ for i in 1 .. n -> i * i ]
+            do! Async.SwitchToThreadPool() // a wait inside the scope
+            seen.Value <- seen.Value + List.sum squares % 1000
+        })
+```
+
+A thousand messages, each making a list and waiting once, leave 0 bytes behind. That's the agent's
+side. The message itself is made by whoever posts it, usually outside any arena: a number or a
+`[<Struct>]` union is copied into the queue and costs nothing, but an ordinary union case such as
+`Add 5`, a record or a string is an object, 24 bytes or more per message, never freed. Make message
+types `[<Struct>]` for an agent that runs for long. What the handler makes outside the arena counts
+too: `Async.Sleep`'s timer, or the message and channel of a `PostAndReply`, which allocates per
+call. A throw the handler doesn't catch ends the program, and canceling the
+agent's token stops it.
+
+`InArena` and `StartScoped` are unsafe to call, as `OpenObjectScope` is. Besides the usual rule, mind what you `Post`
 from inside the scope. A message made inside it, such as `Add 5`, is in the arena, so the agent
 must take it before the scope ends: wait for its reply inside the scope, or make the message
 outside. A `[<Struct>]` message is copied, and `PostAndReply` makes its message outside. With

@@ -34,6 +34,8 @@
 namespace Microsoft.FSharp.Control
 
     open System
+    open System.Threading
+    open System.Threading.Tasks
     open System.Runtime.CompilerServices
 
     /// What an arena { } body ends with: a value that holds nothing from the
@@ -159,6 +161,95 @@ namespace Microsoft.FSharp.Control
                         c.OnCancel <- outerCancel
                         closeThen opened (ArenaResult(v, isString)) r outerScoped k)))
 
+    /// MailboxProcessor.StartScoped's loop: takes the messages one at a time
+    /// and runs the handler on each in a scope of frame, freed when it's
+    /// done. Everything it needs is made once, when it starts: its runner,
+    /// context and continuations, and the task it waits on for a message
+    /// (lib's, reused: Reset, Complete). With the agent's queue nodes reused
+    /// too, a message leaves nothing behind outside the arena.
+    [<Sealed; AllowNullLiteral>]
+    type internal ScopedLoop<'Msg>(agent: MailboxProcessor<'Msg>, frame: Arena, handler: 'Msg -> Async<unit>, token: CancellationToken) =
+        let runner = Runner()
+        let signal = Task()
+        [<DefaultValue>] val mutable Context: AsyncContext
+        [<DefaultValue>] val mutable PumpNext: unit -> unit
+        [<DefaultValue>] val mutable Stop: unit -> unit
+        // RunOne is still on the stack: a handler that ends without waiting
+        // sets Done, and Pump takes the next message itself (no recursion).
+        [<DefaultValue>] val mutable Inline: bool
+        [<DefaultValue>] val mutable Done: bool
+        [<DefaultValue>] val mutable Stopped: bool
+
+        member _.Runner = runner
+        member _.Signal = signal
+
+        member l.Start() =
+            l.PumpNext <- (fun () -> l.Pump())
+            l.Stop <- (fun () -> l.Stopped <- true)
+            l.Context <- AsyncContext(token, runner, l.Stop)
+            runner.Error <- AsyncCode.unhandled
+            if token.CanBeCanceled then
+                token.Register(fun () -> signal.Complete(false) |> ignore) |> ignore
+            runner.Yield l.PumpNext
+
+        /// Handles the queued messages, then waits for the next one.
+        member l.Pump() =
+            let mutable go = true
+            while go do
+                if l.Stopped || token.IsCancellationRequested then
+                    go <- false
+                else
+                    match agent.TryTakeFirst() with
+                    | ValueSome message ->
+                        l.Inline <- true
+                        l.Done <- false
+                        l.RunOne message
+                        l.Inline <- false
+                        if not l.Done then go <- false // it waits: Finish goes on
+                    | ValueNone ->
+                        signal.Reset()
+                        agent.Wake <- signal
+                        runner.Await(signal, l.PumpNext)
+                        go <- false
+
+        // The scope opens before the handler is called, so the computation
+        // it returns, and every closure for its steps, is in the arena.
+        member l.RunOne(message: 'Msg) =
+            let opened = frame.OpenObjectsForBuilder()
+            runner.Scoped <- Arena.CurrentAllocator()
+            runner.Error <- (fun e -> ScopedLoop<'Msg>.Failed(l, opened, e))
+            l.Context.OnCancel <- (fun () -> ScopedLoop<'Msg>.Canceled(l, opened))
+            let context = l.Context
+            runner.Guard(fun () -> (handler message).Invoke(context, fun () -> ScopedLoop<'Msg>.Finished(l, opened)))
+
+        // These run from closures in the arena: their arguments are read
+        // before the call, and the scope is freed inside it.
+        [<MethodImpl(MethodImplOptions.NoInlining)>]
+        static member Finished(l: ScopedLoop<'Msg>, opened: Arena.OpenedObjects) =
+            ArenaScope.Close(opened, ArenaResult((), false))
+            l.Reset()
+            if l.Inline then l.Done <- true else l.Pump()
+
+        [<MethodImpl(MethodImplOptions.NoInlining)>]
+        static member Canceled(l: ScopedLoop<'Msg>, opened: Arena.OpenedObjects) =
+            ArenaScope.Close(opened, ArenaResult((), false))
+            l.Reset()
+            l.Stopped <- true
+            if l.Inline then l.Done <- true
+
+        // Nothing is freed: the exception may be from the arena. Then, as for
+        // an agent's body, the program ends.
+        [<MethodImpl(MethodImplOptions.NoInlining)>]
+        static member Failed(l: ScopedLoop<'Msg>, opened: Arena.OpenedObjects, e: exn) =
+            Arena.LeaveObjectsForBuilder opened
+            l.Reset()
+            AsyncCode.unhandled e
+
+        member l.Reset() =
+            runner.Scoped <- runner.Home
+            runner.Error <- AsyncCode.unhandled
+            l.Context.OnCancel <- l.Stop
+
     /// Async.InArena.
     [<AutoOpen>]
     module AsyncArenaExtensions =
@@ -184,6 +275,28 @@ namespace Microsoft.FSharp.Control
             [<RequiresUnsafe>]
             static member InArena(frame: Arena, computation: Async<unit>) : Async<unit> =
                 ArenaAsync.inArena frame computation false
+
+    /// MailboxProcessor.StartScoped.
+    [<AutoOpen>]
+    module MailboxArenaExtensions =
+        type MailboxProcessor<'Msg> with
+            /// An agent that runs `handler` on each message in turn, each in a
+            /// scope of `frame` freed when the handler is done, across its
+            /// waits. The loop is the library's, and makes nothing per
+            /// message, so the agent leaves nothing behind for one: what's
+            /// left is what the handler makes outside the arena (Async.Sleep's
+            /// timer, a PostAndReply). State lives outside the handler, in a
+            /// mutable field or a struct. Post to it as to any agent. A throw
+            /// the handler doesn't catch ends the program; cancellation stops
+            /// the agent. Unsafe to call, as Async.InArena: nothing made
+            /// inside may be stored into something from outside.
+            [<RequiresUnsafe>]
+            static member StartScoped(frame: Arena, handler: 'Msg -> Async<unit>, ?cancellationToken: CancellationToken) : MailboxProcessor<'Msg> =
+                let token = defaultArg cancellationToken AsyncCode.defaultSource.Token
+                let agent = new MailboxProcessor<'Msg>((fun _ -> AsyncCode.ret ()), token)
+                agent.MarkStarted()
+                ScopedLoop<'Msg>(agent, frame, handler, token).Start()
+                agent
 
     [<AutoOpen>]
     module ArenaBuilders =
