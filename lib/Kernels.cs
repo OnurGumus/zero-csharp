@@ -113,7 +113,7 @@ public static class Kernels
         }
     }
 
-    /// <summary>Exact int8 dot product. Values must be in [-127, 127] (the x64 and C64 paths need it). On a C64 it takes about 120 processor cycles a product, nine times faster than a loop in C#, and a 1 KB table of RAM, made at the first call.</summary>
+    /// <summary>Exact int8 dot product. Values must be in [-127, 127] (the x64 and C64 paths need it). On a C64 it takes about 100 processor cycles a product, ten times faster than a loop in C#, and a 1 KB table of RAM, made at the first call.</summary>
     /// <safety>a and b must each cover n bytes.</safety>
     public static unsafe int DotI8(sbyte* a, sbyte* b, int n)
     {
