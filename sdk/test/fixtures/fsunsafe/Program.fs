@@ -105,6 +105,16 @@ callsSmall ()
 callsUnsafeFunction ()
 emptyReason ()
 noReason ()
+// arena { } is unsafe to call too: it checks what the body returns, not what
+// the body stores into things from outside.
+let unmarkedArena (n: int) = arena frame { return n * 2 } // warns
+
+[<Safety "returns an int and stores nothing outside">]
+let markedArena (n: int) = arena frame { return n + 1 }
+
+let unmarkedInArena () = Async.InArena(frame, async { return 1 }) // warns
+
 let game = Game()
 printfn "%d %d %d" (playFrame 10) (nested 2) (game.Peak + game.Unmarked)
 printfn "%d %d" (unmarkedLambda 3) (unmarkedInner 4)
+printfn "%d %d" (unmarkedArena 3) (markedArena 3)

@@ -34,6 +34,9 @@
     <Reference Include="$(ZeroRefDir)fsharp/FSharp.Core.dll" Private="false" ZeroFramework="true" />
     <!-- printf and the others (fsharp/printf/Printf.fs). -->
     <Reference Include="$(ZeroRefDir)fsharp/FSharp.Printf.dll" Private="false" ZeroFramework="true" />
+    <!-- async, task and MailboxProcessor (fsharp/control/Control.fs); next to
+         BflatLib, which its signatures name (see fsharp/build-core.sh). -->
+    <Reference Include="$(ZeroRefDir)FSharp.Control.dll" Private="false" ZeroFramework="true" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="$(ZeroRefDir)BflatLib.dll" Private="false" ZeroFramework="true" />

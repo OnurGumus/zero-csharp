@@ -6,6 +6,7 @@
 #                                       zerocore doesn't have
 #   <out>/FSharp.Core.dll               core/: a small FSharp.Core
 #   <out>/FSharp.Printf.dll             printf/: printf, sprintf, failwithf
+#   <lib's dir>/FSharp.Control.dll      control/: async, task, MailboxProcessor
 #
 # Usage:  fsharp/build-core.sh <System.Private.CoreLib.dll> <BflatLib.dll> <out dir>
 #         (printf writes through lib/'s Out)
@@ -65,3 +66,14 @@ dotnet "$ZERO_FSHARP_SDK/FSharp/fsc.dll" --nologo --noframework --targetprofile:
     --reflectionfree --optimize+ --deterministic+ --metadataversion:v4.0.30319 --nowarn:75,3370 \
     --target:library -r:"$out/System.Runtime.dll" -r:"$out/System.Runtime.Extensions.dll" -r:"$out/FSharp.Core.dll" -r:"$lib" \
     --out:"$out/FSharp.Printf.dll" "$here/printf/Printf.fs"
+
+# async, task and MailboxProcessor: on lib/'s tasks and fibers. Next to lib,
+# not in <out>: fsc takes <out> (System.Runtime.dll's directory) as the
+# framework's, and looks for what its assemblies refer to only there, so
+# lib's types in this library's signatures would be "not referenced" (FS0074).
+control=$(dirname "$lib")/FSharp.Control.dll
+echo "[fsc]   fsharp/control/ -> $control"
+dotnet "$ZERO_FSHARP_SDK/FSharp/fsc.dll" --nologo --noframework --targetprofile:netcore \
+    --reflectionfree --optimize+ --deterministic+ --metadataversion:v4.0.30319 --nowarn:75,3370 \
+    --target:library -r:"$out/System.Runtime.dll" -r:"$out/System.Runtime.Extensions.dll" -r:"$out/FSharp.Core.dll" -r:"$lib" \
+    --out:"$control" "$here/control/Control.fs" "$here/control/Arena.fs"

@@ -1,5 +1,15 @@
 3 scores, first 30
 total 6734000, first 6734, never freed: 0 bytes
+arena builder: total 7234500, first 6734, never freed: 0 bytes
+labels after more rounds: 1, 1-2-3
+agent: totals 185000 185000, the scope keeps true of the work
+reply made in the scope, after 50 more: 1,2,3,4,5
+caught: bad message
+handler after a scope allocates outside it: true
+finally in the scope
+canceled in the scope: true
+timed out in the scope: 1
+after the late reply: 249750
 median 5, first still 5, never freed: 0 bytes
 squares 1 4 9 16
 sum 26, largest 9

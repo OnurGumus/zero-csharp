@@ -221,7 +221,115 @@ let addDigits a b = option {
 expression to `Bind` as a closure, an object like any other: in a loop that runs for long, open an
 object scope around it ([Free F# values with a scope](#free-f-values-with-a-scope)).
 
-`async` and `task` aren't there: they need a scheduler and threads zero mode doesn't have.
+## Wait without blocking: task, async and agents
+
+`task { }`, `async { }` and `MailboxProcessor` work, on the library's fibers and tasks, the same
+ones C#'s `async` and `await` use ([Use fibers](use-fibers.html#use-async-and-await)). A `task`
+starts at once and gives a `Task`; `let!` and `do!` wait for a `Task`, a `Task<'T>` or an `Async`:
+
+<!-- sample: sdk/test/fixtures/fsasync/Program.fs task -->
+```fsharp
+let addLater (a: int) (b: int) =
+    task {
+        do! Task.Delay 10
+        return a + b
+    }
+```
+
+An `async` computation runs when it's started, and passes its cancellation token on to what it
+waits for:
+
+<!-- sample: sdk/test/fixtures/fsasync/Program.fs async -->
+```fsharp
+let square (i: int) =
+    async {
+        do! Async.Sleep(i * 10)
+        return i * i
+    }
+```
+
+<!-- sample: sdk/test/fixtures/fsasync/Program.fs async-run -->
+```fsharp
+let squares =
+    Async.Parallel [ for i in 1..5 -> square i ]
+    |> Async.RunSynchronously
+printfn "parallel: %s" (String.concat "," (Array.map string squares))
+```
+
+The five squares wait at the same time, so that takes 50 ms, not 150. `Async.Start`,
+`StartImmediate`, `StartAsTask`, `StartChild`, `Sequential`, `Sleep`, `AwaitTask`,
+`FromContinuations` and cancellation work as in .NET.
+
+A `MailboxProcessor` takes the messages posted to it one at a time. `Receive`, `TryReceive`,
+`Scan`, `PostAndReply` and `PostAndAsyncReply` work, with timeouts:
+
+<!-- sample: sdk/test/fixtures/fsasync/Program.fs mailbox -->
+```fsharp
+type Msg =
+    | Add of int
+    | Get of AsyncReplyChannel<int>
+
+let counter =
+    MailboxProcessor.Start(fun inbox ->
+        let rec loop total : Async<unit> =
+            async {
+                let! msg = inbox.Receive()
+                match msg with
+                | Add n -> return! loop (total + n)
+                | Get reply ->
+                    reply.Reply total
+                    return! loop total
+            }
+        loop 0)
+
+for i in 1..100 do
+    counter.Post(Add i)
+printfn "counter: %d" (counter.PostAndReply Get)
+```
+
+`try ... with` catches what's thrown inside, before or after a wait, with zero mode's
+`Catch.Run` ([Recover from errors](recover-from-errors.html)) underneath:
+
+<!-- sample: sdk/test/fixtures/fsasync/Program.fs async-errors -->
+```fsharp
+let fetch (name: string) =
+    async {
+        do! Async.Sleep 5
+        if name = "" then failwith "no name"
+        return name.Length
+    }
+
+let safeFetch name =
+    async {
+        try
+            return! fetch name
+        with e ->
+            printfn "failed: %s" e.Message
+            return -1
+    }
+```
+
+`try ... finally` and `use` run when the body throws or is canceled, too. `Async.Catch` gives a
+`Choice`, `RunSynchronously` throws what the computation didn't catch, and so does awaiting a child
+from `StartChild`; when one of `Parallel`'s computations throws, the others are canceled and
+`Parallel` throws it.
+
+An agent waiting for a message takes about 1 KB (the agent, its closures and what waits), not a
+thread or a fiber, so a program can have thousands. Where they differ from .NET:
+
+- **One thread.** Computations take turns where they wait, and nothing started runs until the
+  program waits: `RunSynchronously`, `PostAndReply`, `Task.Wait` or `Fiber.Run()`. When `Main`
+  returns, what's still waiting ends, as .NET's thread pool work does.
+- **Exceptions nothing catches.** In a `task` or a computation started with `StartAsTask`, one
+  faults the `Task`, and awaiting it throws the exception itself (zero mode has no
+  `AggregateException`, so `Async.AwaitTask` doesn't wrap it as .NET does). In `Async.Start`,
+  `StartImmediate` or an agent, one ends the program. There's no `MailboxProcessor.Error`: catch
+  inside the agent's loop.
+- **No `let mutable` across a wait in `task`.** Use a `ref` cell, as `async` already needs.
+- **Give an agent's loop its type** (`let rec loop n : Async<unit> = ...`) if you build with
+  `Optimize` false: without optimizing, the compiler makes a loop that only ever calls itself a
+  generic closure, which zero mode can't run. The default build is optimized and doesn't need it.
+- **Not on WebAssembly**, which has no fibers.
 
 ## Delay a value with lazy
 
@@ -333,6 +441,109 @@ static field set by a static constructor, and static constructors allocate outsi
 lambda that captures something is a new object each time, in the arena, and nothing outside points at
 it. Set `Arena.DebugChecks <- true` while testing: closing a scope then stops the program if a static
 field points into the arena.
+
+`arena frame { ... }` does the same with the rule checked by the compiler where it can be: it opens
+the scope, frees it when the body ends, and lets out only a value that can't point into the arena.
+`return` takes a number, a `bool`, a `char`, an enum or a struct of those, which is copied out, or a
+string, which the builder copies out of the arena before freeing it:
+
+<!-- sample: sdk/test/fixtures/fsmemory/Program.fs arena-builder -->
+```fsharp no-check reason="uses the zero library: the SDK tests build and run it"
+// The same round with arena { }: it opens the scope and frees it at the end,
+// and the compiler lets out only what can't point into the arena.
+[<Safety "a round returns an int, and keeps nothing it made">]
+let roundIn (n: int) =
+    arena frame {
+        let evens =
+            [ 1 .. 100 ]
+            |> List.map (fun x -> x * 2)
+            |> List.filter (fun x -> x % 3 <> 0)
+        return List.sum evens + n
+    }
+
+// A string made inside is copied out as the scope ends.
+[<Safety "only the joined string leaves, copied out">]
+let describe (n: int) =
+    arena frame {
+        let parts = [ for i in 1 .. n -> string i ]
+        return String.concat "-" parts
+    }
+```
+
+Returning a list, a record, a closure or a struct with a string in it is a compile error (FS0041).
+What the compiler can't see is storing something made inside into something from outside: a ref
+cell, a collection or a mutable field (`let mutable` values can't be assigned from inside, as from
+any closure). So `arena`, like `OpenObjectScope`, is unsafe to call, and the function using it says
+why it's correct with `[<Safety>]` (next section). Write `arena frame { ... }` in one piece: the
+scope opens when `arena frame` is evaluated, and keeping that in a value and using it twice stops
+the program.
+
+### Give each message a scope
+
+`Async.InArena(frame, computation)` does the same for an `async` computation, across its waits:
+each piece of it, from a wait to the next, allocates in `frame`, whatever else runs in between, and
+the scope is freed when it ends. C# can't do this for an async method, whose continuations run
+under the dispatcher's allocator. In an agent it gives each message a scope of its own:
+
+<!-- sample: sdk/test/fixtures/fsmemory/Program.fs agent-arena -->
+```fsharp no-check reason="uses the zero library: the SDK tests build and run it"
+type Job =
+    | Work of int
+    | Describe of int * AsyncReplyChannel<string>
+    | Total of AsyncReplyChannel<int>
+
+let perMessage = Arena.Create(4096un, "message")
+
+// What one message needs: a list, a wait, a sum.
+let handle (n: int) =
+    async {
+        let squares = [ for i in 1 .. n -> i * i ]
+        do! Async.Sleep 1
+        return List.sum squares % 1000
+    }
+
+// Each message's work runs in its own scope of perMessage, across its waits,
+// and is freed when the message is done.
+[<Safety "a message's values stay in its scope; the agent keeps an int">]
+let startWorker () =
+    MailboxProcessor.Start(fun inbox ->
+        let rec loop (total: int) : Async<unit> =
+            async {
+                let! job = inbox.Receive()
+                match job with
+                | Work n ->
+                    let! part = Async.InArena(perMessage, handle n)
+                    return! loop (total + part)
+                | Describe(n, reply) ->
+                    let numbers = async {
+                        do! Async.Sleep 1
+                        let parts = [ for i in 1 .. n -> string i ]
+                        return String.concat "," parts }
+                    let! text = Async.InArena(perMessage, numbers)
+                    reply.Reply text
+                    return! loop total
+                | Total reply ->
+                    reply.Reply total
+                    return! loop total
+            }
+        loop 0)
+```
+
+The result follows `arena { }`'s rule: a number, a struct of numbers or a string (copied out). Here
+an agent left 1.2 KB behind per message instead of 3.1 KB: the list and its closures went into the
+arena, and what's left is the agent's own work for each message, its queue node, `Receive` and the
+loop. Some things are made outside the arena on purpose, because they can outlive the message: the
+objects behind each wait, the timer behind `Sleep`, an agent's queue nodes, and the message and
+reply channel `PostAndReply` makes. A string reply is copied to where the waiting computation
+started. After a throw nothing is freed, so the exception stays readable until the arena is reset.
+Cancellation runs the `finally` parts, then frees the scope.
+
+`InArena` is unsafe to call, as `OpenObjectScope` is. Besides the usual rule, mind what you `Post`
+from inside the scope. A message made inside it, such as `Add 5`, is in the arena, so the agent
+must take it before the scope ends: wait for its reply inside the scope, or make the message
+outside. A `[<Struct>]` message is copied, and `PostAndReply` makes its message outside. With
+`Arena.DebugChecks` on, ending an `arena { }` or `InArena` scope stops the program if a message made
+inside it is still in an agent's queue.
 
 `OpenObjectScope` is one of the members C# marks `unsafe`: the compiler can't check that rule, so
 a C# caller has to wrap the call in an `unsafe` block. F# has no such block, and `round` carries a
@@ -668,11 +879,13 @@ one with a `bool`) is an error, ZERO005, that names it.
 ## What's missing
 
 - **`%A`**, as above, and anything else that needs reflection.
-- **`async` and `task`.** Computation expressions with your own builders work.
+- **`MailboxProcessor.Error` and `AggregateException`**, and the other differences listed in
+  [Wait without blocking](#wait-without-blocking-task-async-and-agents).
 - **`asin`, `acos`, `atan`, `sinh`, `cosh` and `tanh`.** The other math functions are there.
-- **Catching exceptions.** `try ... with` compiles, but a raised exception ends the program with its
-  message, as `throw` does in C# zero mode ([Limits](../concepts/limits.html)). `try ... finally` and
-  `use` work.
+- **Catching exceptions outside `async` and `task`.** There, `try ... with` compiles, but a raised
+  exception ends the program with its message, as `throw` does in C# zero mode
+  ([Limits](../concepts/limits.html)). `Catch.result` gets it back
+  ([Recover from errors](recover-from-errors.html)). `try ... finally` and `use` work.
 - **`dict`, `HashSet` and .NET's collections.** Use `Map` and `Set`, or the library's `Dict` and
   `List` ([Choose a collection](choose-a-collection.html)).
 - **Casting an array to another array type**, such as `string[]` to `obj[]`, ends the program.
