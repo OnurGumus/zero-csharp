@@ -272,10 +272,9 @@ public static class C64
         /// </summary>
         public static int Size => c64_reu_size();
 
-        /// <summary>Copies bytes from the REU at <paramref name="address"/> (0 to 16 MB) into <paramref name="into"/>. Past the end of a smaller REU the address wraps around to 0.</summary>
+        /// <summary>Copies bytes from the REU at <paramref name="address"/> into <paramref name="into"/>. The address is 24 bits, as the REU's: past 16 MB, or past the end of a smaller REU, it wraps around to 0.</summary>
         public static void Read(int address, Span<byte> into)
         {
-            CheckAddress(address);
             unsafe
             {
                 // SAFETY: the DMA writes into.Length bytes, all inside into.
@@ -284,22 +283,15 @@ public static class C64
             }
         }
 
-        /// <summary>Copies <paramref name="bytes"/> into the REU at <paramref name="address"/> (0 to 16 MB).</summary>
+        /// <summary>Copies <paramref name="bytes"/> into the REU at <paramref name="address"/> (24 bits, wrapping as Read's).</summary>
         public static void Write(int address, ReadOnlySpan<byte> bytes)
         {
-            CheckAddress(address);
             unsafe
             {
                 // SAFETY: the DMA reads bytes.Length bytes, all inside bytes.
                 fixed (byte* p = bytes)
                     c64_reu_copy(1, address, p, bytes.Length);
             }
-        }
-
-        static void CheckAddress(int address)
-        {
-            if ((uint)address >= 1 << 24)
-                throw new ArgumentOutOfRangeException(nameof(address));
         }
     }
 }
