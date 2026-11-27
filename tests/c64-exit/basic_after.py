@@ -4,27 +4,34 @@
 # memory of its own. BASIC that came back healthy runs it; one left broken
 # answers ?OUT OF MEMORY ERROR, or never reads it.
 # The check reads address 2 through VICE's remote monitor.
-# Usage: python3 basic_after.py EMULATOR PROGRAM.prg [SECONDS]
+# Usage: python3 basic_after.py EMULATOR PROGRAM.prg [VICE OPTIONS...]
+# (the options: where the ROMs are, as c64/run.sh gives them on Linux)
 import re, socket, subprocess, sys, time
 
-emulator, program = sys.argv[1], sys.argv[2]
-limit = float(sys.argv[3]) if len(sys.argv) > 3 else 120
-port = 6599
+emulator, program, extra = sys.argv[1], sys.argv[2], sys.argv[3:]
+limit = 120
+
+# A port nobody uses, so that a VICE still closing down doesn't answer.
+with socket.socket() as probe:
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
 vice = subprocess.Popen(
     [emulator, "-default", "+saveres", "+confirmonexit", "-warp", "+sound", "-minimized",
-     "-remotemonitor", "-remotemonitoraddress", f"127.0.0.1:{port}",
+     "-remotemonitor", "-remotemonitoraddress", f"127.0.0.1:{port}", *extra,
      "-autostartprgmode", "1", "-autostart", program, "-keybuf", "a=42:poke 2,a\\n"],
-    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 try:
     start = time.time()
     sock = None
-    while sock is None and time.time() - start < 30:
+    while sock is None and time.time() - start < 30 and vice.poll() is None:
         try:
             sock = socket.create_connection(("127.0.0.1", port), timeout=5)
         except OSError:
             time.sleep(0.5)
     if sock is None:
-        sys.exit("no VICE monitor")
+        said = vice.stderr.read().decode(errors="replace")[-400:] if vice.poll() is not None else "(still starting)"
+        print("no VICE monitor; VICE said:", said)
+        sys.exit(1)
 
     def ask(command):
         sock.sendall((command + "\n").encode())
@@ -45,3 +52,7 @@ try:
     sys.exit(1)
 finally:
     vice.terminate()
+    try:
+        vice.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        vice.kill()
