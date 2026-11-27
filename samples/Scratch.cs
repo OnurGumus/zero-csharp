@@ -7,7 +7,8 @@
 // one program per way, which test.sh checks the compiler rejects. The one way
 // it can't see, an outer scope or list allocating inside a nested call, stops
 // the program (the scratch-outer-* cases in Guards). So unlike
-// Arena.OpenScope, nothing here is unsafe.
+// Arena.OpenScope, nothing here is unsafe, except a call in a buffer of
+// yours: nothing else may use the buffer while the call runs.
 
 using System;
 using System.Runtime.CompilerServices;
@@ -99,6 +100,20 @@ public static class Program
         unsafe { return (nint)Unsafe.AsPointer(ref span[0]); } // SAFETY: the address is only compared.
     }
 
+    static nint Address(Span<byte> span)
+    {
+        unsafe { return (nint)Unsafe.AsPointer(ref span[0]); } // SAFETY: the address is only compared.
+    }
+
+    // Whether a span of the scope, and one of a Scratch call nested in it,
+    // both lie in [range.Start, range.End).
+    static bool BothInBuffer(scoped ScratchScope scratch, (nint Start, nint End) range)
+    {
+        nint mine = Address(scratch.AllocSpan<int>(16));
+        nint nested = Arena.Scratch(static (scoped ScratchScope inner) => Address(inner.AllocSpan<int>(16)));
+        return mine >= range.Start && mine < range.End && nested >= range.Start && nested < range.End;
+    }
+
     // docs:spawn
     // Scratch memory isn't on the stack: a helper can allocate it and hand it
     // back, and it lives until the callback that called the helper returns.
@@ -187,6 +202,84 @@ public static class Program
         // docs:end
         Arena.DebugChecks = false;
         Section("your arenas");
+
+        // docs:buffer
+        // Memory of yours instead of the thread's scratch arena, for one
+        // call and the Scratch calls nested in it: no malloc, and a fixed
+        // size (needing more than the buffer holds stops the program).
+        Span<byte> memory = stackalloc byte[2048];
+        int total;
+        // SAFETY: nothing else uses memory until the call returns.
+        unsafe
+        {
+            total = Arena.Scratch(memory,
+                static (scoped ScratchScope scratch) =>
+                {
+                    Span<int> numbers = scratch.AllocSpan<int>(100);
+                    for (int i = 0; i < numbers.Length; i++)
+                        numbers[i] = i;
+                    int sum = 0;
+                    foreach (int n in numbers)
+                        sum += n;
+                    return sum;
+                });
+        }
+        // docs:end
+        Check("a buffer of yours", total == 4950);
+        nint start = Address(memory);
+        bool inBuffer;
+        // SAFETY: nothing else uses memory until the call returns.
+        unsafe { inBuffer = Arena.Scratch(memory, (start, start + memory.Length), BothInBuffer); }
+        Check("its memory, nested calls included", inBuffer);
+        nint after = Arena.Scratch(static (scoped ScratchScope scratch) => Address(scratch.AllocSpan<int>(16)));
+        Check("the thread's own afterwards", after < start || after >= start + memory.Length);
+        // A scope from outside the call allocates in its own arena, which
+        // the call doesn't free: allowed, unlike in a nested ordinary call.
+        int outerAdded = Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            var outer = new Outer { Items = scratch.List<int>() };
+            Span<byte> mine = stackalloc byte[1024];
+            // SAFETY: nothing else uses mine until the call returns.
+            unsafe
+            {
+                Arena.Scratch(mine, ref outer, static (scoped ScratchScope inner, scoped ref Outer state) =>
+                {
+                    for (int i = 0; i < 100; i++)
+                        state.Items.Add(i);
+                });
+            }
+            return outer.Items.Count + outer.Items[99];
+        });
+        Check("an outer list grows inside it", outerAdded == 199);
+        // docs:on-stack
+        // The same in memory on ScratchOnStack's own stack frame: safe,
+        // since nothing but the scope sees it.
+        int sumOfSquares = Arena.ScratchOnStack(1024,
+            static (scoped ScratchScope scratch) =>
+            {
+                ScratchList<int> items = scratch.List<int>(8);
+                for (int i = 1; i <= 10; i++)
+                    items.Add(i * i);
+                int sum = 0;
+                foreach (int item in items)
+                    sum += item;
+                return sum;
+            });
+        // docs:end
+        Check("on the stack", sumOfSquares == 385);
+        int nestedOnStack = Arena.ScratchOnStack(1024, static (scoped ScratchScope scratch) =>
+        {
+            Span<int> mine = scratch.AllocSpan<int>(4);
+            mine[0] = 7;
+            int inner = Arena.Scratch(static (scoped ScratchScope s) => s.AllocSpan<int>(32).Length);
+            return mine[0] + inner;
+        });
+        Check("a call nested on the stack", nestedOnStack == 39);
+        int loops = 0;
+        for (int i = 0; i < 10_000; i++)
+            loops += Arena.ScratchOnStack(4096, static (scoped ScratchScope scratch) => scratch.AllocSpan<byte>(100).Length);
+        Check("its stack is freed each call", loops == 1_000_000);
+        Section("a buffer of yours");
 
         // docs:lists
         // Lists and text from the scope grow as needed and go away with the

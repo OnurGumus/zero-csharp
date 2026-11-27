@@ -474,6 +474,10 @@ static void FillYieldCheck(
 }
 ```
 
+A fiber can also wait inside a `Scratch` call in a buffer of its own, or inside `ScratchOnStack`, whose
+memory is on the fiber's stack (see [Scratch memory](../concepts/memory.html)): that memory stands in for
+the fiber's scratch arena until the call returns, so a fiber needs no scratch arena from malloc at all.
+
 The `ObjectAllocator` setting is per fiber too, and starts with calloc. An `AllocateObjectsHere` scope
 opened in one fiber doesn't send another fiber's objects to its arena.
 

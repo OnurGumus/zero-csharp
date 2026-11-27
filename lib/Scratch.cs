@@ -26,6 +26,14 @@
 // first block's size and Arena.ScratchMaxCapacity a limit, for the scratch
 // arenas made afterwards.
 //
+// The overloads that take a Span<byte> first use that memory instead, for one
+// call: an arena in the buffer stands in for the thread's scratch arena until
+// the callback returns, nested Scratch calls included. Nothing comes from
+// malloc, and a callback that needs more than the buffer holds stops the
+// program. They are unsafe: nothing may use the buffer during the call.
+// Arena.ScratchOnStack does the same in memory on its own stack frame, of a
+// size you give: safe, since nothing but the scope sees that memory.
+//
 // To pass data in and out without a closure (which would allocate), use the
 // overloads with a state passed by ref; it may be a ref struct holding spans
 // of the caller's. For data that only goes in, or spans the callback fills,
@@ -820,6 +828,204 @@ public partial struct Arena
             if (Platform.pthread_setspecific(s_scratchKey, null) != 0)
                 Environment.FailFast("Arena.Scratch: can't keep the thread's scratch arena");
             DestroyArenaOf(thread);
+        }
+    }
+
+    /// <summary>
+    /// Arena.Scratch in your memory: the scope, and every Scratch call nested
+    /// inside the action, allocate from <paramref name="buffer"/> instead of
+    /// the thread's scratch arena, for this call only. Nothing comes from
+    /// malloc, and an allocation that doesn't fit in what is left of the
+    /// buffer ends the program (the arena keeps about 150 bytes of the buffer
+    /// for itself on 64-bit targets, 100 on 32-bit ones).
+    /// </summary>
+    /// <safety>
+    /// Nothing may read or write <paramref name="buffer"/> until the action
+    /// returns: not the caller, and not the action through a state or input
+    /// that holds the same memory. The arena's bookkeeping lives in it. The
+    /// compiler still keeps what the scope gives out inside the action.
+    /// </safety>
+    public static unsafe void Scratch(Span<byte> buffer, ScratchAction action)
+    {
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        action(new ScratchScope(thread));
+        LeaveBuffer(thread, previous);
+    }
+
+    /// <summary>The same, with a state the action can read and change, passed by ref.</summary>
+    /// <safety>As for Scratch(Span&lt;byte&gt;, ScratchAction).</safety>
+    public static unsafe void Scratch<TState>(Span<byte> buffer, ref TState state, ScratchAction<TState> action)
+        where TState : allows ref struct
+    {
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        action(new ScratchScope(thread), ref state);
+        LeaveBuffer(thread, previous);
+    }
+
+    /// <summary>The same, returning the action's result, which can't come from the scope's memory.</summary>
+    /// <safety>As for Scratch(Span&lt;byte&gt;, ScratchAction).</safety>
+    public static unsafe TResult Scratch<TResult>(Span<byte> buffer, ScratchFunc<TResult> func)
+    {
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        TResult result = func(new ScratchScope(thread));
+        LeaveBuffer(thread, previous);
+        return result;
+    }
+
+    /// <summary>The same, with a state and a result.</summary>
+    /// <safety>As for Scratch(Span&lt;byte&gt;, ScratchAction).</safety>
+    public static unsafe TResult Scratch<TState, TResult>(Span<byte> buffer, ref TState state, ScratchFunc<TState, TResult> func)
+        where TState : allows ref struct
+    {
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        TResult result = func(new ScratchScope(thread), ref state);
+        LeaveBuffer(thread, previous);
+        return result;
+    }
+
+    /// <summary>The same, with an input the action gets a copy of.</summary>
+    /// <safety>As for Scratch(Span&lt;byte&gt;, ScratchAction).</safety>
+    public static unsafe void Scratch<TInput>(Span<byte> buffer, TInput input, ScratchActionIn<TInput> action)
+        where TInput : allows ref struct
+    {
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        action(new ScratchScope(thread), input);
+        LeaveBuffer(thread, previous);
+    }
+
+    /// <summary>The same, returning the action's result.</summary>
+    /// <safety>As for Scratch(Span&lt;byte&gt;, ScratchAction).</safety>
+    public static unsafe TResult Scratch<TInput, TResult>(Span<byte> buffer, TInput input, ScratchFuncIn<TInput, TResult> func)
+        where TInput : allows ref struct
+    {
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        TResult result = func(new ScratchScope(thread), input);
+        LeaveBuffer(thread, previous);
+        return result;
+    }
+
+    /// <summary>
+    /// Arena.Scratch in <paramref name="bytes"/> of stack: the scope, and
+    /// every Scratch call nested inside the action, allocate from memory on
+    /// this call's own stack frame instead of the thread's scratch arena.
+    /// Nothing comes from malloc, and an allocation that doesn't fit ends the
+    /// program (the arena keeps about 150 bytes for itself on 64-bit
+    /// targets, 100 on 32-bit ones). Unlike Scratch with a buffer of yours,
+    /// it is safe: nothing but the scope ever sees the memory.
+    /// The bytes come out of the thread's or fiber's stack, so keep them well
+    /// under its size: a fiber's stack is 256 KB by default, but 32 KB on
+    /// DOS, 4 KB on a microcontroller and 2 KB on a C64. Too many overflow
+    /// the stack.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void ScratchOnStack(int bytes, ScratchAction action)
+    {
+        Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        action(new ScratchScope(thread));
+        LeaveBuffer(thread, previous);
+    }
+
+    /// <summary>The same, with a state the action can read and change, passed by ref.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void ScratchOnStack<TState>(int bytes, ref TState state, ScratchAction<TState> action)
+        where TState : allows ref struct
+    {
+        Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        action(new ScratchScope(thread), ref state);
+        LeaveBuffer(thread, previous);
+    }
+
+    /// <summary>The same, returning the action's result, which can't come from the scope's memory.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static TResult ScratchOnStack<TResult>(int bytes, ScratchFunc<TResult> func)
+    {
+        Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        TResult result = func(new ScratchScope(thread));
+        LeaveBuffer(thread, previous);
+        return result;
+    }
+
+    /// <summary>The same, with a state and a result.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static TResult ScratchOnStack<TState, TResult>(int bytes, ref TState state, ScratchFunc<TState, TResult> func)
+        where TState : allows ref struct
+    {
+        Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        TResult result = func(new ScratchScope(thread), ref state);
+        LeaveBuffer(thread, previous);
+        return result;
+    }
+
+    /// <summary>The same, with an input the action gets a copy of.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static void ScratchOnStack<TInput>(int bytes, TInput input, ScratchActionIn<TInput> action)
+        where TInput : allows ref struct
+    {
+        Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        action(new ScratchScope(thread), input);
+        LeaveBuffer(thread, previous);
+    }
+
+    /// <summary>The same, returning the action's result.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static TResult ScratchOnStack<TInput, TResult>(int bytes, TInput input, ScratchFuncIn<TInput, TResult> func)
+        where TInput : allows ref struct
+    {
+        Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
+        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+        TResult result = func(new ScratchScope(thread), input);
+        LeaveBuffer(thread, previous);
+        return result;
+    }
+
+    // ScratchOnStack's size, checked: a negative one would be a stackalloc
+    // error, and one too small for the arena's bookkeeping stops the program
+    // in FromBuffer. The overloads aren't inlined, so each stackalloc is in
+    // a frame of its own, freed when the call returns, even in a loop.
+    static int StackBytes(int bytes)
+    {
+        if (bytes <= 0)
+            Environment.FailFast("Arena.ScratchOnStack: the size must be positive");
+        return bytes;
+    }
+
+    // An arena in the buffer, with its ScratchThread as its first allocation,
+    // made the thread's scratch state for the call: nested Scratch calls find
+    // it as EnterScratch finds the thread's own. A fiber switch saves and
+    // puts back whichever is in place (SwapScratch), so a fiber can wait
+    // inside the call. previous is what to put back when it returns. Not
+    // inlined: on a C64 it is 3 KB, which each overload used would copy.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static ScratchThread* EnterBuffer(Span<byte> buffer, out void* previous)
+    {
+        unsafe
+        {
+            // SAFETY: the caller promised the buffer to this call alone, and
+            // the arena is used only until LeaveBuffer, before the call returns.
+            Arena arena = FromBuffer(buffer, "scratch buffer", stopOnOutOfMemory: true);
+            ScratchThread* thread = arena.Alloc<ScratchThread>();
+            thread->Arena = arena;
+            thread->Depth = 1;
+            previous = SwapScratch(thread);
+            return thread;
+        }
+    }
+
+    // Puts the thread's own scratch state back. The buffer's arena needs no
+    // Restore or Destroy: nothing of it is used again, and it owns no memory.
+    static void LeaveBuffer(ScratchThread* thread, void* previous)
+    {
+        unsafe
+        {
+            // SAFETY: thread lives in the buffer, which the call still holds;
+            // previous was the thread's scratch state, null or still alive.
+            thread->Depth = 0;
+            SwapScratch(previous);
         }
     }
 

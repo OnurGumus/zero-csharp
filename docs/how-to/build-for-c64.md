@@ -129,7 +129,7 @@ programs `./test.sh --c64` runs:
 | `SmallIntegers`, `SmallNative`, `QuizStep2` | 17 to 18 KB | 32 to 33 KB |
 | `SmallKeys` | 20 KB | 30 KB |
 | `SmallEncoding`, `SmallStrings`, `SmallDicts` | 26 to 28 KB | 22 to 24 KB |
-| `Refs`, `SmallStrDicts`, `SmallObjects` | 31 to 32 KB | 18 to 19 KB |
+| `Refs`, `SmallStrDicts`, `SmallObjects`, `SmallScratchBuffer` | 31 to 32 KB | 18 to 19 KB |
 | `SmallDecimalFormats`, `SmallLists`, `SmallText`, `SmallUnicode`, `Paddles`, `C64Demo`, `SmallArena` | 34 to 36 KB | 14 to 16 KB |
 | `SmallBuilders` | 39 KB | 11 KB |
 | `SmallFibers`, `SmallChannels`, `SmallDoubleFormats` | 40 to 41 KB | 9 to 10 KB |

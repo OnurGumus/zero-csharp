@@ -84,6 +84,7 @@ SMALL_SAMPLES=(
     SmallChannels
     SmallScratch
     SmallCatches
+    SmallScratchBuffer
 )
 ALL_SAMPLES=(
     Tiny
