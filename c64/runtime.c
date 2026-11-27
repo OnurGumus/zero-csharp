@@ -36,11 +36,14 @@ i32 __managed__Main(i32 argc, char **argv);
 // nothing with: $D7FF, among the repeats of the sound chip's registers, where
 // it falls on a register the chip doesn't have. VICE's "debug cartridge"
 // (-debugcart) watches that address and ends the emulator with the code;
-// c64/run.sh relies on it. The KERNAL's interrupt goes back on first, in
-// case the program switched it off (C64.KernalInterrupt): without it BASIC
-// would have no cursor and read no keys.
+// c64/run.sh relies on it. The KERNAL ROM and its interrupt go back on
+// first, in case the program switched them off (C64.KernalRom,
+// C64.KernalInterrupt): without them BASIC would have no cursor and read no
+// keys.
 static void leave(int code)
 {
+    // $36 at the processor port: the KERNAL ROM in, the RAM at $A000 kept.
+    *(volatile unsigned char *)1 = (*(volatile unsigned char *)1 & 0xF8) | 0x06;
     *(volatile unsigned char *)0xDC0D = 0x81;
     *(volatile unsigned char *)0xD7FF = (unsigned char)code;
     exit(code);
@@ -2175,6 +2178,137 @@ __asm__(
     "  tax\n"
     "  rts\n"
     "  .text\n");
+
+// ---- the RAM under the KERNAL ROM (C64.KernalRom) ---------------------------------------
+//
+// The processor port at $01 says what the 6502 sees at $A000 and $E000. A
+// program runs with $36: RAM at $A000 (BASIC's ROM is out), the KERNAL ROM at
+// $E000. With $35 the RAM under the KERNAL is there instead, 8 KB, and the
+// KERNAL isn't: C64.KernalRom = false. Writes reach that RAM either way.
+//
+// Without the KERNAL, two things would break, and both are mended in the RAM
+// at the KERNAL's own addresses, which the 6502 reads exactly when the ROM is
+// out:
+//
+// - Its jump table, $FF81-$FFF3, 39 entries of 3 bytes that programs call
+//   (CHROUT at $FFD2 prints a character: putchar, Console, the runtime's
+//   output and input all end there). Each entry in RAM is JSR
+//   zero_kernal_gate: the gate switches the ROM in, calls the same entry in
+//   it with the caller's A, X, Y and flags, and switches it out again,
+//   keeping the routine's A, X, Y and flags. So any code that calls the
+//   KERNAL works, the C library's and a program's own C as well.
+// - The interrupt vectors, $FFFA-$FFFF. The IRQ (the KERNAL's 60 a second:
+//   the keyboard, the jiffy clock, the cursor) and the NMI (the RESTORE key,
+//   RS-232) go to handlers in the program's RAM, which switch the ROM in
+//   and enter the KERNAL's own, with a return made to come back to them;
+//   they switch it out again and return to the program.
+//
+// What is left for the program is $E000-$FF80, 8,065 bytes. The program's
+// end switches the ROM back in.
+#define PORT (*(volatile unsigned char *)1)
+
+unsigned char zero_gate_a, zero_gate_x, zero_gate_p; // the gate's registers in transit
+
+void zero_kernal_gate(void);
+void zero_irq_ram(void);
+void zero_nmi_ram(void);
+__asm__(
+    "  .section .text.zero_kernal_gate,\"ax\",@progbits\n"
+    "  .globl zero_kernal_gate\n"
+    "zero_kernal_gate:\n"
+    "  sta zero_gate_a\n"
+    "  stx zero_gate_x\n"
+    "  php\n"
+    "  pla\n"
+    "  sta zero_gate_p\n"              // the caller's flags (some entries take C)
+    "  pla\n"                          // where the JSR at $FFxx returns: $FFxx + 2
+    "  sec\n"
+    "  sbc #2\n"
+    "  sta .Lgate_call+1\n"            // the entry, in the ROM ($FF81 and up: no borrow)
+    "  pla\n"                          // its high byte, $FF
+    "  lda $01\n"
+    "  pha\n"                          // the program's port, for the way back
+    "  and #$f8\n"
+    "  ora #$06\n"                     // $36: the KERNAL in, the RAM at $A000 kept
+    "  sta $01\n"
+    "  lda zero_gate_p\n"
+    "  pha\n"
+    "  lda zero_gate_a\n"
+    "  ldx zero_gate_x\n"
+    "  plp\n"
+    ".Lgate_call:\n"
+    "  jsr $ff00\n"
+    "  php\n"
+    "  sta zero_gate_a\n"
+    "  pla\n"
+    "  sta zero_gate_p\n"              // the routine's flags (C: an error)
+    "  pla\n"
+    "  sta $01\n"
+    "  lda zero_gate_p\n"
+    "  pha\n"
+    "  lda zero_gate_a\n"
+    "  plp\n"
+    "  rts\n"                          // to whoever called $FFxx
+    // An interrupt: the KERNAL in, then its handler, which ends with RTI to
+    // a frame pushed here (flags $04: interrupts off, not a BRK).
+    "  .globl zero_irq_ram\n"
+    "zero_irq_ram:\n"
+    "  pha\n"
+    "  lda $01\n"
+    "  pha\n"
+    "  and #$f8\n"
+    "  ora #$06\n"
+    "  sta $01\n"
+    "  lda #mos16hi(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #mos16lo(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #$04\n"
+    "  pha\n"
+    "  jmp $ff48\n"                    // the KERNAL's IRQ entry
+    ".Lirq_back:\n"
+    "  pla\n"
+    "  sta $01\n"
+    "  pla\n"
+    "  rti\n"
+    "  .globl zero_nmi_ram\n"
+    "zero_nmi_ram:\n"
+    "  pha\n"
+    "  lda $01\n"
+    "  pha\n"
+    "  and #$f8\n"
+    "  ora #$06\n"
+    "  sta $01\n"
+    "  lda #mos16hi(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #mos16lo(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #$04\n"
+    "  pha\n"
+    "  jmp $fe43\n"                    // the KERNAL's NMI entry
+    "  .text\n");
+
+void cs_c64_kernal_rom(i32 on)
+{
+    if (on) {
+        PORT = (PORT & 0xF8) | 0x06;
+        return;
+    }
+    if ((PORT & 0x07) == 0x05)
+        return;
+    volatile unsigned char *under = (volatile unsigned char *)0xFF81;
+    for (unsigned char i = 0; i < 39; i++, under += 3) {
+        under[0] = 0x20; // JSR
+        under[1] = (unsigned char)(unsigned)zero_kernal_gate;
+        under[2] = (unsigned char)((unsigned)zero_kernal_gate >> 8);
+    }
+    volatile unsigned char *vectors = (volatile unsigned char *)0xFFFA;
+    vectors[0] = (unsigned char)(unsigned)zero_nmi_ram;
+    vectors[1] = (unsigned char)((unsigned)zero_nmi_ram >> 8);
+    vectors[4] = (unsigned char)(unsigned)zero_irq_ram;
+    vectors[5] = (unsigned char)((unsigned)zero_irq_ram >> 8);
+    PORT = (PORT & 0xF8) | 0x05;
+}
 
 // ---- fibers (lib/Fibers.cs) ---------------------------------------------------------
 //

@@ -179,6 +179,32 @@ The build already favors size everywhere: the C# compiler runs with `--Os`, ever
 to be compiled for size, and llvm-mos optimizes the whole program at link time, which makes it a fifth
 smaller again.
 
+### 8 KB more: the RAM under the KERNAL
+
+Under the KERNAL ROM, at `$E000`, there is 8 KB of RAM that a program can't normally see.
+`C64.KernalRom = false` switches the ROM out, and `C64.RamUnderKernal` is that RAM, 8,065 bytes, to
+read and write like any other memory:
+
+<!-- sample: samples/C64RomOut.cs rom-out -->
+```csharp
+C64.KernalRom = false;
+// Now the RAM is there, to read and write like any other memory.
+bool same = true;
+for (int i = 0; i < ram.Length; i++)
+    same &= ram[i] == Pattern(i);
+Console.WriteLine("Printed with the KERNAL ROM out.");
+```
+
+The KERNAL goes on working: printing, `In.ReadLine`, its interrupt (the keyboard, `C64.Ticks`) and
+anything else that calls it. The RAM at the KERNAL's own jump table and interrupt vectors, which the
+6502 reads while the ROM is out, sends each call and each interrupt to a few lines in the program that
+switch the ROM in for it and out again. That costs about 100 cycles a call, and the RAM above `$FF80`,
+which is why the program gets 8,065 bytes rather than 8,192. The program's end switches the ROM back
+in.
+
+Writing to that RAM works with the ROM in too; reading then gives the ROM's bytes. Code of your own
+that switches memory with the processor port at `$01` should put back what it found there.
+
 ## The screen, sprites and the keyboard
 
 `lib/C64.cs` has the machine. `Console.WriteLine` and `In.ReadLine` work as everywhere, through the C64's own
