@@ -471,7 +471,9 @@ i32 cs_read(i32 file, char *buffer, u32 count)
 
 // The KERNAL counts sixtieths of a second since the machine was switched on,
 // in three bytes at $A0 (the highest first), from its timer interrupt. That
-// is all the clock there is: both of clock_gettime's clocks start at power-on.
+// is C64.Ticks. It stands still whenever interrupts are off: while a program
+// has switched the KERNAL's interrupt off (C64.KernalInterrupt), has the ROMs
+// switched out, or during disk access.
 static u32 jiffies(void)
 {
     volatile unsigned char *clock = (volatile unsigned char *)0xA0;
@@ -484,13 +486,99 @@ static u32 jiffies(void)
     return ((u32)high << 16) | ((u32)middle << 8) | low;
 }
 
+// clock_gettime and usleep (Clock, Stopwatch, Environment.TickCount64,
+// Fiber.Sleep, the timers) count those sixtieths too. A program that turns
+// the KERNAL's interrupt off (C64.KernalInterrupt) turns on keep_time
+// below, and then they go on counting while the jiffies stand still: CIA
+// 2's time-of-day clock, which counts the mains' cycles into tenths of a
+// second and needs no interrupt, says how much time went by, and the clock
+// moves a tenth at a time. Only such a program has that code: it is
+// reached through a pointer, which only c64_keep_time sets.
+static u32 clock_extra;                 // sixtieths counted while the jiffies stood still
+static void (*clock_check)(void);       // keep_time, once c64_keep_time has run
+
+static u32 clock_ticks(void)
+{
+    if (clock_check)
+        clock_check();
+    return jiffies() + clock_extra;
+}
+
 i32 cs_clock_gettime(i32 clock, i64 *timespec)
 {
-    u32 ticks = jiffies();
+    u32 ticks = clock_ticks();
     (void)clock;
     timespec[0] = ticks / 60;
     timespec[1] = (i64)(ticks % 60) * 16666667;
     return 0;
+}
+
+// keep_time counts on the time-of-day clock only when the jiffies stood
+// still across two tenths, which never happens while the interrupt runs
+// (it comes every sixtieth), so no stretch of time is counted by both.
+// c64_keep_time starts the time-of-day clock at 0, set to the mains' 50 Hz
+// on a PAL machine (the KERNAL's flag at $02A6), 60 on NTSC: a program that
+// keeps time in CIA 2's TOD registers itself shares them. CIA 2's timers
+// are left alone (RS-232 and NMI routines use them).
+#define TOD2 ((volatile unsigned char *)0xDD08)
+
+static unsigned char tod_stalled, tod_still; // interrupts off; tenths with no jiffy
+static unsigned char tod_hour;               // the time-of-day clock at the last check: the hour (0-23)
+static unsigned short tod_in_hour;           // and tenths into it (below 36,000)
+static u32 tod_jiffies;                      // the KERNAL's count at the last check
+
+static unsigned char bcd(unsigned char v) { return (unsigned char)((v >> 4) * 10 + (v & 15)); }
+
+// Tenths of a second on the time-of-day clock since the last check. The
+// hours are 12-hour BCD with bit 7 for PM, starting at 0; reading them
+// holds the other registers until the tenths are read.
+static u32 tod_passed(void)
+{
+    unsigned char hours = TOD2[3], minutes = TOD2[2], seconds = TOD2[1], tenths = TOD2[0];
+    unsigned char hour = (unsigned char)(bcd(hours & 0x1F) % 12 + (hours & 0x80 ? 12 : 0));
+    unsigned short in_hour = (unsigned short)((bcd(minutes) * 60 + bcd(seconds)) * 10 + tenths);
+    // Whole hours, then the rest; modulo 2^32 the sum is right when the
+    // rest is negative.
+    u32 passed = (u32)(unsigned char)((hour + 24 - tod_hour) % 24) * 36000 + in_hour - tod_in_hour;
+    tod_hour = hour;
+    tod_in_hour = in_hour;
+    return passed;
+}
+
+static void keep_time(void)
+{
+    u32 now = jiffies(), tenths = tod_passed();
+    if (now != tod_jiffies) {
+        tod_jiffies = now;
+        tod_still = 0;
+        tod_stalled = 0;
+        return;
+    }
+    // Two tenths and not a jiffy: interrupts are off, since the last jiffy,
+    // and all those tenths count; from then on, each one.
+    u32 still = tod_still + tenths;
+    if (tod_stalled || still >= 2) {
+        clock_extra += still * 6;
+        tod_stalled = 1;
+        tod_still = 0;
+    } else {
+        tod_still = (unsigned char)still;
+    }
+}
+
+void cs_c64_keep_time(void)
+{
+    if (clock_check)
+        return;
+    volatile unsigned char *control = (volatile unsigned char *)0xDD0E;
+    *control = (*control & 0x7F) | (*(volatile unsigned char *)0x02A6 ? 0x80 : 0);
+    *(volatile unsigned char *)0xDD0F &= 0x7F; // TOD writes set the time, not the alarm
+    TOD2[3] = 0; // writing the hours stops it, the tenths start it again
+    TOD2[2] = 0;
+    TOD2[1] = 0;
+    TOD2[0] = 0;
+    tod_jiffies = jiffies();
+    clock_check = keep_time;
 }
 
 // ---- the rest of what zerocore and lib/ import -------------------------------------
@@ -1758,6 +1846,10 @@ void cs_c64_wait_line(i32 line)
 {
     volatile unsigned char *raster = (volatile unsigned char *)0xD012;
     unsigned char wanted = (unsigned char)line;
+    // The next time the beam reaches the line: if it is on it already, the
+    // line ends first (63 cycles), so that two calls never return in the
+    // same frame.
+    while (*raster == wanted) {}
     while (*raster != wanted) {}
 }
 
@@ -1796,6 +1888,77 @@ __asm__(
     "  .text\n");
 
 u32 cs_c64_ticks(void) { return jiffies(); }
+
+// ---- the RAM Expansion Unit (C64.Reu) --------------------------------------------------
+//
+// The 1700, 1764 and 1750, and the C64 Ultimate's: memory the 6502 can't
+// address, copied to and from the C64's by DMA, while the processor waits,
+// at a byte a cycle. The registers: $DF01 the command, $DF02-03 the C64
+// address, $DF04-06 the REU address, $DF07-08 the length, $DF0A whether
+// the addresses count up (0: both do).
+#define REU ((volatile unsigned char *)0xDF00)
+
+// command: $90, from the C64 to the REU; $91, the other way (bit 7: now;
+// bit 4: without waiting for a write to $FF00). A length of 0 would copy
+// 64 KB, so count is never 0 here.
+static void reu_copy(unsigned char command, u32 reu, unsigned char *c64, unsigned count)
+{
+    unsigned address = (unsigned)c64;
+    REU[2] = (unsigned char)address;
+    REU[3] = (unsigned char)(address >> 8);
+    REU[4] = (unsigned char)reu;
+    REU[5] = (unsigned char)(reu >> 8);
+    REU[6] = (unsigned char)(reu >> 16);
+    REU[7] = (unsigned char)count;
+    REU[8] = (unsigned char)(count >> 8);
+    REU[0x0A] = 0;
+    REU[1] = command;
+}
+
+void cs_c64_reu_copy(i32 toReu, i32 reu, unsigned char *c64, i32 count)
+{
+    if (count > 0)
+        reu_copy(toReu ? 0x90 : 0x91, (u32)reu, c64, (unsigned)count);
+}
+
+// The REU's size: 0 without one. Without an REU nothing answers at $DF02,
+// and a byte written there doesn't read back. With one, a byte is written
+// at 0 and at each power of two from 64 KB to 8 MB; an REU smaller than an
+// address wraps it to 0, so the smallest address that reads back what 0
+// does is the size. The bytes there are put back, highest address first,
+// so that the one at 0 is put back last.
+i32 cs_c64_reu_size(void)
+{
+    REU[2] = 0x55;
+    if (REU[2] != 0x55)
+        return 0;
+    REU[2] = 0xAA;
+    if (REU[2] != 0xAA)
+        return 0;
+    unsigned char saved[9], seen[9];
+    u32 probe[9];
+    probe[0] = 0;
+    for (unsigned char i = 1; i < 9; i++)
+        probe[i] = (u32)1 << (15 + i);
+    for (unsigned char i = 0; i < 9; i++)
+        reu_copy(0x91, probe[i], &saved[i], 1);
+    for (unsigned char i = 0; i < 9; i++) {
+        seen[i] = i;
+        reu_copy(0x90, probe[i], &seen[i], 1);
+    }
+    for (unsigned char i = 0; i < 9; i++)
+        reu_copy(0x91, probe[i], &seen[i], 1);
+    i32 size = (i32)1 << 24;
+    if (seen[0] != 0)
+        for (unsigned char i = 1; i < 9; i++)
+            if (seen[i] == seen[0]) {
+                size = (i32)probe[i];
+                break;
+            }
+    for (unsigned char i = 9; i-- > 0;)
+        reu_copy(0x90, probe[i], &saved[i], 1);
+    return size;
+}
 
 // ---- fibers (lib/Fibers.cs) ---------------------------------------------------------
 //
@@ -1861,10 +2024,12 @@ i32 cs_mprotect(void *address, u32 length, i32 protection)
     return 0;
 }
 
+// Waits on the clock above, so with keep_time on it returns with
+// interrupts off too.
 i32 cs_usleep(u32 microseconds)
 {
-    u32 start = jiffies(), wait = (microseconds + 16666) / 16667;
-    while (jiffies() - start < wait) { }
+    u32 start = clock_ticks(), wait = (microseconds + 16666) / 16667;
+    while (clock_ticks() - start < wait) { }
     return 0;
 }
 

@@ -12,6 +12,8 @@
 //       C64.Poke(0xD020, frame++ & 15);                 // any address at all
 //   }
 //
+// C64.Reu reads and writes a RAM Expansion Unit, when there is one.
+//
 // Out.Line and In.ReadLine work as everywhere, through the C64's own screen
 // editor: text scrolls, and a typed line is handed over at RETURN. Print
 // puts characters at a position without moving that cursor.
@@ -53,6 +55,7 @@ public static class C64
     [DllImport("libc")] static safe extern int c64_key();
     [DllImport("libc")] static safe extern int c64_matrix(int columns);
     [DllImport("libc")] static safe extern uint c64_ticks();
+    [DllImport("libc")] static safe extern void c64_keep_time();
 
     // ---- memory ------------------------------------------------------------------
 
@@ -211,12 +214,25 @@ public static class C64
         return (c64_matrix(1 << (position >> 3)) & (1 << (position & 7))) != 0;
     }
 
-    /// <summary>Whether the KERNAL's interrupt runs, 60 times a second. It scans the keyboard for ReadKey and In.ReadLine, counts Ticks and blinks the cursor, and takes about a tenth of the processor's time. A game that reads keys with KeyHeld can switch it off while it plays: ReadKey then gets nothing and Ticks stands still. The program's end switches it back on.</summary>
+    /// <summary>
+    /// Whether the KERNAL's interrupt runs, 60 times a second. It scans the keyboard for
+    /// ReadKey and In.ReadLine, counts Ticks and blinks the cursor, and takes about a tenth
+    /// of the processor's time. A game that reads keys with KeyHeld can switch it off while
+    /// it plays: ReadKey then gets nothing and Ticks stands still. The program's end
+    /// switches it back on.
+    /// </summary>
+    /// <remarks>
+    /// Clock, Stopwatch, Environment.TickCount64, Fiber.Sleep and the timers go on while it
+    /// is off, a tenth of a second at a time, on CIA 2's time-of-day clock (switching it
+    /// off the first time starts that clock at 0; CIA 2's timers are left alone).
+    /// </remarks>
     public static bool KernalInterrupt
     {
         get => !s_kernalOff;
         set
         {
+            if (!value)
+                c64_keep_time();
             s_kernalOff = !value;
             c64_poke(0xDC0D, value ? 0x81 : 0x7F);     // the timer's interrupt, enabled or not
         }
@@ -226,4 +242,64 @@ public static class C64
 
     /// <summary>The joystick in port 2: Up, Down, Left, Right and Fire, added up; 0 when it is at rest.</summary>
     public static int Joystick => ~c64_peek(JoystickPort2) & 31;
+
+    // ---- the RAM Expansion Unit -------------------------------------------------------
+
+    /// <summary>
+    /// A RAM Expansion Unit: the 1700 (128 KB), 1764 (256 KB) or 1750 (512 KB), or the
+    /// C64 Ultimate's (up to 16 MB). The processor can't address its memory; Read and
+    /// Write copy between it and the C64's, by DMA, a byte a cycle (a KB in about a
+    /// millisecond), so data far bigger than the C64 can be kept there and brought in
+    /// a piece at a time. In VICE: <c>x64sc -reu -reusize 512</c>, and
+    /// <c>-reuimage file</c> for memory that starts with a file's bytes.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// if (C64.Reu.Size == 0) { Console.WriteLine("This needs an REU."); return; }
+    /// Span&lt;byte&gt; row = stackalloc byte[64];
+    /// C64.Reu.Read(0x10000, row);       // 64 bytes from 64 KB into the REU
+    /// C64.Reu.Write(0x10000, row);      // and back
+    /// </code>
+    /// </example>
+    public static class Reu
+    {
+        [DllImport("libc")] static unsafe extern void c64_reu_copy(int toReu, int address, byte* c64, int count);
+        [DllImport("libc")] static safe extern int c64_reu_size();
+
+        /// <summary>
+        /// The REU's size in bytes, 0 without one. Measured each time: it writes a byte at
+        /// nine addresses and puts back what was there.
+        /// </summary>
+        public static int Size => c64_reu_size();
+
+        /// <summary>Copies bytes from the REU at <paramref name="address"/> (0 to 16 MB) into <paramref name="into"/>. Past the end of a smaller REU the address wraps around to 0.</summary>
+        public static void Read(int address, Span<byte> into)
+        {
+            CheckAddress(address);
+            unsafe
+            {
+                // SAFETY: the DMA writes into.Length bytes, all inside into.
+                fixed (byte* p = into)
+                    c64_reu_copy(0, address, p, into.Length);
+            }
+        }
+
+        /// <summary>Copies <paramref name="bytes"/> into the REU at <paramref name="address"/> (0 to 16 MB).</summary>
+        public static void Write(int address, ReadOnlySpan<byte> bytes)
+        {
+            CheckAddress(address);
+            unsafe
+            {
+                // SAFETY: the DMA reads bytes.Length bytes, all inside bytes.
+                fixed (byte* p = bytes)
+                    c64_reu_copy(1, address, p, bytes.Length);
+            }
+        }
+
+        static void CheckAddress(int address)
+        {
+            if ((uint)address >= 1 << 24)
+                throw new ArgumentOutOfRangeException(nameof(address));
+        }
+    }
 }
