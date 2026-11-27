@@ -1518,6 +1518,15 @@ case "$TARGET" in
         echo "[clang] gpu/cuda.c -> $PAYLOAD_DIR/native/linux-{x64,arm64}/cuda.o"
         "$WIN_CLANG" -target x86_64-linux-gnu -ffreestanding -O2 -Wall -Wextra -c gpu/cuda.c -o "$PAYLOAD_DIR/native/linux-x64/cuda.o"
         "$WIN_CLANG" -target aarch64-linux-gnu -ffreestanding -mno-outline-atomics -O2 -Wall -Wextra -c gpu/cuda.c -o "$PAYLOAD_DIR/native/linux-arm64/cuda.o"
+        # Android (arm64): bflat links as for Linux, against the layout's
+        # Bionic (--libc bionic), with the Linux arm64 zerocore and
+        # android/runtime.c, the glibc names lib/ uses that Bionic lacks.
+        mkdir -p "$PAYLOAD_DIR/native/android-arm64"
+        echo "[clang] android/runtime.c -> $PAYLOAD_DIR/native/android-arm64"
+        cp "$PAYLOAD_DIR/native/linux-arm64/zerocore.o" "$PAYLOAD_DIR/native/android-arm64/"
+        "$WIN_CLANG" -target aarch64-linux-android21 -O2 -ffreestanding -fPIC -Wall -Wextra -c android/runtime.c -o "$PAYLOAD_DIR/native/android-arm64/runtime.o"
+        # dotnet run's launcher, which quotes the arguments for adb shell.
+        cp android/dotnet-run.sh "$PAYLOAD_DIR/native/android-arm64/"
         # zero-bitcode, which builds C64 programs from the IL (a .NET program,
         # the same on every host).
         echo "[dotnet] sdk/ZeroCSharp.Bitcode -> $PAYLOAD_DIR/tools/zero-bitcode"

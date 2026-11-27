@@ -262,6 +262,7 @@ test_payload_complete() {
              native/osx-arm64/start.o native/osx-arm64/runtime.o native/osx-arm64/library.o native/osx-arm64/zerocore.o \
              native/osx-arm64/libSystem.tbd VERSIONS.txt \
              native/iossimulator-arm64/{start,runtime,zerocore,launch}.o native/iossimulator-arm64/{libSystem.tbd,boot.sh} \
+             native/android-arm64/{zerocore,runtime}.o native/android-arm64/dotnet-run.sh \
              native/uefi-x64/{start,runtime,machine,stack,zerocore}.obj native/uefi-x64/libm.lib \
              native/uefi-arm64/{start,runtime,machine,stack,zerocore}.obj native/uefi-arm64/libm.lib \
              native/c64/System.Private.CoreLib.dll native/c64/runtime.c native/gpu/metal.m \
@@ -377,6 +378,32 @@ test_cross_targets() {
         if ! run_in "$dir" cross-uefi-$other build -p:ZeroTarget=uefi-$other; then fail "$name" "uefi-$other build failed"; return; fi
         if ! is_efi_app "$dir/bin/Debug/$TFM/uefi-$other/native.efi" $other; then fail "$name" "native.efi isn't a UEFI application for $other"; return; fi
     done
+    pass "$name"
+}
+
+# ZeroTarget=android-arm64: an arm64 ELF that Android's loader starts
+# (/system/bin/linker64), position-independent (e_type 3, ET_DYN). Built on
+# every host; on a Linux arm64 host with Docker it also runs, in a container
+# with Android's loader and C library from the repository's android/sysroot,
+# as the repository's tests run Android programs on CI.
+test_android_target() {
+    local name="android target" dir program out
+    can_build "$name" || return
+    dir=$(fixture native android)
+    if ! run_in "$dir" android build -p:ZeroTarget=android-arm64; then fail "$name" "android-arm64 build failed"; return; fi
+    program=$dir/bin/Debug/$TFM/android-arm64/native
+    if ! is_elf "$program" aarch64; then fail "$name" "not an arm64 ELF"; return; fi
+    if [ "$(byte_at "$program" 16)" != 3 ]; then fail "$name" "not position-independent"; return; fi
+    if ! grep -aq /system/bin/linker64 "$program"; then fail "$name" "doesn't ask for Android's loader"; return; fi
+    if [ "$HOST_OS" = Linux ] && [ "$HOST_ARCH_NAME" = arm64 ] && command -v docker > /dev/null 2>&1; then
+        docker image inspect ubuntu:24.04 > /dev/null 2>&1 || docker pull -q ubuntu:24.04 > /dev/null
+        out=$(docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$ROOT/android/sysroot/system:/system:ro" -v "$ROOT/android/sysroot/linkerconfig:/linkerconfig:ro" \
+            -v "$(dirname "$program"):/zero:ro" ubuntu:24.04 /zero/native 2>&1)
+        if [ "$out" != hi ]; then fail "$name" "printed '$out' in the Android container"; return; fi
+        pass "$name (ran in the Android container)"
+        return
+    fi
     pass "$name"
 }
 
@@ -2235,7 +2262,7 @@ test_fsharp_native_library_errors() {
 }
 
 ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old_dotnet_sdk_refused unions_compile plain_packages_refused
-    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target path_with_spaces compile_items incremental
+    native_hello_runs cross_targets android_target c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target path_with_spaces compile_items incremental
     bflat_failure_fails_the_build size strip_symbols debug_unoptimized mac_debug_object_kept windows_debugger macos_error
     project_reference library_change_rebuilds pack_and_package_reference version_mismatch templates
     custom_packages_folder dotnet_run publish extra_dll_imports library_import inherited_settings clean_and_rebuild

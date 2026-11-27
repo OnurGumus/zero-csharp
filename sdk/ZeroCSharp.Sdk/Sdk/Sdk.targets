@@ -278,8 +278,8 @@
            Text="Zero C# builds on Apple Silicon Macs, not Intel ones; build on an Apple Silicon Mac, Linux (x64 or arm64) or Windows x64." />
     <Error Condition="'$(ZeroHostRid)' == '' and !$([MSBuild]::IsOSPlatform('OSX'))"
            Text="Zero C# can't make native programs on this machine yet; build on Linux (x64 or arm64), Windows x64 or an Apple Silicon Mac." />
-    <Error Condition="'$(ZeroTarget)' != 'linux-x64' and '$(ZeroTarget)' != 'linux-arm64' and '$(ZeroTarget)' != 'win-x64' and '$(ZeroTarget)' != 'osx-arm64' and '$(ZeroTarget)' != 'iossimulator-arm64' and '$(ZeroTarget)' != 'uefi-x64' and '$(ZeroTarget)' != 'uefi-arm64' and '$(ZeroTarget)' != 'c64' and '$(ZeroTarget)' != 'pico2' and '$(ZeroTarget)' != 'r4'"
-           Text="ZeroTarget '$(ZeroTarget)' isn't supported. Use one of: linux-x64, linux-arm64, win-x64, osx-arm64, iossimulator-arm64, uefi-x64, uefi-arm64, c64, pico2, r4." />
+    <Error Condition="'$(ZeroTarget)' != 'linux-x64' and '$(ZeroTarget)' != 'linux-arm64' and '$(ZeroTarget)' != 'win-x64' and '$(ZeroTarget)' != 'osx-arm64' and '$(ZeroTarget)' != 'iossimulator-arm64' and '$(ZeroTarget)' != 'android-arm64' and '$(ZeroTarget)' != 'uefi-x64' and '$(ZeroTarget)' != 'uefi-arm64' and '$(ZeroTarget)' != 'c64' and '$(ZeroTarget)' != 'pico2' and '$(ZeroTarget)' != 'r4'"
+           Text="ZeroTarget '$(ZeroTarget)' isn't supported. Use one of: linux-x64, linux-arm64, win-x64, osx-arm64, iossimulator-arm64, android-arm64, uefi-x64, uefi-arm64, c64, pico2, r4." />
     <Error Condition="'$(ZeroTarget)' == 'c64' and '$(ZeroHostRid)' == 'linux-arm64'"
            Text="ZeroTarget c64 builds on Linux x64, Windows x64 or an Apple Silicon Mac: llvm-mos, the compiler for the 6502, has no build for Linux arm64." />
     <Error Condition="'$(ZeroGpu)' != '' and '$(ZeroGpu)' != 'Metal' and '$(ZeroGpu)' != 'Cuda'"
@@ -538,6 +538,13 @@
       <_ZeroArg Include="--arch arm64" Condition="'$(ZeroTarget)' == 'linux-arm64' or '$(_ZeroApple)' == 'true'" />
       <_ZeroArg Include="--ldflags &quot;$(ZeroNativeDir)zerocore.o&quot; --ldflags &quot;-z nostart-stop-gc&quot;" Condition="'$(ZeroTarget)' == 'linux-x64' or '$(ZeroTarget)' == 'linux-arm64'" />
       <_ZeroArg Include="--ldflags &quot;-z max-page-size=4096&quot;" Condition="'$(ZeroTarget)' == 'linux-arm64'" />
+      <!-- Android (arm64): a command-line program, the kind adb shell runs, linked
+           as for Linux against Android's C library, Bionic, from bflat's layout
+           (no Android NDK); android/runtime.c gives lib/ the few glibc names
+           Bionic lacks. Position-independent (Android runs nothing else), and
+           16 KB pages: Android 15 runs on phones with them, and Google Play
+           asks for it; a 4 KB-page phone loads these too. -->
+      <_ZeroArg Include="--os linux --arch arm64 --libc bionic --ldflags &quot;$(ZeroNativeDir)zerocore.o&quot; --ldflags &quot;$(ZeroNativeDir)runtime.o&quot; --ldflags &quot;-z nostart-stop-gc&quot; --ldflags &quot;-z max-page-size=16384&quot;" Condition="'$(ZeroTarget)' == 'android-arm64'" />
       <!-- ZeroGpu=Cuda: the kernels (PTX, in kernels.o) and CUDA's driver API
            behind lib/Gpu.cs's C functions (cuda.o), which opens libcuda. -->
       <_ZeroArg Include="--ldflags &quot;$([System.IO.Path]::GetFullPath('$(ZeroGpuDir)kernels.o'))&quot; --ldflags &quot;$(ZeroNativeDir)cuda.o&quot; --ldflags -ldl" Condition="'$(ZeroGpu)' == 'Cuda'" />
@@ -568,7 +575,7 @@
            object, so the linker drops the symbols that point to it), and lld
            leaves the symbol table out of Linux programs. -->
       <_ZeroArg Include="--no-debug-info" Condition="'$(ZeroStripSymbols)' == 'true' and '$(_ZeroApple)' != 'true' and '$(_ZeroBitcodeTarget)' != 'true'" />
-      <_ZeroArg Include="--ldflags --strip-all" Condition="'$(ZeroStripSymbols)' == 'true' and ('$(ZeroTarget)' == 'linux-x64' or '$(ZeroTarget)' == 'linux-arm64')" />
+      <_ZeroArg Include="--ldflags --strip-all" Condition="'$(ZeroStripSymbols)' == 'true' and ('$(ZeroTarget)' == 'linux-x64' or '$(ZeroTarget)' == 'linux-arm64' or '$(ZeroTarget)' == 'android-arm64')" />
       <_ZeroArg Include="-m $(ZeroInstructionSet)" Condition="'$(ZeroInstructionSet)' != '' and '$(_ZeroBitcodeTarget)' != 'true'" />
       <_ZeroArg Include="-o &quot;$(ZeroBflatOutput)&quot;" Condition="'$(_ZeroApple)' != 'true' and '$(_ZeroBitcodeTarget)' != 'true'" />
       <_ZeroArg Include="-o &quot;$(ZeroNativeObject)&quot;" Condition="'$(_ZeroApple)' == 'true'" />
@@ -635,7 +642,7 @@
   <!-- Every target's program and command line that a build may have made. -->
   <Target Name="ZeroNativeFiles">
     <ItemGroup>
-      <_ZeroAnyTarget Include="linux-x64;linux-arm64;win-x64;osx-arm64;iossimulator-arm64;uefi-x64;uefi-arm64;c64;pico2;r4" />
+      <_ZeroAnyTarget Include="linux-x64;linux-arm64;win-x64;osx-arm64;iossimulator-arm64;android-arm64;uefi-x64;uefi-arm64;c64;pico2;r4" />
       <ZeroNativeFile Include="$(OutDir)$(AssemblyName);$(OutDir)$(AssemblyName).exe" />
       <ZeroNativeFile Include="@(_ZeroAnyTarget->'$(OutDir)%(Identity)/$(AssemblyName)')" />
       <ZeroNativeFile Include="@(_ZeroAnyTarget->'$(OutDir)%(Identity)/$(AssemblyName).exe')" />
@@ -727,6 +734,60 @@
     <RunArguments>-M $(_ZeroQemuMachine) -nographic -serial none -monitor none -chardev stdio,id=console -semihosting-config enable=on,target=native,chardev=console,arg=$(AssemblyName.Replace(' ', '_').Replace(',', ',,')) -kernel &quot;$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(_ZeroQemuProgram)'))&quot;</RunArguments>
     <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
   </PropertyGroup>
+
+  <!--
+    dotnet run of an Android program: on a phone (USB debugging on) or an
+    emulator, through adb, as the repository's android/run.sh runs them. The
+    program is copied to /data/local/tmp/zero, where adb shell may run
+    programs, and runs there: a relative path names a file on the device.
+    ZeroAdb is adb: from ANDROID_HOME's platform-tools, or Android Studio's
+    SDK folder for this system, or else PATH; adb's own ANDROID_SERIAL picks
+    a device when there are several.
+  -->
+  <PropertyGroup Condition="'$(ZeroTarget)' == 'android-arm64'">
+    <_ZeroAndroidSdk>$(ANDROID_HOME)</_ZeroAndroidSdk>
+    <_ZeroAndroidSdk Condition="'$(_ZeroAndroidSdk)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">$(HOME)/Library/Android/sdk</_ZeroAndroidSdk>
+    <_ZeroAndroidSdk Condition="'$(_ZeroAndroidSdk)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">$(HOME)/Android/Sdk</_ZeroAndroidSdk>
+    <_ZeroAndroidSdk Condition="'$(_ZeroAndroidSdk)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">$(LOCALAPPDATA)/Android/Sdk</_ZeroAndroidSdk>
+    <ZeroAdb Condition="'$(ZeroAdb)' == '' and Exists('$(_ZeroAndroidSdk)/platform-tools/adb')">$(_ZeroAndroidSdk)/platform-tools/adb</ZeroAdb>
+    <ZeroAdb Condition="'$(ZeroAdb)' == '' and Exists('$(_ZeroAndroidSdk)/platform-tools/adb.exe')">$(_ZeroAndroidSdk)/platform-tools/adb.exe</ZeroAdb>
+    <ZeroAdb Condition="'$(ZeroAdb)' == ''">adb</ZeroAdb>
+  </PropertyGroup>
+  <Target Name="ZeroAndroidRunArguments" BeforeTargets="ComputeRunArguments"
+          Condition="'$(ZeroTarget)' == 'android-arm64' and '$(OutputType)' != 'Library'">
+    <PropertyGroup>
+      <_ZeroAndroidDir>/data/local/tmp/zero</_ZeroAndroidDir>
+      <!-- adb shell joins its arguments into one command line for the device's
+           shell: the program's name is quoted for it (a name with ' in it isn't). -->
+      <_ZeroAndroidName>'$(AssemblyName)'</_ZeroAndroidName>
+      <!-- Not from the terminal's input: adb shell would read it, and the
+           program then miss it. -->
+      <_ZeroNoInput>&lt; /dev/null</_ZeroNoInput>
+      <_ZeroNoInput Condition="'$(OS)' == 'Windows_NT'">&lt; NUL</_ZeroNoInput>
+    </PropertyGroup>
+    <Exec Command="&quot;$(ZeroAdb)&quot; version $(_ZeroNoInput)" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low" EchoOff="true">
+      <Output TaskParameter="ExitCode" PropertyName="_ZeroAdbFound" />
+    </Exec>
+    <Error Condition="'$(_ZeroAdbFound)' != '0'"
+           Text="An android-arm64 program runs on a phone or emulator through adb, and there's no adb ($(ZeroAdb)). Install Android's platform tools (Android Studio's SDK Manager, or https://developer.android.com/tools/releases/platform-tools), and set ANDROID_HOME to the SDK folder or ZeroAdb to adb. Or copy $(OutDir)$(ZeroTargetFolder)$(AssemblyName) to the device yourself (adb push) and run it with adb shell." />
+    <Exec Command="&quot;$(ZeroAdb)&quot; shell mkdir -p $(_ZeroAndroidDir) $(_ZeroNoInput)" IgnoreExitCode="true" StandardOutputImportance="low" EchoOff="true">
+      <Output TaskParameter="ExitCode" PropertyName="_ZeroAdbDevice" />
+    </Exec>
+    <Error Condition="'$(_ZeroAdbDevice)' != '0'"
+           Text="adb found no Android device to run on: connect a phone with USB debugging on, or start an emulator (Android Studio's Device Manager), until adb devices lists it. With several, ANDROID_SERIAL picks one." />
+    <Exec Command="&quot;$(ZeroAdb)&quot; push &quot;$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutDir)$(ZeroTargetFolder)', '$(AssemblyName)'))&quot; &quot;$(_ZeroAndroidDir)/$(AssemblyName)&quot; $(_ZeroNoInput)" StandardOutputImportance="low" StandardErrorImportance="low" EchoOff="true" />
+    <!-- dotnet run puts its own arguments after RunArguments, where adb shell
+         would join them unquoted: the payload's dotnet-run.sh quotes each for
+         the device's shell. Windows has no sh: there, adb runs the program
+         directly, and an argument with a space in it arrives as two. -->
+    <PropertyGroup>
+      <RunCommand>/bin/sh</RunCommand>
+      <RunArguments>&quot;$(ZeroSdkRoot)payload/native/android-arm64/dotnet-run.sh&quot; &quot;$(ZeroAdb)&quot; $(_ZeroAndroidDir) &quot;$(AssemblyName)&quot; $(StartArguments)</RunArguments>
+      <RunCommand Condition="'$(OS)' == 'Windows_NT'">$(ZeroAdb)</RunCommand>
+      <RunArguments Condition="'$(OS)' == 'Windows_NT'">shell -T &quot;cd $(_ZeroAndroidDir) &amp;&amp; chmod 755 ./$(_ZeroAndroidName) &amp;&amp; ./$(_ZeroAndroidName) $(StartArguments)&quot;</RunArguments>
+      <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
+    </PropertyGroup>
+  </Target>
 
   <!-- dotnet publish ships the native program, not the IL it was built beside. -->
   <Target Name="ZeroPublishNative" AfterTargets="ComputeResolvedFilesToPublishList"

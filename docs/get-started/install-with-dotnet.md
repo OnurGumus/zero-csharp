@@ -102,6 +102,7 @@ dotnet build -p:ZeroTarget=linux-arm64    # bin/Debug/zero03/linux-arm64/Hello
 dotnet build -p:ZeroTarget=linux-x64      # from Windows: bin\Debug\zero03\linux-x64\Hello
 dotnet build -p:ZeroTarget=osx-arm64      # bin/Debug/zero03/osx-arm64/Hello, for Apple Silicon Macs
 dotnet build -p:ZeroTarget=iossimulator-arm64  # bin/Debug/zero03/iossimulator-arm64/Hello, for the iOS simulator
+dotnet build -p:ZeroTarget=android-arm64  # bin/Debug/zero03/android-arm64/Hello, for Android
 dotnet build -p:ZeroTarget=uefi-x64       # bin/Debug/zero03/uefi-x64/Hello.efi, no OS needed
 dotnet build -p:ZeroTarget=c64            # bin/Debug/zero03/c64/Hello.prg, for a Commodore 64
 dotnet build -p:ZeroTarget=pico2          # bin/Debug/zero03/pico2/Hello.uf2, for a Raspberry Pi Pico 2
@@ -121,6 +122,9 @@ the same way, and `dotnet run` runs it in QEMU. `dotnet new zeropico` starts suc
 
 `iossimulator-arm64` makes a console program for the iOS simulator on an Apple Silicon Mac, and
 `dotnet run` runs it there: see [The iOS simulator](#the-ios-simulator) below.
+
+`android-arm64` makes a command-line program for Android on arm64, and `dotnet run` runs it on a
+phone or emulator through adb: see [Android](#android) below.
 
 `dotnet clean` removes all of them.
 
@@ -157,9 +161,10 @@ or not: see [Make a game window](../how-to/make-a-game-window.html), which uses 
 
 | Property | Values | Default |
 |---|---|---|
-| `ZeroTarget` | `linux-x64`, `linux-arm64`, `win-x64`, `osx-arm64`, `iossimulator-arm64`, `uefi-x64`, `uefi-arm64`, `c64`, `pico2`, `r4` | the build machine's |
+| `ZeroTarget` | `linux-x64`, `linux-arm64`, `win-x64`, `osx-arm64`, `iossimulator-arm64`, `android-arm64`, `uefi-x64`, `uefi-arm64`, `c64`, `pico2`, `r4` | the build machine's |
 | `ZeroIosMinimum` | the oldest iOS an `iossimulator-arm64` program starts on | `17.0` |
 | `ZeroIosSimulator` | the simulator `dotnet run` runs an `iossimulator-arm64` program in, by name (`iPhone 16`) or UDID | the booted one, else the first iPhone |
+| `ZeroAdb` | the adb `dotnet run` runs an `android-arm64` program through | `ANDROID_HOME`'s, else Android Studio's, else `adb` on `PATH` |
 | `ZeroOptimizeFor` | `None` (bflat's `-O0`), `Speed`, or `Size` (bflat's `-Os`) | `None` in Debug, `Speed` otherwise |
 | `ZeroStripSymbols` | `true`: no debug information and no symbol table, about half of a Linux or macOS program; `false` keeps them for a debugger | `false` in Debug, `true` otherwise |
 | `ZeroInstructionSet` | passed to bflat as `-m`, e.g. `x86-64-v3` or `dotprod` (see [Use SIMD](../how-to/use-simd.html)) | none |
@@ -215,6 +220,26 @@ dotnet run -p:ZeroTarget=iossimulator-arm64 -- some arguments
 A simulator program is a Mac process with iOS's C library: passing there shows that the code runs on
 iOS, not that it fits an iPhone, where only a signed app runs, inside its own folder, with a 1 MB
 stack on the main thread. Programs only: no native libraries (`NativeLib=Shared`) and no `ZeroGpu`.
+
+## Android
+
+An `android-arm64` program is built on any machine, as a Linux one is: bflat links it against
+Android's C library, Bionic, which the bflat package carries, so the Android NDK isn't needed. It's a
+command-line program, the kind `adb shell` runs, with no app around it; it's position-independent, as
+Android requires, and aligned for the 16 KB pages of newer phones. `dotnet run` runs it on the phone
+(with USB debugging on) or emulator that adb finds, after copying it to `/data/local/tmp/zero` there,
+where adb may run programs. Its arguments, standard input and output, and exit code pass through:
+
+```bash
+dotnet run -p:ZeroTarget=android-arm64 -- some arguments
+```
+
+The program runs in `/data/local/tmp/zero` on the device, so a relative path names a file there, not
+in the project. adb comes from `ANDROID_HOME`, or else the folder Android Studio installs it in, or
+else `PATH`; `ZeroAdb` names another, and adb's own `ANDROID_SERIAL` picks one of several devices.
+Without adb or a device, `dotnet run` says which is missing. On Windows, `dotnet run` passes an
+argument with a space in it as two. Programs only: no native libraries (`NativeLib=Shared`) and no
+`ZeroGpu`.
 
 ## What dotnet build does
 

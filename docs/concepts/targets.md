@@ -124,6 +124,10 @@ starts the first virtual device Android Studio made (`ANDROID_AVD` picks another
 `ANDROID_SERIAL` picks one of several devices, as it does for adb. `./test.sh --android` runs every
 sample there.
 
+Without this repository, the SDK builds the same programs: `dotnet build -p:ZeroTarget=android-arm64`,
+and `dotnet run` runs them through adb (see
+[Install with dotnet](../get-started/install-with-dotnet.html#android)).
+
 With `ANDROID_RUN=container`, the programs run in an arm64 Linux container instead, with only Android's
 loader and C library, from `android/sysroot/` (copies from Android 15; its README says where they came
 from). That is how CI runs the samples, on its arm64 Linux runner, without an emulator. It shows that
