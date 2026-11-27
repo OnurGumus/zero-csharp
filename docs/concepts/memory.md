@@ -188,6 +188,63 @@ the same as `ScratchSize`, it makes each scratch arena one block that never call
 apply to the scratch arenas made afterwards, and a thread or fiber makes its own on its first `Scratch`
 call, so set them first thing in `Main`.
 
+For one call, the scratch memory can come from a buffer of yours instead: pass a `Span<byte>` first. An
+arena in the buffer stands in for the thread's scratch arena until the callback returns, the `Scratch`
+calls nested in it included. Nothing comes from malloc, and a callback that needs more than the buffer
+holds stops the program. The call is `unsafe`, because the arena keeps its bookkeeping in the buffer:
+nothing may read or write the buffer until the callback returns, the callback included, so don't pass it
+the buffer as its state or input. The compiler still keeps everything the scope gives out inside the
+callback.
+
+<!-- sample: samples/Scratch.cs buffer -->
+```csharp
+// Memory of yours instead of the thread's scratch arena, for one
+// call and the Scratch calls nested in it: no malloc, and a fixed
+// size (needing more than the buffer holds stops the program).
+Span<byte> memory = stackalloc byte[2048];
+int total;
+// SAFETY: nothing else uses memory until the call returns.
+unsafe
+{
+    total = Arena.Scratch(memory,
+        static (scoped ScratchScope scratch) =>
+        {
+            Span<int> numbers = scratch.AllocSpan<int>(100);
+            for (int i = 0; i < numbers.Length; i++)
+                numbers[i] = i;
+            int sum = 0;
+            foreach (int n in numbers)
+                sum += n;
+            return sum;
+        });
+}
+```
+
+A scope from outside such a call can still allocate inside it: its memory is in another arena, which the
+call doesn't free.
+
+`Arena.ScratchOnStack` does the same without `unsafe`: it takes a size and puts the buffer on its own
+stack frame, where nothing but the scope can reach it. The memory comes out of the thread's or fiber's
+stack, so keep the size well under that: a fiber's stack is 256 KB by default, but 32 KB on DOS, 4 KB
+on a microcontroller and 2 KB on a C64.
+
+<!-- sample: samples/Scratch.cs on-stack -->
+```csharp
+// The same in memory on ScratchOnStack's own stack frame: safe,
+// since nothing but the scope sees it.
+int sumOfSquares = Arena.ScratchOnStack(1024,
+    static (scoped ScratchScope scratch) =>
+    {
+        ScratchList<int> items = scratch.List<int>(8);
+        for (int i = 1; i <= 10; i++)
+            items.Add(i * i);
+        int sum = 0;
+        foreach (int item in items)
+            sum += item;
+        return sum;
+    });
+```
+
 The price is the callback. Data goes in and out through a state passed by `ref` (it may be a
 `ref struct` holding spans of yours) and through the callback's return value, so the lambda can be
 `static` and allocates nothing after its first call.

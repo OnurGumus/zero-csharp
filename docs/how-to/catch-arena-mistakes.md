@@ -110,6 +110,9 @@ repository:
 | `arena-limit` | an allocation past a `stopOnOutOfMemory` arena's `maxCapacity` | no |
 | `buffer-full` | an allocation that doesn't fit in a `stopOnOutOfMemory` arena from `FromBuffer` | no |
 | `scratch-limit` | an `Arena.Scratch` callback that allocates past `Arena.ScratchMaxCapacity` | no |
+| `scratch-buffer-full` | an `Arena.Scratch` callback that allocates past the end of the buffer it was given | no |
+| `scratch-stack-full` | an `Arena.ScratchOnStack` callback that allocates more than the size it asked for | no |
+| `scratch-stack-size` | `Arena.ScratchOnStack` with a size that isn't positive | no |
 
 `Guards.fail` holds each case's message. A named arena's name goes to standard output, the message to
 standard error (both to standard output on DOS), and the program aborts with a non-zero exit code.

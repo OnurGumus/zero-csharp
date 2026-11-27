@@ -63,6 +63,9 @@ public static class Program
             Console.WriteLine("  builder-replace-empty  a StrBuilder Replace of an empty string");
             Console.WriteLine("  scratch-outer-edit   a ScratchText inserted into inside a nested Arena.Scratch");
             Console.WriteLine("  scratch-limit        an Arena.Scratch callback allocating past Arena.ScratchMaxCapacity");
+            Console.WriteLine("  scratch-buffer-full  an Arena.Scratch callback allocating past the end of its buffer");
+            Console.WriteLine("  scratch-stack-full   an Arena.ScratchOnStack callback allocating more than it asked for");
+            Console.WriteLine("  scratch-stack-size   Arena.ScratchOnStack with a size that isn't positive");
             Console.WriteLine("  native-overflow      NativeMemory.Alloc with a count times size past the address space");
             Console.WriteLine("  native-zeroed-overflow  the same for NativeMemory.AllocZeroed");
             Console.WriteLine("  native-out-of-memory NativeMemory.Alloc of more than the system can give");
@@ -116,6 +119,9 @@ public static class Program
             case "builder-replace-empty": BuilderReplaceEmpty(); break;
             case "scratch-outer-edit": ScratchOuterEdit(); break;
             case "scratch-limit": ScratchLimit(); break;
+            case "scratch-buffer-full": ScratchBufferFull(); break;
+            case "scratch-stack-full": ScratchStackFull(); break;
+            case "scratch-stack-size": ScratchStackSize(Opaque(0) - 1); break;
             case "native-overflow": NativeOverflow(); break;
             case "native-zeroed-overflow": NativeZeroedOverflow(); break;
             case "native-out-of-memory": NativeOutOfMemory(); break;
@@ -479,6 +485,35 @@ public static class Program
             scratch.AllocSpan<byte>(600);  // past the limit
         });
         // docs:end
+    }
+
+    static void ScratchBufferFull()
+    {
+        Span<byte> memory = stackalloc byte[512];
+        // SAFETY: nothing else uses memory until the call returns.
+        unsafe
+        {
+            Arena.Scratch(memory, static (scoped ScratchScope scratch) =>
+            {
+                scratch.AllocSpan<byte>(1000);
+            });
+        }
+    }
+
+    static void ScratchStackFull()
+    {
+        Arena.ScratchOnStack(512, static (scoped ScratchScope scratch) =>
+        {
+            scratch.AllocSpan<byte>(1000);
+        });
+    }
+
+    static void ScratchStackSize(int bytes)
+    {
+        Arena.ScratchOnStack(bytes, static (scoped ScratchScope scratch) =>
+        {
+            scratch.AllocSpan<byte>(10);
+        });
     }
 
     static void PtrNull()

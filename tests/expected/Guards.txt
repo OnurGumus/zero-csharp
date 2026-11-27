@@ -40,6 +40,9 @@ Usage: Guards <case>, where the case is one of:
   builder-replace-empty  a StrBuilder Replace of an empty string
   scratch-outer-edit   a ScratchText inserted into inside a nested Arena.Scratch
   scratch-limit        an Arena.Scratch callback allocating past Arena.ScratchMaxCapacity
+  scratch-buffer-full  an Arena.Scratch callback allocating past the end of its buffer
+  scratch-stack-full   an Arena.ScratchOnStack callback allocating more than it asked for
+  scratch-stack-size   Arena.ScratchOnStack with a size that isn't positive
   native-overflow      NativeMemory.Alloc with a count times size past the address space
   native-zeroed-overflow  the same for NativeMemory.AllocZeroed
   native-out-of-memory NativeMemory.Alloc of more than the system can give

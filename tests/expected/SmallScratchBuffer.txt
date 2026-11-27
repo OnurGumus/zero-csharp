@@ -1,0 +1,3 @@
+PASS the buffer's memory, nested calls included
+PASS the thread's own arena afterwards
+PASS on the stack, and a call nested in it

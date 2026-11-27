@@ -98,6 +98,21 @@ public static class Program
             s.log.Add(s.id);
     }
 
+    // Fills scratch memory with its id, yields while the other fiber does the
+    // same, and logs its id if the memory still holds it: small enough for a
+    // microcontroller's fiber stack when the memory is on it.
+    static void FillYieldSmall(scoped ScratchScope scratch, (Log log, int id) s)
+    {
+        Span<int> mine = scratch.AllocSpan<int>(64);
+        mine.Fill(s.id);
+        Fiber.Yield();
+        bool ok = true;
+        foreach (int value in mine)
+            ok &= value == s.id;
+        if (ok)
+            s.log.Add(s.id);
+    }
+
     // Uses an eighth more than the smallest stack (18 KB of 16, or 1.1 KB of
     // 1 on DOS or a microcontroller), then yields, so Run looks at the stack's
     // bottom. Without a guard page the overflow lands in the guard page's
@@ -400,6 +415,25 @@ public static class Program
         Fiber.Run();
         Check("ScratchSize sets the first block",
             together.Count == 1 && together.Entries[0] == 2);
+        // Each fiber waits inside a Scratch call in a buffer of its own,
+        // which stands in for its scratch arena until the call returns; then
+        // it does the same in its own arena.
+        var buffered = new Log();
+        for (int id = 1; id <= 2; id++)
+            Fiber.Spawn((buffered, id), static s =>
+            {
+                byte[] buffer = new byte[4096];
+                // SAFETY: nothing else uses buffer.
+                unsafe { Arena.Scratch(buffer, s, FillYieldCheck); }
+                Arena.Scratch(s, FillYieldCheck);
+            });
+        Fiber.Run();
+        Check("a buffer of each fiber's", buffered.Count == 4);
+        var onStack = new Log();
+        for (int id = 1; id <= 2; id++)
+            Fiber.Spawn((onStack, id), static s => Arena.ScratchOnStack(1024, s, FillYieldSmall));
+        Fiber.Run();
+        Check("each fiber's own stack", onStack.Count == 2);
         Section("Scratch");
 
         // How long a switch takes: two fibers yielding to each other.
