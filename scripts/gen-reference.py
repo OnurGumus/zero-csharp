@@ -46,6 +46,7 @@ PAGES = [
     (('Sockets.cs', 'SocketsAsync.cs'), ['Socket', 'TcpListener', 'TcpClient', 'UdpClient', 'NetworkStream', 'SocketError', 'SocketException', 'AddressFamily', 'SocketType', 'ProtocolType', 'SocketFlags', 'SocketShutdown', 'SocketReceiveFromResult', 'UdpReceiveResult'], 'socket', 'TCP and UDP sockets that work with fibers (System.Net.Sockets).'),
     ('CryptoHashes.cs', ['SHA256', 'SHA384', 'SHA512', 'HMACSHA256', 'HMACSHA384', 'HMACSHA512', 'IncrementalHash', 'HKDF', 'HashAlgorithmName', 'CryptographicOperations', 'CryptographicException'], 'hashes', 'SHA-2 hashes, HMAC, HKDF and constant-time comparison (System.Security.Cryptography).'),
     ('CryptoChaCha.cs', ['ChaCha20Poly1305', 'AuthenticationTagMismatchException'], 'chacha20poly1305', 'Encryption with authentication: ChaCha20-Poly1305 (RFC 8439).'),
+    ('CryptoAes.cs', ['AesGcm'], 'aesgcm', 'Encryption with authentication: AES-GCM, in constant time.'),
     ('CryptoX25519.cs', ['X25519'], 'x25519', 'Key agreement over an open channel: X25519 (RFC 7748).'),
     ('CryptoRandom.cs', ['RandomNumberGenerator'], 'random-number-generator', 'Random bytes from the operating system, for keys and nonces.'),
     ('EncryptedStream.cs', ['EncryptedStream'], 'encrypted-stream', 'A stream that encrypts what goes through it, in TLS 1.3 records.'),

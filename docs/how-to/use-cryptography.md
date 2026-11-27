@@ -10,7 +10,7 @@ index: 31
 
 - **Hashes:** `SHA256`, `SHA384` and `SHA512`, `HMACSHA256` and its siblings, `HKDF`, and
   `IncrementalHash` for data that comes in pieces.
-- **Encryption:** `ChaCha20Poly1305`, which encrypts and authenticates in one step.
+- **Encryption:** `ChaCha20Poly1305` and `AesGcm`, which encrypt and authenticate in one step.
 - **Key agreement:** `X25519`, our own class (.NET has no X25519).
 - **Random bytes:** `RandomNumberGenerator`, from the operating system.
 - **A stream:** `EncryptedStream`, also ours, which encrypts what goes through another stream in TLS
@@ -18,7 +18,8 @@ index: 31
 
 It's plain C#, the same code on every target, and it runs in the same time whatever the keys and
 data are: no branches or table lookups on secrets. `samples/Crypto.cs` checks it against the
-standards' own test vectors (FIPS 180-4, RFC 4231, 5869, 7748, 8439 and 8448's TLS 1.3 handshake).
+standards' own test vectors (FIPS 180-4, RFC 4231, 5869, 7748, 8439, the GCM specification's, and
+RFC 8448's TLS 1.3 handshake, whose client Finished record it decrypts).
 `samples/CryptoErrors.cs` checks that changed data is refused, and `scripts/crypto-fuzz` compares
 it with .NET's own on random input.
 
@@ -81,6 +82,14 @@ Exception error = Catch.Run(
 
 A repeated nonce under one key gives away the XOR of the two plaintexts and lets anyone forge tags,
 so that is the one rule never to break.
+
+`AesGcm` works the same way, with a 16-, 24- or 32-byte key and a tag size (12 to 16 bytes) given to
+its constructor, as in .NET. It's the cipher every TLS server offers. AES is normally a table lookup
+per byte, and which entries a program reads shows in the processor's cache, where other code on the
+machine can time it. This one has no tables: it works on the bits of four blocks at once
+("bitsliced"), with the S-box as a circuit of ANDs and XORs. That costs some speed (about 85 MB/s on
+one Apple M2 Max core, against ChaCha20-Poly1305's 106 MB/s), far more than a connection needs. There are
+no AES instructions here: zero mode has no run-time CPU detection to choose them with.
 
 ## Random bytes
 

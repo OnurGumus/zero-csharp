@@ -1,9 +1,9 @@
 // Example: what the cryptography refuses (lib/CryptoChaCha.cs,
-// lib/EncryptedStream.cs): a changed ciphertext, tag, nonce or associated
-// data; records changed, cut short, reordered or under a wrong key; wrong
-// argument sizes. Each throw comes back through Catch.Run, which WebAssembly
-// doesn't have, so this runs everywhere else. Crypto checks the results
-// that should come out.
+// lib/CryptoAes.cs, lib/EncryptedStream.cs): a changed ciphertext, tag,
+// nonce or associated data; records changed, cut short, reordered or under
+// a wrong key; wrong argument sizes. Each throw comes back through
+// Catch.Run, which WebAssembly doesn't have, so this runs everywhere else.
+// Crypto checks the results that should come out.
 // Exit code = number of failed checks.
 // Build: ./build.sh CryptoErrors
 
@@ -99,6 +99,26 @@ public static class Program
         Check("unchanged opens", error == null && back[0] == 7 && back[99] == 106);
         Check("a mismatch is a CryptographicException", new AuthenticationTagMismatchException() is CryptographicException);
         Section("ChaCha20-Poly1305 refusals");
+
+        // The same for AES-GCM, with a 12-byte tag too.
+        foreach (int tagSize in new[] { 16, 12 })
+        {
+            using var gcm = new AesGcm(Numbered(16, 9), tagSize);
+            byte[] gcmTag = new byte[tagSize];
+            gcm.Encrypt(nonce, plaintext, ciphertext, gcmTag, aad);
+            ciphertext[99] ^= 0x40;
+            error = Catch.Run(() => gcm.Decrypt(nonce, ciphertext, gcmTag, back, aad));
+            Check($"AES-GCM changed ciphertext ({tagSize})", error is AuthenticationTagMismatchException);
+            Check($"AES-GCM zeros after failure ({tagSize})", AllZero(back));
+            ciphertext[99] ^= 0x40;
+            gcmTag[0] ^= 1;
+            error = Catch.Run(() => gcm.Decrypt(nonce, ciphertext, gcmTag, back, aad));
+            Check($"AES-GCM changed tag ({tagSize})", error is AuthenticationTagMismatchException);
+            gcmTag[0] ^= 1;
+            error = Catch.Run(() => gcm.Decrypt(nonce, ciphertext, gcmTag, back, aad));
+            Check($"AES-GCM unchanged opens ({tagSize})", error == null && back[0] == 7);
+        }
+        Section("AES-GCM refusals");
     }
 
     static void Records()
@@ -167,6 +187,13 @@ public static class Program
     {
         byte[] key = Numbered(32, 1);
         Check("short key", Catch.Run(() => new ChaCha20Poly1305(new byte[16])) is ArgumentException);
+        Check("AES key size", Catch.Run(() => new AesGcm(new byte[20], 16)) is ArgumentException);
+        Check("AES-GCM tag size", Catch.Run(() => new AesGcm(new byte[16], 8)) is ArgumentException);
+        Check("AES-GCM tag not as given", Catch.Run(() =>
+        {
+            using var gcm = new AesGcm(new byte[16], 16);
+            gcm.Encrypt(new byte[12], new byte[4], new byte[4], new byte[12]);
+        }) is ArgumentException);
         using var aead = new ChaCha20Poly1305(key);
         Check("short nonce", Catch.Run(() => aead.Encrypt(new byte[8], new byte[4], new byte[4], new byte[16])) is ArgumentException);
         Check("short tag", Catch.Run(() => aead.Encrypt(new byte[12], new byte[4], new byte[4], new byte[12])) is ArgumentException);

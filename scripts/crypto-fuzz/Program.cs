@@ -53,6 +53,7 @@ static class Program
         Hmacs(iterations);
         Hkdf(iterations / 4);
         Aead(iterations);
+        AesGcm(iterations);
         Poly1305(iterations);
         X25519(Math.Max(200, iterations / 20));
         Stream(Math.Max(100, iterations / 100));
@@ -203,6 +204,41 @@ static class Program
             }
         }
         Report("ChaCha20-Poly1305", iterations, failures, first);
+    }
+
+    static void AesGcm(int iterations)
+    {
+        int failures = 0;
+        string first = "";
+        int[] keySizes = { 16, 24, 32 };
+        for (int i = 0; i < iterations; i++)
+        {
+            byte[] key = Bytes(keySizes[i % 3]), nonce = Bytes(12);
+            int tagSize = 12 + s_random.Next(5);
+            byte[] aad = Bytes(Length(100));
+            byte[] plaintext = Bytes(s_random.Next(8) == 0 ? s_random.Next(2000) : Length(300));
+            // .NET on macOS takes only 16-byte tags; a shorter GCM tag is
+            // the full one's first bytes.
+            byte[] expectedCipher = new byte[plaintext.Length], fullTag = new byte[16];
+            using (var dotnet = new S.AesGcm(key, 16))
+                dotnet.Encrypt(nonce, plaintext, expectedCipher, fullTag, aad);
+            byte[] expectedTag = fullTag.AsSpan(0, tagSize).ToArray();
+
+            using var ours = new Z.AesGcm(key, tagSize);
+            byte[] cipher = new byte[plaintext.Length], tag = new byte[tagSize];
+            ours.Encrypt(nonce, plaintext, cipher, tag, aad);
+            bool same = Hex(cipher) == Hex(expectedCipher) && Hex(tag) == Hex(expectedTag);
+            byte[] back = new byte[plaintext.Length];
+            bool opened = ours.TryDecrypt(nonce, cipher, tag, back, aad) && Hex(back) == Hex(plaintext);
+
+            int where = s_random.Next(cipher.Length + tagSize);
+            byte bit = (byte)(1 << s_random.Next(8));
+            if (where < cipher.Length) cipher[where] ^= bit; else tag[where - cipher.Length] ^= bit;
+            bool refused = !ours.TryDecrypt(nonce, cipher, tag, back, aad);
+            if (!(same && opened && refused) && failures++ == 0)
+                first = $"key {key.Length}, tag {tagSize}, aad {aad.Length}, plaintext {plaintext.Length}: same {same}, opened {opened}, refused {refused}";
+        }
+        Report("AES-GCM", iterations, failures, first);
     }
 
     static byte[] FlipBack(byte[] aad, int index, byte bit)
