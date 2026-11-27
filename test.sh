@@ -461,7 +461,10 @@ run_all() {
     # async Main after an await, and releasing a full semaphore must end the
     # program with a message.
     if [[ " ${samples[*]} " == *" Tasks "* ]] && [ "$target" != c64 ]; then
-        for case in "canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main" "full|would exceed the maximum"; do
+        cases=("canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main" "full|would exceed the maximum")
+        # Only where there are threads to complete it from.
+        case $target in dos|uefi|pico2|r4|c64|wasm|page) ;; *) cases+=("crossthread|completed from another thread") ;; esac
+        for case in "${cases[@]}"; do
             arg=${case%%|*}
             message=${case#*|}
             status=0

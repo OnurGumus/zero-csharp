@@ -374,6 +374,40 @@ constructors aren't thread-safe, so touch a type's statics before the call.
 
 Where there are no threads (DOS, UEFI, microcontrollers) the call runs at once, on the calling
 thread.
+## Complete a task from another thread
+
+A task, a `TaskCompletionSource`, a channel and a fiber all belong to their thread, and nothing there
+is locked. Completing a plain `TaskCompletionSource` from another thread, such as a C library's
+callback thread, would corrupt its waiters, so it stops the program with a message instead.
+`ThreadCompletionSource` (`lib/ThreadCompletion.cs`) is the one any thread may complete. Make it on the fibers' thread and await its task there:
+
+<!-- sample: samples/Tasks.cs thread-completion-await -->
+```csharp
+s_one = new ThreadCompletionSource<int>();
+StartThread(0); // calls CompleteElsewhere there
+int answer = await s_one.Task;
+```
+
+and complete it anywhere:
+
+<!-- sample: samples/Tasks.cs thread-completion -->
+```csharp
+// Runs on another thread: completes the source made on this one.
+static void CompleteElsewhere()
+{
+    BusyFor(20);
+    s_one!.SetResult(42);
+}
+```
+
+The result travels back through a pipe that `Fiber.Run` polls, so the task completes, and whatever
+awaits it runs, on the thread that made the source. Until then the task isn't completed, even seen
+from the thread that set it. `SetResult`, `SetCanceled` and their `Try` forms can be called from
+any thread, and only the first call wins.
+
+A source that hasn't been completed keeps its thread's `Fiber.Run` waiting: that is what lets it
+wait for the other thread. So complete or cancel every source you make, or the program won't end.
+Where there are no threads (DOS, UEFI, microcontrollers), the task completes at once.
 
 ## Await a channel
 
