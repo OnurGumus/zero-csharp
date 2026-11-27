@@ -16,6 +16,8 @@ tokens: 12
 (7 tokens, 626 s)
 ```
 
+A video of it, sped up: [`docs/img/c64-llm.mp4`](../../docs/img/c64-llm.mp4) (51 s).
+
 It needs an REU of 512 KB or more (a 1750, or the C64 Ultimate's), which holds the model. It is all
 F#: the hardware it needs is in the SDK's library, as `C64.Reu` (the REU), `C64.KernalRom` (8 KB more
 RAM) and `Kernels.DotI8` (an int8 dot product, in 6502 assembly).

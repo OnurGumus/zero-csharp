@@ -536,6 +536,20 @@ Typing `T` at its title screen plays one match computer against computer and rep
 what `./test.sh --c64` runs: the match is the same every time, and the program checks that it ended
 with a winner, that nothing left the field, and that playing allocated nothing.
 
+## A language model
+
+[`samples/C64Llm`](https://github.com/OnurGumus/zero-csharp/tree/master/samples/C64Llm) runs Karpathy's
+stories260K, a language model of 260,000 parameters, on a C64 with a RAM Expansion Unit. It is all
+F#, in integers only, on `C64.Reu`, `C64.KernalRom` and `Kernels.DotI8`. You type the start of a
+story and it goes on with it, about a minute a token:
+
+<video controls preload="none" poster="../img/c64-llm.jpg" style="width:100%;max-width:720px;border-radius:8px" aria-label="An F# language model telling a story on a Commodore 64, in VICE, sped up">
+  <source src="../img/c64-llm.mp4" type="video/mp4" />
+</video>
+
+A 23-token story, 28 minutes of C64 time, recorded in VICE and sped up, with the program's F# along the
+way. Its README says how to build and run it.
+
 ## C and assembly of your own
 
 Some loops are too slow, or too big, compiled from C# or F#: their arithmetic is 32-bit, which the
