@@ -333,6 +333,48 @@ static async Task<int> Sleeper(int times)
 - If an arena makes a task, the arena must stay alive until whoever awaits the task has finished
   with it.
 
+## Run a blocking call on another thread
+
+`Task.Run` starts a fiber, which shares the thread with the others: a long computation or a slow C
+call inside it stops every fiber until it returns. `Task.RunOnThread` (`lib/ThreadTasks.cs`) runs the
+call on another system thread instead, which is what .NET's `Task.Run` does, and gives you a task to
+await. Meanwhile this thread's fibers and async methods carry on:
+
+<!-- sample: samples/Tasks.cs run-on-thread -->
+```csharp
+// Busy for `ms` milliseconds without waiting: on a fiber this would
+// stop every other fiber; on another thread it doesn't.
+static int Spin(int ms)
+{
+    long end = Clock.Monotonic + ms * 1_000_000L;
+    int turns = 0;
+    while (Clock.Monotonic < end)
+        turns++;
+    return turns;
+}
+
+static async Task<int> SpinElsewhere()
+{
+    int turns = await Task.RunOnThread(() => Spin(50));
+    return turns;
+}
+```
+
+The threads come from a pool per calling thread. An idle worker takes the call. When every worker
+is busy, a new one starts, up to 64, and after that calls queue on the least busy worker. `Fiber.Run`
+doesn't return while calls are still running. A token is checked when the call is made; a running
+call can't be stopped.
+
+The call runs at the same time as your fibers, so the rules of `Parallel.For` apply to it, not those
+of fibers. Locks become necessary again, and there aren't any (`SemaphoreSlim` works within one
+thread only). So keep the call self-contained: pass in what it needs, return a result, and touch
+nothing a fiber also uses, such as lists, dictionaries, static fields, tasks, channels or arenas. Use
+`Interlocked` for a shared counter. Objects it makes with `new` are fine to return. Static
+constructors aren't thread-safe, so touch a type's statics before the call.
+
+Where there are no threads (DOS, UEFI, microcontrollers) the call runs at once, on the calling
+thread.
+
 ## Await a channel
 
 A channel also has .NET's `ChannelReader`/`ChannelWriter` methods: `ReceiveAsync`, `SendAsync`,

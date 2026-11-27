@@ -201,6 +201,25 @@ public static class Program
 
     static async ValueTask Pause() => await Task.Delay(1);
 
+    // docs:run-on-thread
+    // Busy for `ms` milliseconds without waiting: on a fiber this would
+    // stop every other fiber; on another thread it doesn't.
+    static int Spin(int ms)
+    {
+        long end = Clock.Monotonic + ms * 1_000_000L;
+        int turns = 0;
+        while (Clock.Monotonic < end)
+            turns++;
+        return turns;
+    }
+
+    static async Task<int> SpinElsewhere()
+    {
+        int turns = await Task.RunOnThread(() => Spin(50));
+        return turns;
+    }
+    // docs:end
+
     // docs:channel-async
     // Sends 1..10 and closes; the reader's await foreach ends there.
     static async Task Produce(Channel<int> channel)
@@ -976,6 +995,52 @@ public static class Program
             File.Remove(name);
         }
         End("Files");
+
+        // Task.RunOnThread (lib/ThreadTasks.cs): on another system thread,
+        // or, where there are none, at once.
+        {
+            var others = new Ticker();
+            Task ticking = others.RunAsync();
+            int turns = await SpinElsewhere();
+            others.Stop = true;
+            await ticking;
+            Check("result back", turns > 0);
+            if (Parallel.ProcessorCount > 1 && !small)
+                Check($"others ran meanwhile: {others.Ticks} ticks", others.Ticks > 0);
+
+            // Several at once: the pool grows; each makes objects there.
+            int threadCalls = small ? 8 : 100;
+            var made = new Task<string>[threadCalls];
+            for (int i = 0; i < threadCalls; i++)
+            {
+                int k = i;
+                made[i] = Task.RunOnThread(() => "x" + k * 3);
+            }
+            string[] strings = await Task.WhenAll(made);
+            bool allThere = true;
+            for (int i = 0; i < threadCalls; i++)
+                allThere &= strings[i] == "x" + i * 3;
+            Check($"{threadCalls} calls, results in order", allThere);
+
+            // Side by side: four 40 ms spins on four threads.
+            if (Parallel.ProcessorCount >= 4 && !small)
+            {
+                start = Clock.Monotonic;
+                await Task.WhenAll(Task.RunOnThread(() => Spin(40)), Task.RunOnThread(() => Spin(40)),
+                    Task.RunOnThread(() => Spin(40)), Task.RunOnThread(() => Spin(40)));
+                Check($"four 40 ms spins in {Milliseconds(start)} ms, under 120", Milliseconds(start) < 120);
+            }
+
+            int bumped = 0;
+            await Task.RunOnThread(() => { Interlocked.Increment(ref bumped); });
+            Check("Action", bumped == 1);
+            Check("canceled before it starts", Task.RunOnThread(() => 1, new CancellationToken(true)).IsCanceled);
+
+            // Fiber.Run (inside await here) waits for calls still out.
+            Task<int> stillOut = Task.RunOnThread(() => { Spin(20); return 5; });
+            Check("waits for the call", await stillOut == 5);
+        }
+        End("RunOnThread");
 
         // Cost: awaits that wait, and ones that don't.
         start = Clock.Monotonic;
