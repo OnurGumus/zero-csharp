@@ -1,0 +1,24 @@
+<Project Sdk="ZeroCSharp.Sdk/0.15.0">
+  <!-- The language model for the C64 (Program.fs), all in F#. Build:
+       dotnet build -p:ZeroTarget=c64 (samples/C64Llm/README.md). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Machine.fs reads the model from an REU on the C64; the host tool
+         (tool/) has the same model with an image in memory. -->
+    <DefineConstants Condition="'$(ZeroTarget)' == 'c64'">$(DefineConstants);C64</DefineConstants>
+    <!-- The program and its memory share 50 KB, and this one needs little
+         of the two stacks: measured over a story (filled with a pattern at
+         the start, the deepest use read at the end), 161 bytes of the
+         stack of object references and 200 of the soft stack. -->
+    <ZeroC64ShadowStack>384</ZeroC64ShadowStack>
+    <ZeroC64StackReserve>512</ZeroC64StackReserve>
+    <!-- Multiplication with a 1 KB table of quarter squares, about twice as
+         fast: every row's scale and attention's products multiply. -->
+    <ZeroC64FastMultiply>true</ZeroC64FastMultiply>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Machine.fs" />
+    <Compile Include="Model.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>

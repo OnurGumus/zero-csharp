@@ -229,6 +229,10 @@ nothing AGPL is linked into them.
 | `Gpu` | GPU only (`--gpu`): kernels for adding, Collatz, SAXPY, a reduction, matrix multiply (plain and tiled, and on tensors), histograms and float atomics, each checked against the CPU and timed against a plain C# loop on one core | 118 KB (macOS) |
 | `Blink` | Microcontrollers only: the board's LED, blinked by a C# interrupt handler, and a check that a busy handler leaves the interrupted code's references alone | 18 KB of flash |
 
+And one project, built with the SDK rather than `build.sh`:
+[`samples/C64Llm`](samples/C64Llm/README.md), Karpathy's stories260K language model on a Commodore 64
+with a RAM Expansion Unit, in F#, integers only: about a minute a token at 1 MHz.
+
 Sizes are for Linux arm64. `build.sh` leaves out debug information and the symbol table and turns off
 position-independent code, which halves most programs; `KEEP_SYMBOLS=1 ./build.sh` keeps them, for gdb
 or perf.
