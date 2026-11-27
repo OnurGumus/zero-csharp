@@ -46,7 +46,7 @@ namespace System.Threading.Tasks
         public bool IsCompleted => _task == null || _task.IsCompleted;
         public bool IsCompletedSuccessfully => _task == null || _task.IsCompletedSuccessfully;
         public bool IsCanceled => _task != null && _task.IsCanceled;
-        public bool IsFaulted => false;
+        public bool IsFaulted => _task != null && _task.IsFaulted;
 
         /// <summary>A Task for it: the one waited for, or Task.CompletedTask (a timer's or channel's reused task gets a copy).</summary>
         public Task AsTask()
@@ -107,7 +107,7 @@ namespace System.Threading.Tasks
         public bool IsCompleted => _task == null || _task.IsCompleted;
         public bool IsCompletedSuccessfully => _task == null || _task.IsCompletedSuccessfully;
         public bool IsCanceled => _task != null && _task.IsCanceled;
-        public bool IsFaulted => false;
+        public bool IsFaulted => _task != null && _task.IsFaulted;
 
         /// <summary>The result, waiting for it first as Task.Result does. Ends the program if canceled.</summary>
         public TResult Result
@@ -244,7 +244,13 @@ namespace System.Runtime.CompilerServices
 
         public static AsyncValueTaskMethodBuilder Create() => default;
 
-        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine => stateMachine.MoveNext();
+        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+        {
+            // The first step, on the caller's stack: a throw faults the task.
+            Exception? thrown = Catch.RunStep(ref stateMachine);
+            if (thrown != null)
+                SetException(thrown);
+        }
 
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
 
@@ -252,7 +258,7 @@ namespace System.Runtime.CompilerServices
 
         public void SetResult() => _task?.Complete();
 
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        public void SetException(Exception exception) => (_task ??= new Task()).Fail(exception);
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
@@ -271,7 +277,13 @@ namespace System.Runtime.CompilerServices
 
         public static AsyncValueTaskMethodBuilder<TResult> Create() => default;
 
-        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine => stateMachine.MoveNext();
+        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+        {
+            // The first step, on the caller's stack: a throw faults the task.
+            Exception? thrown = Catch.RunStep(ref stateMachine);
+            if (thrown != null)
+                SetException(thrown);
+        }
 
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
 
@@ -286,7 +298,7 @@ namespace System.Runtime.CompilerServices
                 _task.TrySetResult(result);
         }
 
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        public void SetException(Exception exception) => (_task ??= new Task<TResult>()).Fail(exception);
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine

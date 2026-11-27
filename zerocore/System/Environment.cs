@@ -58,9 +58,31 @@ namespace System
 
         // Set by lib/ to check, once Main has returned, for work a program
         // started and never let run (lib/Timers.cs: a timer started without
-        // Fiber.Run). Called after WritePendingOutput, so output comes first, and
-        // not by Exit, which ends the program on purpose.
+        // Fiber.Run) or failures nobody looked at (lib/Tasks.cs: a faulted
+        // task nothing awaited). Called after WritePendingOutput, so output
+        // comes first, and not by Exit, which ends the program on purpose.
         internal static delegate*<void> s_atMainReturn;
+
+        // Makes check the one called when Main returns and gives back the one
+        // it replaces, which check must call: so each check is added once and
+        // all of them run.
+        internal static delegate*<void> AddAtMainReturn(delegate*<void> check)
+        {
+            fixed (delegate*<void>* slot = &s_atMainReturn)
+                return (delegate*<void>)System.Threading.Interlocked.Exchange(ref *(nint*)slot, (nint)check);
+        }
+
+        // Set by lib/ to report, when Exit ends the program, what it would
+        // otherwise lose without a word (lib/Tasks.cs: a faulted task nothing
+        // awaited). Not for work left undone: Exit means to leave it.
+        internal static delegate*<void> s_atExit;
+
+        // As AddAtMainReturn, for Exit.
+        internal static delegate*<void> AddAtExit(delegate*<void> report)
+        {
+            fixed (delegate*<void>* slot = &s_atExit)
+                return (delegate*<void>)System.Threading.Interlocked.Exchange(ref *(nint*)slot, (nint)report);
+        }
 
         /// <summary>
         /// Ends the program with <paramref name="exitCode"/>, as returning it from Main
@@ -70,6 +92,9 @@ namespace System
         public static void Exit(int exitCode)
         {
             WritePendingOutput();
+            delegate*<void> atExit = s_atExit;
+            if (atExit != null)
+                atExit();
             Platform.exit(exitCode);
             while (true) { }
         }

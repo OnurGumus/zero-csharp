@@ -233,6 +233,41 @@ whichever thread gets to it. But don't leave one in use on another thread when t
 was opened in can still catch a throw, since that closes it under the other thread's hands. Keep it
 first (`Catch.Keep`), or open it on the thread that uses it.
 
+## Async code
+
+Each step of an async method, from its start or an `await` to its next `await` or its end, runs
+as a `Catch.Run` of its own. A throw in a step faults the method's task, as in .NET, after closing
+what the step opened. Awaiting the task, `Wait()` or `.Result` throws the exception again, so it
+climbs the awaits until it reaches a `Catch.Run` or ends the program from an async `Main`. Inside an
+async method, where an `await` can't sit in a `Catch.Run` callback, use `Catch.RunAsync`:
+
+<!-- sample: samples/Tasks.cs run-async -->
+```csharp
+Exception error = await Catch.RunAsync(() => FailLate("late"));
+// error is the IOException the method threw after its await
+```
+
+An `OperationCanceledException` cancels the task rather than faulting it, and `Catch.RunAsync`
+gives it back. `Task.Exception` is the exception itself, not an `AggregateException`, and
+`WhenAll` faults with the first one. An `async void` method that throws ends the program, as in
+.NET.
+
+A task that faults and that nothing awaits, waits for, or asks about (`IsFaulted`, `Exception`,
+`Status`) is reported on stderr when `Main` returns or `Environment.Exit` ends the program, with
+the count and the first such exception's message. .NET keeps quiet about it. The exit code
+doesn't change. A program that never ends, such as a server in `Fiber.Run()`, never gets there,
+so await what you start in it, or look at `IsFaulted`. Awaiting a task
+after it faulted counts, and so does awaiting it with `ConfigureAwaitOptions.SuppressThrowing`,
+which says you chose to ignore the fault:
+
+```
+Unobserved task exception: a task faulted and nothing awaited it: Connection refused
+```
+
+A step closes what it opened itself. A file opened before an `await` and still open when a later
+step throws isn't closed by that throw, since the step that opened it had already returned. Open
+such a file around the method, in its caller, and close it there.
+
 ## In F#
 
 `raise`, `failwith` and `invalidArg` throw as in .NET, and `Catch.result` turns the outcome into a

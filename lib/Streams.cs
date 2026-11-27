@@ -861,7 +861,10 @@ public partial class FileStream : Stream
         _readPos = _readLen = 0;
         _read = false;
         if (_canSeek && !_file.Seek(position))
+        {
+            _busy = false; // an async write ends here (see FileAsync.cs's WriteOutAsync)
             throw new IOException(string.Concat("FileStream: couldn't seek in '", Name, "'"));
+        }
     }
 
     /// <inheritdoc/>

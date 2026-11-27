@@ -441,10 +441,11 @@ run_all() {
     fi
 
     # Awaiting a canceled task plainly, ThrowIfCancellationRequested on a
-    # canceled token, ReceiveAsync on a closed channel, and a timer's reused
-    # ValueTask a second time must end the program with a message.
+    # canceled token, ReceiveAsync on a closed channel, a timer's reused
+    # ValueTask a second time, a throw in an async void method, and one in
+    # async Main after an await must end the program with a message.
     if [[ " ${samples[*]} " == *" Tasks "* ]] && [ "$target" != c64 ]; then
-        for case in "canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused"; do
+        for case in "canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main"; do
             arg=${case%%|*}
             message=${case#*|}
             status=0
@@ -455,6 +456,23 @@ run_all() {
                 failures=$((failures + 1))
             else
                 echo "ok   Tasks $arg (stopped, as it must be)"
+            fi
+        done
+
+        # A faulted task nothing awaited is reported when Main returns, and
+        # when Environment.Exit ends the program; one awaited after it
+        # faulted isn't; the exit code stays.
+        for case in "unobserved|0" "unobserved-exit|3"; do
+            arg=${case%%|*}
+            expected=${case#*|}
+            status=0
+            out=$("${run[@]}" Tasks "$arg" < /dev/null 2>&1) || status=$?
+            if [ "$status" != "$expected" ] || [[ "$out" != *"Unobserved task exception: a task faulted and nothing awaited it: never awaited"* ]] || [[ "$out" == *"awaited late"* ]]; then
+                echo "FAIL Tasks $arg: not reported as it must be (exit code $status)"
+                echo "$out" | tail -3 | sed 's/^/       /'
+                failures=$((failures + 1))
+            else
+                echo "ok   Tasks $arg (reported)"
             fi
         done
     fi

@@ -31,13 +31,23 @@
 //   Task<T>) on a method gives it a fiber of its own instead, from its first
 //   wait to its end: for one that mostly blocks.
 //
-// There are no exceptions (zero mode: `throw` ends the program), so a task
-// is never faulted: it completes, with its result, or is canceled
-// (lib/Cancellation.cs). Awaiting a canceled task ends the program, as an
-// unhandled OperationCanceledException would in .NET, unless the await is
-// ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing). ValueTask is in
-// lib/ValueTasks.cs. No ContinueWith or SynchronizationContext;
-// ConfigureAwait(bool) changes nothing.
+// Exceptions: each step of an async method (from its start or an await to
+// its next await or its end) runs as a Catch.Run (lib/Catch.cs). A throw in
+// a step faults the method's task, as in .NET, after Catch.Run has closed
+// what the step opened, rather than ending the program; an
+// OperationCanceledException cancels it instead. Awaiting the task, Wait()
+// and .Result throw the exception again, so it climbs the awaits until it
+// reaches a Catch.Run (around a Wait() in code that isn't async, or
+// Catch.RunAsync in code that is) or ends the program, from an async Main.
+// Task.Exception is the exception itself: there's no AggregateException.
+// An `async void` method that throws ends the program, as in .NET. A task
+// that faults and that nothing awaits, waits for or asks about (IsFaulted,
+// Exception, Status) is reported on stderr when Main returns or Exit is
+// called, where .NET keeps quiet; the exit code stays. ConfigureAwait(
+// ConfigureAwaitOptions.SuppressThrowing) awaits without throwing (look at
+// IsFaulted and IsCanceled after). ValueTask is in lib/ValueTasks.cs. No
+// ContinueWith or SynchronizationContext; ConfigureAwait(bool) changes
+// nothing.
 //
 // Tasks are objects like any other: from the fiber's ObjectAllocator,
 // calloc by default (never freed), or an arena's while one is set. A task
@@ -47,15 +57,142 @@
 // Not on WebAssembly, which has no fibers.
 
 using System;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 
 namespace System.Threading.Tasks
 {
+    // Faults no one has observed yet, reported when Main returns or
+    // Environment.Exit ends the program (not by FailFast, nor if the program
+    // never ends, as a server's Fiber.Run doesn't): how many,
+    // and a message: the first fault's while no other was waiting to be
+    // observed (the first of a run of failures is usually the cause). It's
+    // copied, not kept: the task and its exception may be in an arena that's
+    // gone by then. If that fault is observed later, the report has no
+    // message.
+    static class UnobservedFaults
+    {
+        const int MessageCapacity = 200;
+
+        struct Message
+        {
+            public fixed byte Bytes[MessageCapacity];
+        }
+
+        static int s_count;
+        static int s_lastNumber;
+        // The fault whose message Message holds; 0 once it's been observed.
+        static int s_messageNumber;
+        static int s_messageLength;
+        static Message s_message;
+        static int s_installed;
+        static unsafe delegate*<void> s_nextAtMainReturn;
+        static unsafe delegate*<void> s_nextAtExit;
+
+        internal static int Faulted(string? message)
+        {
+            if (s_installed == 0 && Interlocked.CompareExchange(ref s_installed, 1, 0) == 0)
+                unsafe
+                {
+                    // SAFETY: static methods.
+                    s_nextAtMainReturn = Environment.AddAtMainReturn(&AtMainReturn);
+                    s_nextAtExit = Environment.AddAtExit(&AtExit);
+                }
+            Interlocked.Increment(ref s_count);
+            int number = Interlocked.Increment(ref s_lastNumber);
+            if (s_messageNumber != 0)
+                return number;
+            int length = 0;
+            if (message != null)
+                for (int i = 0; i < message.Length && length < MessageCapacity; i++)
+                {
+                    char c = message[i];
+                    unsafe { s_message.Bytes[length++] = c < 0x80 ? (byte)c : (byte)'?'; } // SAFETY: length < MessageCapacity
+                }
+            s_messageLength = length;
+            s_messageNumber = number;
+            return number;
+        }
+
+        internal static void Observed(int number)
+        {
+            Interlocked.Decrement(ref s_count);
+            if (s_messageNumber == number)
+                s_messageNumber = 0;
+        }
+
+        static void AtMainReturn()
+        {
+            Report();
+            unsafe
+            {
+                // SAFETY: the check this one replaced, a static method.
+                if (s_nextAtMainReturn != null)
+                    s_nextAtMainReturn();
+            }
+        }
+
+        static void AtExit()
+        {
+            Report();
+            unsafe
+            {
+                // SAFETY: the report this one replaced, a static method.
+                if (s_nextAtExit != null)
+                    s_nextAtExit();
+            }
+        }
+
+        static void Report()
+        {
+            int count = s_count;
+            if (count > 0)
+            {
+                Write(count == 1 ? "Unobserved task exception: a task faulted and nothing awaited it"
+                    : string.Concat("Unobserved task exceptions: ", count.ToString(), " tasks faulted and nothing awaited them"));
+                if (s_messageNumber != 0)
+                {
+                    Write(count == 1 ? ": " : "; the first: ");
+                    unsafe
+                    {
+                        // SAFETY: s_messageLength bytes of the buffer were written.
+                        fixed (byte* bytes = s_message.Bytes)
+                            Platform.write(2, bytes, (nuint)s_messageLength);
+                    }
+                }
+                Write("\n");
+            }
+        }
+
+        // Our own ASCII text, under 128 characters.
+        static void Write(string text)
+        {
+            unsafe
+            {
+                // SAFETY: text is shorter than the buffer.
+                byte* buffer = stackalloc byte[128];
+                int length = 0;
+                foreach (char c in text)
+                    buffer[length++] = (byte)c;
+                Platform.write(2, buffer, (nuint)length);
+            }
+        }
+    }
+
     /// <summary>An operation that completes later: await it, or Wait for it.</summary>
     public class Task
     {
         bool _completed;
         bool _canceled;
+        // Faulted: what the method threw. Canceled: the
+        // OperationCanceledException, if one did the canceling.
+        internal Exception? _exception;
+        // An async void method's: a fault ends the program.
+        internal bool FaultEndsProgram;
+        // Faulted and not yet observed (awaited, waited for, or asked about):
+        // its number among faults, for the report when Main returns. 0 once
+        // observed, or if it never faulted.
+        int _faultNumber;
         // Fibers parked in Wait, in order, linked through their records' Next.
         unsafe Fiber.Record* _waiters;
         // Told when this task completes: WhenAll, WhenAny, OnCompleted.
@@ -81,8 +218,10 @@ namespace System.Threading.Tasks
         // Starts the next use: not completed, a new version, owned until read.
         internal void Reset()
         {
+            Observe();
             _completed = false;
             _canceled = false;
+            _exception = null;
             Version++;
             Owned = true;
         }
@@ -106,17 +245,40 @@ namespace System.Threading.Tasks
         /// <summary>Whether the task has finished.</summary>
         public bool IsCompleted => _completed;
 
-        /// <summary>Whether the task has finished and wasn't canceled.</summary>
-        public bool IsCompletedSuccessfully => _completed && !_canceled;
+        /// <summary>Whether the task has finished, wasn't canceled, and didn't throw.</summary>
+        public bool IsCompletedSuccessfully => _completed && !_canceled && _exception == null;
 
-        /// <summary>Always false: zero mode has no exceptions.</summary>
-        public bool IsFaulted => false;
+        /// <summary>Whether the task ended with an exception (Exception says which).</summary>
+        public bool IsFaulted
+        {
+            get
+            {
+                Observe();
+                return _completed && !_canceled && _exception != null;
+            }
+        }
 
         /// <summary>Whether the task was canceled (it has then also completed).</summary>
         public bool IsCanceled => _canceled;
 
-        /// <summary>RanToCompletion, Canceled, or WaitingForActivation while it runs.</summary>
-        public TaskStatus Status => !_completed ? TaskStatus.WaitingForActivation : _canceled ? TaskStatus.Canceled : TaskStatus.RanToCompletion;
+        /// <summary>
+        /// What the task threw, once it has faulted; null otherwise. The
+        /// exception itself, not an AggregateException as in .NET.
+        /// </summary>
+        public Exception? Exception => IsFaulted ? _exception : null;
+
+        /// <summary>RanToCompletion, Faulted, Canceled, or WaitingForActivation while it runs.</summary>
+        public TaskStatus Status
+        {
+            get
+            {
+                Observe();
+                return !_completed ? TaskStatus.WaitingForActivation
+                    : _canceled ? TaskStatus.Canceled
+                    : _exception != null ? TaskStatus.Faulted
+                    : TaskStatus.RanToCompletion;
+            }
+        }
 
         /// <summary>A task that has already completed.</summary>
         public static Task CompletedTask { get; } = new Task(true);
@@ -151,6 +313,52 @@ namespace System.Threading.Tasks
             return true;
         }
 
+        // Ends the task with what was thrown: faulted, or canceled for an
+        // OperationCanceledException (which awaiting throws again). False if
+        // it had already completed.
+        internal bool Fail(Exception exception)
+        {
+            if (_completed)
+                return false;
+            if (FaultEndsProgram)
+                Environment.FailFast(string.Concat("Unhandled exception: ", exception.Message));
+            _exception = exception;
+            if (exception is not OperationCanceledException)
+                _faultNumber = UnobservedFaults.Faulted(exception.Message);
+            return Complete(exception is OperationCanceledException);
+        }
+
+        // Somebody looked at how the task ended: its fault, if any, isn't
+        // reported when Main returns.
+        internal void Observe()
+        {
+            if (_faultNumber != 0)
+            {
+                UnobservedFaults.Observed(_faultNumber);
+                _faultNumber = 0;
+            }
+        }
+
+        // Ends the task as done ended: canceled, faulted, or completed.
+        internal bool CompleteAs(Task done)
+        {
+            if (done._exception != null)
+                return Fail(done._exception);
+            return Complete(done._canceled);
+        }
+
+        // What awaiting the task throws, or null: its exception, or for a
+        // cancel without one, a TaskCanceledException (made here, so only
+        // when it's thrown).
+        internal Exception? Failure
+        {
+            get
+            {
+                Observe();
+                return _exception ?? (_canceled ? new TaskCanceledException() : null);
+            }
+        }
+
         internal void AddObserver(Observer observer)
         {
             observer.Next = _observers;
@@ -160,19 +368,24 @@ namespace System.Threading.Tasks
         /// <summary>
         /// Waits for the task to complete. In a fiber, the fiber waits and the
         /// others run; outside one, the fibers run until the task is done.
-        /// Ends the program if the task was canceled.
+        /// Throws what the task threw, or a TaskCanceledException if it was
+        /// canceled: inside a Catch.Run that comes back there, and outside
+        /// one it ends the program.
         /// </summary>
         public void Wait()
         {
             WaitDone();
-            ThrowIfCanceled();
+            ThrowIfFailed();
         }
 
-        // Ends the program as .NET's TaskCanceledException would.
-        internal void ThrowIfCanceled()
+        // Throws as awaiting the task does in .NET: what it threw, or for a
+        // cancel, the OperationCanceledException that did it or a
+        // TaskCanceledException.
+        internal void ThrowIfFailed()
         {
-            if (_canceled)
-                throw new TaskCanceledException();
+            Observe();
+            if (_exception != null || _canceled)
+                throw Failure!;
         }
 
         // Waits until the task has completed or been canceled.
@@ -212,9 +425,9 @@ namespace System.Threading.Tasks
         public ConfiguredTaskAwaitable ConfigureAwait(bool continueOnCapturedContext) => new ConfiguredTaskAwaitable(this, ConfigureAwaitOptions.None);
 
         /// <summary>
-        /// Returns something to await. SuppressThrowing: awaiting a canceled
-        /// task returns rather than ending the program (look at IsCanceled
-        /// after). ForceYielding: the await lets the others run even if the
+        /// Returns something to await. SuppressThrowing: awaiting a canceled or
+        /// faulted task returns rather than throwing (look at IsCanceled and
+        /// IsFaulted after). ForceYielding: the await lets the others run even if the
         /// task is done.
         /// </summary>
         public ConfiguredTaskAwaitable ConfigureAwait(ConfigureAwaitOptions options) => new ConfiguredTaskAwaitable(this, options);
@@ -332,8 +545,11 @@ namespace System.Threading.Tasks
                     r.Task.Complete(true);
                     return;
                 }
-                r.Body();
-                r.Task.Complete();
+                Exception? thrown = Catch.Run(ref r, static (ref RunState<Action, Task> s) => s.Body());
+                if (thrown != null)
+                    r.Task.Fail(thrown);
+                else
+                    r.Task.Complete();
             });
             return task;
         }
@@ -348,9 +564,15 @@ namespace System.Threading.Tasks
             Fiber.Spawn(new RunState<Func<TResult>, Task<TResult>>(function, task, cancellationToken), static r =>
             {
                 if (r.Token.IsCancellationRequested)
+                {
                     r.Task.Complete(true);
+                    return;
+                }
+                Exception? thrown = Catch.Run(r.Body, out TResult result);
+                if (thrown != null)
+                    r.Task.Fail(thrown);
                 else
-                    r.Task.TrySetResult(r.Body());
+                    r.Task.TrySetResult(result);
             });
             return task;
         }
@@ -369,9 +591,15 @@ namespace System.Threading.Tasks
                     r.Task.Complete(true);
                     return;
                 }
-                Task inner = r.Body();
+                // A lambda that isn't async can throw here, before it has a task.
+                Exception? thrown = Catch.Run(r.Body, out Task inner);
+                if (thrown != null)
+                {
+                    r.Task.Fail(thrown);
+                    return;
+                }
                 inner.WaitDone();
-                r.Task.Complete(inner.IsCanceled);
+                r.Task.CompleteAs(inner);
             });
             return task;
         }
@@ -390,12 +618,17 @@ namespace System.Threading.Tasks
                     r.Task.Complete(true);
                     return;
                 }
-                Task<TResult> inner = r.Body();
+                Exception? thrown = Catch.Run(r.Body, out Task<TResult> inner);
+                if (thrown != null)
+                {
+                    r.Task.Fail(thrown);
+                    return;
+                }
                 inner.WaitDone();
-                if (inner.IsCanceled)
-                    r.Task.Complete(true);
-                else
+                if (inner.IsCompletedSuccessfully)
                     r.Task.TrySetResult(inner._result);
+                else
+                    r.Task.CompleteAs(inner);
             });
             return task;
         }
@@ -462,7 +695,7 @@ namespace System.Threading.Tasks
         internal Task() { }
         internal Task(TResult result) : base(true) { _result = result; }
 
-        /// <summary>The result, waiting for it first as Wait does. Ends the program if the task was canceled.</summary>
+        /// <summary>The result, waiting for it first as Wait does, which throws if the task faulted or was canceled.</summary>
         public TResult Result
         {
             get
@@ -543,8 +776,15 @@ namespace System.Threading.Tasks
         /// <summary>Cancels the task. False if it had already completed.</summary>
         public bool TrySetCanceled(CancellationToken cancellationToken) => _task.Complete(true);
 
-        /// <summary>Ends the program with the exception's message: zero mode has no exceptions.</summary>
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        /// <summary>Faults the task with <paramref name="exception"/> (an OperationCanceledException cancels it). Stops the program if it had already completed.</summary>
+        public void SetException(Exception exception)
+        {
+            if (!_task.Fail(exception ?? throw new ArgumentNullException(nameof(exception))))
+                Environment.FailFast("TaskCompletionSource.SetException: the task has already completed");
+        }
+
+        /// <summary>Faults the task. False if it had already completed.</summary>
+        public bool TrySetException(Exception exception) => _task.Fail(exception ?? throw new ArgumentNullException(nameof(exception)));
     }
 
     /// <summary>A task with a result, completed by hand: SetResult.</summary>
@@ -580,8 +820,15 @@ namespace System.Threading.Tasks
         /// <summary>Cancels the task. False if it had already completed.</summary>
         public bool TrySetCanceled(CancellationToken cancellationToken) => _task.Complete(true);
 
-        /// <summary>Ends the program with the exception's message: zero mode has no exceptions.</summary>
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        /// <summary>Faults the task with <paramref name="exception"/> (an OperationCanceledException cancels it). Stops the program if it had already completed.</summary>
+        public void SetException(Exception exception)
+        {
+            if (!_task.Fail(exception ?? throw new ArgumentNullException(nameof(exception))))
+                Environment.FailFast("TaskCompletionSource.SetException: the task has already completed");
+        }
+
+        /// <summary>Faults the task. False if it had already completed.</summary>
+        public bool TrySetException(Exception exception) => _task.Fail(exception ?? throw new ArgumentNullException(nameof(exception)));
     }
 
     /// <summary>What a task is doing (only the states a task here can be in).</summary>
@@ -804,8 +1051,8 @@ namespace System.Threading.Tasks
         public void Completed(Task done)
         {
             _registration.Dispose();
-            if (done.IsCanceled)
-                Complete(true);
+            if (!done.IsCompletedSuccessfully)
+                CompleteAs(done);
             else if (done is Task<TResult> withResult)
                 TrySetResult(withResult._result);
             else
@@ -836,11 +1083,14 @@ namespace System.Threading.Tasks
         internal override void Completed(Task task) => action();
     }
 
-    // WhenAll is canceled if any of its tasks was, once all have completed.
+    // WhenAll, once all its tasks have completed: faulted with the first
+    // exception if any faulted (.NET gathers them all in an
+    // AggregateException), else canceled if any was.
     sealed class WhenAllTask : Task, IObserved
     {
         int _left;
         bool _canceled;
+        Exception? _first;
 
         internal void Watch(Task[] tasks)
         {
@@ -852,16 +1102,31 @@ namespace System.Threading.Tasks
                 }
                 else
                 {
-                    _canceled |= t.IsCanceled;
+                    Note(t);
                 }
             if (_left == 0)
-                Complete(_canceled);
+                Finish();
         }
 
         public void Completed(Task task)
         {
-            _canceled |= task.IsCanceled;
+            Note(task);
             if (--_left == 0)
+                Finish();
+        }
+
+        void Note(Task task)
+        {
+            _canceled |= task.IsCanceled;
+            if (task.IsFaulted)
+                _first ??= task._exception;
+        }
+
+        void Finish()
+        {
+            if (_first != null)
+                Fail(_first);
+            else
                 Complete(_canceled);
         }
     }
@@ -869,8 +1134,8 @@ namespace System.Threading.Tasks
     sealed class WhenAllTask<TResult>(Task<TResult>[] tasks) : Task<TResult[]>, IObserved
     {
         int _left;
-
         bool _canceled;
+        Exception? _first;
 
         internal void Watch(Task<TResult>[] watched)
         {
@@ -882,7 +1147,7 @@ namespace System.Threading.Tasks
                 }
                 else
                 {
-                    _canceled |= t.IsCanceled;
+                    Note(t);
                 }
             if (_left == 0)
                 Finish();
@@ -890,13 +1155,25 @@ namespace System.Threading.Tasks
 
         public void Completed(Task task)
         {
-            _canceled |= task.IsCanceled;
+            Note(task);
             if (--_left == 0)
                 Finish();
         }
 
+        void Note(Task task)
+        {
+            _canceled |= task.IsCanceled;
+            if (task.IsFaulted)
+                _first ??= task._exception;
+        }
+
         void Finish()
         {
+            if (_first != null)
+            {
+                Fail(_first);
+                return;
+            }
             if (_canceled)
             {
                 Complete(true);
@@ -1023,7 +1300,9 @@ namespace System.Runtime.CompilerServices
             {
                 m_task.WaitDone();
                 if ((_options & ConfigureAwaitOptions.SuppressThrowing) == 0)
-                    m_task.ThrowIfCanceled();
+                    m_task.ThrowIfFailed();
+                else
+                    m_task.Observe(); // ignoring the fault is a choice made
             }
 
             public void OnCompleted(Action continuation) => AsyncMethods.OnCompleted(m_task, continuation);
@@ -1069,7 +1348,13 @@ namespace System.Runtime.CompilerServices
 
         public static AsyncTaskMethodBuilder Create() => default;
 
-        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine => stateMachine.MoveNext();
+        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+        {
+            // The first step, on the caller's stack: a throw faults the task.
+            Exception? thrown = Catch.RunStep(ref stateMachine);
+            if (thrown != null)
+                SetException(thrown);
+        }
 
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
 
@@ -1084,7 +1369,7 @@ namespace System.Runtime.CompilerServices
                 _task.Complete();
         }
 
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        public void SetException(Exception exception) => (_task ??= new Task()).Fail(exception);
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
@@ -1102,7 +1387,13 @@ namespace System.Runtime.CompilerServices
 
         public static AsyncTaskMethodBuilder<TResult> Create() => default;
 
-        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine => stateMachine.MoveNext();
+        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+        {
+            // The first step, on the caller's stack: a throw faults the task.
+            Exception? thrown = Catch.RunStep(ref stateMachine);
+            if (thrown != null)
+                SetException(thrown);
+        }
 
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
 
@@ -1116,7 +1407,7 @@ namespace System.Runtime.CompilerServices
                 _task.TrySetResult(result);
         }
 
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        public void SetException(Exception exception) => (_task ??= new Task<TResult>()).Fail(exception);
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
@@ -1134,21 +1425,30 @@ namespace System.Runtime.CompilerServices
 
         public static AsyncVoidMethodBuilder Create() => default;
 
-        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine => stateMachine.MoveNext();
+        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+        {
+            // The first step, on the caller's stack: a throw faults the task.
+            Exception? thrown = Catch.RunStep(ref stateMachine);
+            if (thrown != null)
+                SetException(thrown);
+        }
 
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
 
         public void SetResult() => _task?.Complete();
 
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        // Nothing can await an async void method, so a throw in one ends the
+        // program, as in .NET.
+        public void SetException(Exception exception)
+            => Environment.FailFast(string.Concat("Unhandled exception: ", exception.Message));
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
-            => AsyncMethods.Suspend(_task ??= new Task(), ref awaiter, ref stateMachine);
+            => AsyncMethods.Suspend(_task ??= new Task { FaultEndsProgram = true }, ref awaiter, ref stateMachine);
 
         public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : ICriticalNotifyCompletion where TStateMachine : IAsyncStateMachine
-            => AsyncMethods.Suspend(_task ??= new Task(), ref awaiter, ref stateMachine);
+            => AsyncMethods.Suspend(_task ??= new Task { FaultEndsProgram = true }, ref awaiter, ref stateMachine);
     }
 
     /// <summary>What Task.Yield returns.</summary>
@@ -1193,7 +1493,13 @@ namespace System.Runtime.CompilerServices
 
         public static OwnFiberMethodBuilder Create() => default;
 
-        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine => stateMachine.MoveNext();
+        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+        {
+            // The first step, on the caller's stack: a throw faults the task.
+            Exception? thrown = Catch.RunStep(ref stateMachine);
+            if (thrown != null)
+                SetException(thrown);
+        }
 
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
 
@@ -1207,7 +1513,7 @@ namespace System.Runtime.CompilerServices
                 _task.Complete();
         }
 
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        public void SetException(Exception exception) => (_task ??= new Task()).Fail(exception);
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
@@ -1225,7 +1531,13 @@ namespace System.Runtime.CompilerServices
 
         public static OwnFiberMethodBuilder<TResult> Create() => default;
 
-        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine => stateMachine.MoveNext();
+        public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+        {
+            // The first step, on the caller's stack: a throw faults the task.
+            Exception? thrown = Catch.RunStep(ref stateMachine);
+            if (thrown != null)
+                SetException(thrown);
+        }
 
         public void SetStateMachine(IAsyncStateMachine stateMachine) { }
 
@@ -1239,7 +1551,7 @@ namespace System.Runtime.CompilerServices
                 _task.TrySetResult(result);
         }
 
-        public void SetException(Exception exception) => Environment.FailFast(exception.Message);
+        public void SetException(Exception exception) => (_task ??= new Task<TResult>()).Fail(exception);
 
         public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
@@ -1263,11 +1575,17 @@ namespace System.Runtime.CompilerServices
 
     internal static class AsyncMethods
     {
-        sealed class Box<TStateMachine>(TStateMachine stateMachine) : Continuation where TStateMachine : IAsyncStateMachine
+        sealed class Box<TStateMachine>(TStateMachine stateMachine, Task task) : Continuation where TStateMachine : IAsyncStateMachine
         {
             TStateMachine _stateMachine = stateMachine;
 
-            internal override void Resume() => _stateMachine.MoveNext();
+            // A step on the dispatcher: a throw faults the method's task.
+            internal override void Resume()
+            {
+                Exception? thrown = Catch.RunStep(ref _stateMachine);
+                if (thrown != null)
+                    task.Fail(thrown);
+            }
         }
 
         // Continuations ready to run, and those that awaited Task.Yield, which
@@ -1282,7 +1600,7 @@ namespace System.Runtime.CompilerServices
         internal static void Suspend<TAwaiter, TStateMachine>(Task task, ref TAwaiter awaiter, ref TStateMachine stateMachine)
             where TAwaiter : INotifyCompletion where TStateMachine : IAsyncStateMachine
         {
-            Continuation box = task.Box ??= new Box<TStateMachine>(stateMachine);
+            Continuation box = task.Box ??= new Box<TStateMachine>(stateMachine, task);
             Task target = Target(ref awaiter);
             if (target == Task.YieldMarker || target.IsCompleted) // IsCompleted: ForceYielding
             {
@@ -1311,6 +1629,14 @@ namespace System.Runtime.CompilerServices
             tail = box;
         }
 
+        // 8 KB on a microcontroller, whose default fiber stack is 4 KB: each
+        // step of an async method runs as a Catch.Run, whose saved registers
+        // take a few hundred bytes, and an async method that calls another
+        // before its first await runs both on this stack. The C64 keeps its
+        // 2 KB (its jmp_buf is small and its heap can't spare 2 KB more);
+        // elsewhere the default (32 KB and up) has room.
+        static int DispatcherStackSize => Fiber.DefaultStackSize == 4 * 1024 ? 8 * 1024 : 0;
+
         static void EnsureDispatcher()
         {
             bool running;
@@ -1318,7 +1644,7 @@ namespace System.Runtime.CompilerServices
             if (running || t_starting)
                 return;
             t_starting = true;
-            Fiber.Spawn(0, static _ => Dispatch());
+            Fiber.Spawn(0, static _ => Dispatch(), DispatcherStackSize);
         }
 
         // The dispatcher gave its role up to wait in a blocking call: the
@@ -1429,8 +1755,14 @@ namespace System.Runtime.CompilerServices
                     if (pending == Task.YieldMarker)
                         Fiber.Yield();
                     else
-                        pending.WaitDone(); // GetResult, in MoveNext, says what a cancel means
-                    _stateMachine.MoveNext();
+                        pending.WaitDone(); // GetResult, in MoveNext, says what a cancel or a fault means
+                    // A step on the method's own fiber: a throw faults its task.
+                    Exception? thrown = Catch.RunStep(ref _stateMachine);
+                    if (thrown != null)
+                    {
+                        task.Fail(thrown);
+                        return;
+                    }
                 }
             }
         }

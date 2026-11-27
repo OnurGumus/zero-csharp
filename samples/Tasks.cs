@@ -7,8 +7,13 @@
 // `Tasks canceled` awaits a canceled task plainly, `Tasks throw` calls
 // ThrowIfCancellationRequested on a canceled token, `Tasks closed` awaits
 // ReceiveAsync on a closed channel, and `Tasks twice` awaits a timer's
-// ValueTask after the timer has reused it: each must end the program with
-// a message. test.sh checks them.
+// ValueTask after the timer has reused it, `Tasks void-throw` throws in an
+// async void method and `Tasks main-throw` in async Main after an await:
+// each must end the program with a message. `Tasks unobserved` leaves one
+// faulted task unawaited and awaits another only after it faulted: the
+// first must be reported when Main returns, the second not, and the exit
+// code stays 0; `Tasks unobserved-exit` does the same but ends with
+// Environment.Exit(3), which must report it too. test.sh checks them.
 // Build: ./build.sh Tasks
 
 using System;
@@ -212,6 +217,67 @@ public static class Program
     }
     // docs:end
 
+    // ---- exceptions ----------------------------------------------------------
+
+    // Throws after waiting: on the dispatcher, not on the caller's stack.
+    static async Task FailLate(string message)
+    {
+        await Task.Yield();
+        throw new IOException(message);
+    }
+
+    static async Task<int> FailLateWith(int value)
+    {
+        await Task.Delay(1);
+        if (value > 0)
+            throw new InvalidOperationException("no result for " + value);
+        return value;
+    }
+
+#pragma warning disable CS1998 // no await: throws in the first step, on the caller's stack
+    static async Task<int> FailNow() => throw new InvalidOperationException("now");
+#pragma warning restore CS1998
+
+    // Awaits a method that faults: its own task faults with the same exception.
+    static async Task<int> Outer(int value) => await FailLateWith(value) + 1;
+
+    static async Task CancelLate(CancellationToken token)
+    {
+        await Task.Yield();
+        token.ThrowIfCancellationRequested();
+    }
+
+    static async ValueTask<int> SlowFail()
+    {
+        await Task.Delay(1);
+        throw new FormatException("from a ValueTask");
+    }
+
+    sealed class Holder
+    {
+        public FileStream File;
+    }
+
+    // Opens a file in a step that then throws: the step's Catch.Run closes it.
+    static async Task OpenAndFail(Holder holder)
+    {
+        await Task.Yield();
+        holder.File = new FileStream("TASKSX.TMP", FileMode.Create);
+        throw new IOException("with a file open");
+    }
+
+    static async void FireAndThrow()
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("thrown in an async void method");
+    }
+
+    static async Task ThrowLater(string message)
+    {
+        await Task.Yield();
+        throw new IOException(message);
+    }
+
     static async Task<int> Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "canceled")
@@ -241,6 +307,27 @@ public static class Program
         {
             new CancellationToken(true).ThrowIfCancellationRequested();
             return 0;
+        }
+        if (args.Length > 0 && args[0] == "void-throw")
+        {
+            FireAndThrow();
+            await Task.Delay(50);
+            return 0;
+        }
+        if (args.Length > 0 && (args[0] == "unobserved" || args[0] == "unobserved-exit"))
+        {
+            _ = ThrowLater("never awaited");
+            Task awaitedLate = ThrowLater("awaited late");
+            await Task.Delay(50);
+            await awaitedLate.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (args[0] == "unobserved-exit")
+                Environment.Exit(3);
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "main-throw")
+        {
+            await Task.Yield();
+            throw new IOException("thrown in async Main");
         }
 
         // Main runs on the program's own stack until its first await that
@@ -640,6 +727,74 @@ public static class Program
             Check("AsTask of a reused task is a copy", await kept && await timer.WaitForNextTickAsync());
         }
         End("No allocation per wait");
+
+        // A throw in an async method faults its task; awaiting throws it again.
+        Task late = FailLate("late");
+        Check("a throw after an await doesn't happen at the call", !late.IsCompleted);
+        // docs:run-async
+        Exception error = await Catch.RunAsync(() => FailLate("late"));
+        // error is the IOException the method threw after its await
+        // docs:end
+        Check("Catch.RunAsync gets a throw from after an await", error is IOException && error.Message == "late");
+        await late.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        Check("the task is faulted, with the exception",
+            late.IsFaulted && late.Status == TaskStatus.Faulted && late.Exception is IOException && !late.IsCompletedSuccessfully);
+
+        Task<int> now = FailNow();
+        Check("a throw before any await faults the task too, not the caller", now.IsFaulted);
+
+        // Through two awaits: the outer method's task gets the same exception.
+        Task<int> outer = Outer(5);
+        error = await Catch.RunAsync(() => outer);
+        Check("a fault climbs the awaits", error is InvalidOperationException && error.Message == "no result for 5"
+            && outer.IsFaulted && outer.Exception == error);
+        Check("and a method that doesn't fail is untouched", await Outer(0) == 1);
+
+        // Wait() and .Result throw it: Catch.Run around them, in code that isn't async.
+        error = Catch.Run(() => FailLate("waited").Wait());
+        Check("Wait() throws what the task threw", error is IOException && error.Message == "waited");
+        error = Catch.Run(() => Outer(7).Result, out int noResult);
+        Check(".Result throws it too", error is InvalidOperationException && noResult == 0);
+
+        // WhenAll faults with the first exception.
+        Task whenAllFaulted = Task.WhenAll(FailLate("first"), Task.Delay(1));
+        await whenAllFaulted.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        Check("WhenAll faults with the first exception", whenAllFaulted.IsFaulted && whenAllFaulted.Exception!.Message == "first");
+
+        // Task.Run, a TaskCompletionSource, a ValueTask.
+        Task runFaulted = Task.Run(() => throw new ArgumentException("in Task.Run"));
+        await runFaulted.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        Check("Task.Run faults its task", runFaulted.IsFaulted && runFaulted.Exception is ArgumentException);
+        var handSet = new TaskCompletionSource<int>();
+        handSet.SetException(new FormatException("set by hand"));
+        Check("TaskCompletionSource.SetException", handSet.Task.IsFaulted && !handSet.TrySetException(new FormatException()));
+        error = await Catch.RunAsync(async () => await SlowFail());
+        Check("an async ValueTask method faults too", error is FormatException && error.Message == "from a ValueTask");
+
+        // An OperationCanceledException cancels the task, not faults it.
+        Task canceledLate = CancelLate(new CancellationToken(true));
+        await canceledLate.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        Check("OperationCanceledException in an async method cancels it", canceledLate.IsCanceled && !canceledLate.IsFaulted);
+        error = await Catch.RunAsync(() => CancelLate(new CancellationToken(true)));
+        Check("and RunAsync gives that exception back", error is OperationCanceledException && error.Message == "The operation was canceled.");
+
+        // A file opened in the step that threw is closed by that step's Catch.Run.
+        var holder = new Holder();
+        error = await Catch.RunAsync(() => OpenAndFail(holder));
+        Check("a file opened in the step that threw is closed", error is IOException && holder.File != null && !holder.File.CanWrite);
+        File.Delete("TASKSX.TMP");
+
+        // An async write that fails (Linux's /dev/full: the disk is full)
+        // leaves its stream usable: it can be disposed after the throw.
+        if (File.Exists("/dev/full"))
+        {
+            var full = new FileStream("/dev/full", FileMode.Open, FileAccess.Write, FileShare.Read, 0);
+            error = await Catch.RunAsync(async () => await full.WriteAsync(new byte[100]));
+            Exception disposing = Catch.Run(() => full.Dispose());
+            Check("a failed async write throws, and the stream can still be disposed",
+                error is IOException && disposing == null && !full.CanWrite);
+        }
+        End("Exceptions");
 
         // Files: reads and writes run on another thread (lib/FileAsync.cs),
         // or, where there are no threads, at once.

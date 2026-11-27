@@ -462,7 +462,13 @@ namespace System.IO
             int written = await FileThread.RunAsync(FileThread.Write, stream5, FileThread.Address(bytes), bytes.Length);
             _file.EndIo();
             if (written != bytes.Length)
+            {
+                // The operation ends here: a Catch.Run may get the exception
+                // and go on using, or disposing, the stream (no finally
+                // block clears the flag).
+                _busy = false;
                 throw new IOException(string.Concat("FileStream: couldn't write to '", Name, "'"));
+            }
         }
     }
 }
