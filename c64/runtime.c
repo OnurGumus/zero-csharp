@@ -1960,6 +1960,137 @@ i32 cs_c64_reu_size(void)
     return size;
 }
 
+// ---- an int8 dot product (Kernels.DotI8) -----------------------------------------------
+//
+// The 6502 has no multiply instruction (__mulsi3 above takes a few hundred
+// cycles for two bytes), so each product comes from a table of quarter
+// squares, f(m) = floor(m^2 / 4):
+//   a * b = f(a + b) - f(b - a)
+// exactly, for whole numbers. With A = a + 128 and B = b + 128 (a sign flip
+// of the top bit, so -127..127 become 1..255), entry k of the table holds
+// f(|k - 256|), so that f(a + b) is entry A + B and f(b - a) entry 256 - A
+// + B. Those sums cost nothing: a pointer's low byte holds A (or 256 - A)
+// and the Y register B, and (pointer),Y adds them. About 120 cycles a
+// product, measured over 255 of them, against about 1,100 for a loop in C#.
+//
+// The table is 1 KB of RAM, built at the first call: its low bytes in two
+// pages, then its high bytes in two more. It is only in programs that call
+// DotI8. The values must be -127..127 (a = -128 would need entry 0 - 128).
+unsigned char zero_dot_table[1024] __attribute__((aligned(256)));
+static unsigned char dot_ready;
+const signed char *zero_dot_a, *zero_dot_b; // for zero_dot_chunk
+
+// The sum of n (0-255) products of zero_dot_a[i] * zero_dot_b[i], as a 32-bit
+// number (24 bits suffice: 255 * 127 * 127 < 2^23). llvm-mos's calling
+// convention: n in A; the result in A, X, __rc2, __rc3; __rc2-__rc19 free.
+//   __rc2/3 a, __rc4/5 b, __rc6/7 and __rc8/9 the low bytes' pointers for
+//   f(a + b) and f(b - a), __rc10/11 and __rc12/13 the high bytes', __rc14
+//   n, __rc15 a product's low byte, __rc16-18 the sum.
+u32 zero_dot_chunk(unsigned char n);
+__asm__(
+    "  .section .text.zero_dot_chunk,\"ax\",@progbits\n"
+    "  .globl zero_dot_chunk\n"
+    "zero_dot_chunk:\n"
+    "  sta __rc14\n"
+    "  lda zero_dot_a\n"
+    "  sta __rc2\n"
+    "  lda zero_dot_a+1\n"
+    "  sta __rc3\n"
+    "  lda zero_dot_b\n"
+    "  sta __rc4\n"
+    "  lda zero_dot_b+1\n"
+    "  sta __rc5\n"
+    "  lda #mos16hi(zero_dot_table)\n"    // the low bytes' pages
+    "  sta __rc7\n"
+    "  sta __rc9\n"
+    "  clc\n"
+    "  adc #2\n"                     // the high bytes'
+    "  sta __rc11\n"
+    "  sta __rc13\n"
+    "  lda #0\n"
+    "  sta __rc16\n"
+    "  sta __rc17\n"
+    "  sta __rc18\n"
+    "  tax\n"                        // X: i
+    "  cpx __rc14\n"
+    "  beq 3f\n"
+    "1:\n"
+    "  txa\n"
+    "  tay\n"
+    "  lda (__rc2),y\n"              // A = a + 128
+    "  eor #$80\n"
+    "  sta __rc6\n"
+    "  sta __rc10\n"
+    "  eor #$ff\n"                   // 256 - A: A is 1-255, so no carry
+    "  clc\n"
+    "  adc #1\n"
+    "  sta __rc8\n"
+    "  sta __rc12\n"
+    "  lda (__rc4),y\n"              // Y = B = b + 128
+    "  eor #$80\n"
+    "  tay\n"
+    "  sec\n"                        // f(a + b) - f(b - a) = a * b, 16 bits
+    "  lda (__rc6),y\n"
+    "  sbc (__rc8),y\n"
+    "  sta __rc15\n"
+    "  lda (__rc10),y\n"
+    "  sbc (__rc12),y\n"
+    "  tay\n"
+    "  clc\n"                        // the sum += the product, sign extended
+    "  lda __rc15\n"
+    "  adc __rc16\n"
+    "  sta __rc16\n"
+    "  tya\n"
+    "  adc __rc17\n"
+    "  sta __rc17\n"
+    "  tya\n"
+    "  bmi 2f\n"
+    "  lda #0\n"
+    "  .byte $2c\n"                  // BIT absolute: skips the next lda, keeps C
+    "2:\n"
+    "  lda #$ff\n"
+    "  adc __rc18\n"
+    "  sta __rc18\n"
+    "  inx\n"
+    "  cpx __rc14\n"
+    "  bne 1b\n"
+    "3:\n"
+    "  lda __rc18\n"                 // 24 bits -> 32: the top byte copies bit 23
+    "  sta __rc2\n"
+    "  asl a\n"
+    "  lda #0\n"
+    "  adc #$ff\n"
+    "  eor #$ff\n"
+    "  sta __rc3\n"
+    "  lda __rc16\n"
+    "  ldx __rc17\n"
+    "  rts\n"
+    "  .text\n");
+
+i32 cs_c64_dot_i8(const signed char *a, const signed char *b, i32 n)
+{
+    if (!dot_ready) {
+        for (unsigned k = 0; k < 512; k++) {
+            unsigned m = k < 256 ? 256 - k : k - 256;
+            unsigned f = (m >> 1) * (m - (m >> 1)); // floor(m^2 / 4), in 16 bits
+            zero_dot_table[k] = (unsigned char)f;
+            zero_dot_table[512 + k] = (unsigned char)(f >> 8);
+        }
+        dot_ready = 1;
+    }
+    i32 sum = 0;
+    while (n > 0) {
+        unsigned char count = n > 255 ? 255 : (unsigned char)n;
+        zero_dot_a = a;
+        zero_dot_b = b;
+        sum += (i32)zero_dot_chunk(count);
+        a += count;
+        b += count;
+        n -= count;
+    }
+    return sum;
+}
+
 // ---- fibers (lib/Fibers.cs) ---------------------------------------------------------
 //
 // A 6502 program has two stacks. llvm-mos keeps locals on a stack of its own
