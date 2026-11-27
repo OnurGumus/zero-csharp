@@ -426,6 +426,20 @@ run_all() {
         fi
     fi
 
+    # A fiber waiting for a lock its thread took outside the fibers can never
+    # get it: lib/Monitor.cs stops the program with a message instead.
+    if [[ " ${samples[*]} " == *" Fibers "* ]]; then
+        status=0
+        out=$("${run[@]}" Fibers deadlock < /dev/null 2>&1) || status=$?
+        if [ "$status" = 0 ] || [[ "$out" != *"took outside the fibers"* ]]; then
+            echo "FAIL Fibers deadlock: not stopped with the message (exit code $status)"
+            echo "$out" | tail -3 | sed 's/^/       /'
+            failures=$((failures + 1))
+        else
+            echo "ok   Fibers deadlock (stopped, as it must be)"
+        fi
+    fi
+
     # A throw in an interrupt handler must stop the program, also when the
     # code it interrupted is inside a Catch.Run (microcontrollers only: the
     # other targets have no handlers written in C#).
