@@ -229,6 +229,8 @@ starts at once and gives a `Task`; `let!` and `do!` wait for a `Task`, a `Task<'
 
 <!-- sample: sdk/test/fixtures/fsasync/Program.fs task -->
 ```fsharp
+open System.Threading.Tasks
+
 let addLater (a: int) (b: int) =
     task {
         do! Task.Delay 10

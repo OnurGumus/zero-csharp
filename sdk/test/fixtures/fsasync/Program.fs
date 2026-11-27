@@ -1,11 +1,12 @@
 // task { }, async { } and MailboxProcessor, against .NET's output.
 open System
 open System.Threading
-open System.Threading.Tasks
 
 // ---- task
 
 // docs:task
+open System.Threading.Tasks
+
 let addLater (a: int) (b: int) =
     task {
         do! Task.Delay 10
