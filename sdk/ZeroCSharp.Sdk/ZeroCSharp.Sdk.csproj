@@ -24,5 +24,7 @@
     <None Include="payload/**" Pack="true" PackagePath="payload/" />
     <!-- zerocore, which every program links, holds code under these licenses. -->
     <None Include="../../zerocore/THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="" />
+    <!-- lib/ too (AesGcm is ported from BearSSL). -->
+    <None Include="../../lib/THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="lib-THIRD-PARTY-NOTICES.txt" />
   </ItemGroup>
 </Project>

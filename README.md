@@ -247,8 +247,9 @@ To build them, clone this repository and build the bflat fork next to it
 
 MIT ([`LICENSE`](LICENSE)), including `zerocore/` and the `ZeroCSharp.Sdk` and `ZeroCSharp.Templates`
 packages. zerocore holds code from .NET (MIT) and, in three tensor functions, from AMD (BSD 3-Clause):
-[`zerocore/THIRD-PARTY-NOTICES.txt`](zerocore/THIRD-PARTY-NOTICES.txt). zerocore wasn't written in a clean
-room: read [its README](zerocore/README.md) before shipping a commercial product on it.
+[`zerocore/THIRD-PARTY-NOTICES.txt`](zerocore/THIRD-PARTY-NOTICES.txt). `lib/`'s AES-GCM is ported from
+BearSSL (MIT): [`lib/THIRD-PARTY-NOTICES.txt`](lib/THIRD-PARTY-NOTICES.txt). zerocore wasn't written in a
+clean room: read [its README](zerocore/README.md) before shipping a commercial product on it.
 
 bflat and [the fork](https://github.com/OnurGumus/bflat) are AGPL-3.0, and so are the
 `ZeroCSharp.Bflat.*` packages that carry it. They are used as a compiler, and nothing from them is
