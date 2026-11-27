@@ -57,6 +57,7 @@ SMALL_SAMPLES=(
     SmallFormats
     SmallDoubleFormats
     SmallDecimalFormats
+    SmallParsing
     SmallKeys
     SmallFibers
     SmallChannels
@@ -106,6 +107,7 @@ SAMPLES=(
     Unicode
     Numerics
     Formats
+    Parsing
     Keys
     Tensors
     TensorsAvx
@@ -168,6 +170,7 @@ DOS_SAMPLES=(
     Unicode
     Numerics
     Formats
+    Parsing
     Keys
     Tensors
     TensorTypes
@@ -230,6 +233,7 @@ ARM_SAMPLES=(
     Unicode
     Numerics
     Formats
+    Parsing
     Keys
     Tensors
     TensorTypes

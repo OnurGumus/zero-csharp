@@ -23,8 +23,9 @@ With zerocore, as `build.sh` builds it:
 - **Static fields of every type**, including strings, objects and arrays, and static constructors,
   which run once even when several threads reach a type at the same time.
 - **Strings**: `==`, `+` (with numbers too: `"n=" + 5`), `switch`, `ToString()` and `string.Format`
-  with .NET's standard format strings (`"X4"`, `"F2"`, `"N0"`, `"{0,8:E2}"`), plus `lib/` for the rest
-  (see [Strings without a GC](strings.html)).
+  with .NET's standard format strings (`"X4"`, `"F2"`, `"N0"`, `"{0,8:E2}"`), `Parse` and `TryParse`
+  on every number type, with `NumberStyles`, plus `lib/` for the rest (see
+  [Strings without a GC](strings.html)).
 - **Records and anonymous types**: value equality, `with`, deconstruction and the generated `ToString`;
   `typeof` and `GetType()` for comparing types. With no reflection, a `Type` has no name, and a class
   without its own `ToString` prints `object`.

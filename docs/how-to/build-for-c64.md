@@ -129,7 +129,7 @@ programs `./test.sh --c64` runs:
 | `SmallIntegers`, `SmallNative`, `QuizStep2` | 17 to 18 KB | 32 to 33 KB |
 | `SmallKeys` | 20 KB | 30 KB |
 | `SmallEncoding`, `SmallStrings`, `SmallDicts` | 26 to 28 KB | 22 to 24 KB |
-| `Refs`, `SmallStrDicts`, `SmallObjects`, `SmallScratchBuffer` | 31 to 32 KB | 18 to 19 KB |
+| `Refs`, `SmallStrDicts`, `SmallObjects`, `SmallScratchBuffer`, `SmallParsing` | 31 to 32 KB | 18 to 19 KB |
 | `SmallDecimalFormats`, `SmallLists`, `SmallText`, `SmallUnicode`, `Paddles`, `C64Demo`, `SmallArena` | 34 to 36 KB | 14 to 16 KB |
 | `SmallBuilders` | 39 KB | 11 KB |
 | `SmallFibers`, `SmallChannels`, `SmallDoubleFormats` | 40 to 41 KB | 9 to 10 KB |
@@ -157,12 +157,15 @@ it (the collections and strings on top of an arena):
 | Printing a `float` or a `double` (`ToString`) | 24.5 KB |
 | `char.IsLetter`, `IsDigit`, `IsUpper`, `IsLower`, `GetUnicodeCategory` (their Unicode table) | 16.5 KB |
 | `char.ToUpper`, `ToLower` above ASCII (their table) | 2 KB |
+| `int.TryParse` (`int.Parse`, with its exceptions) | 6.5 KB (9.5 KB) |
+| `double.Parse` | 42 KB |
 
 Floating point is the expensive one: the 6502 has none, and the software that stands in for it is far
 larger for `double` than for `float`. Printing either brings the code that prints a value exactly,
 with big-number arithmetic. A program that computes with `double` and prints the result doesn't fit;
-with `float` it does, with about 8 KB to spare. Every kind of collection (each set of type arguments)
-is compiled separately and costs again.
+with `float` it does, with about 8 KB to spare. Reading a `double` from text (`double.Parse`) leaves
+room for little else, as it divides big numbers exactly; `int.TryParse` is cheap. Every kind of
+collection (each set of type arguments) is compiled separately and costs again.
 
 The `char` methods know every Unicode character, so they bring tables. For text typed on a C64, the
 ASCII ones do the same job for free: `char.IsAsciiDigit`, `IsAsciiLetter`, `IsAsciiLetterUpper` and the

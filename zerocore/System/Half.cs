@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 // Half's precision. Conversions round to nearest, ties to even.
 namespace System
 {
-    public readonly unsafe struct Half : IEquatable<Half>, IComparable<Half>, ISpanFormattable
+    public readonly unsafe partial struct Half : IEquatable<Half>, IComparable<Half>, ISpanFormattable
     {
         private const ushort SignMask = 0x8000;
         private const ushort ExponentMask = 0x7C00;

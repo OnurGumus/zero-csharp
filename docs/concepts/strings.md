@@ -42,11 +42,13 @@ Defining `AsSpan(string)` also switches on C# 14's implicit conversion from `str
 `ReadOnlySpan<char>`. So every string converts to a span, and any span parameter takes a string. A
 null string acts as an empty one.
 
-Parsing works on spans too. `Str.TryParse` reads `int`, `long`, `ulong` and `double`, and
-`Str.TryParseHex` reads hex. Parsing is strict and invariant: no surrounding whitespace, so call `Trim()`
-first, and no thousands separators. `TryParse` for `double` is correctly rounded. That combination is
-how the tutorial's quiz reads an answer without allocating anything: the line goes into a stack buffer,
-and the number is parsed from a slice of it.
+Parsing works on spans too. `int.Parse`, `double.TryParse` and the other numbers' `Parse` and
+`TryParse` take a `ReadOnlySpan<char>` as well as a string, and read what .NET reads in the invariant
+culture (see [Read input](../how-to/read-input.html#parse-numbers)). `Str.TryParse` is a stricter
+version for `int`, `long`, `ulong` and `double`, with no surrounding whitespace (call `Trim()` first)
+and no thousands separators, and `Str.TryParseHex` reads hex. Both are correctly rounded for `double`.
+Parsing from a span is how the tutorial's quiz reads an answer without allocating anything: the line
+goes into a stack buffer, and the number is parsed from a slice of it.
 
 <!-- sample: samples/QuizStep2.cs check -->
 ```csharp
