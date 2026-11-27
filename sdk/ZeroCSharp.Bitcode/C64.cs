@@ -6,10 +6,15 @@
 //       OUTDIR/<name>.external.o. CORE.dll is zerocore built for bitcode
 //       targets (-d WASM). On a Mac it runs in a Linux container.
 //
-//   zero-bitcode c64-link OBJDIR NAME RUNTIME.c OUT.prg [--llvm-mos DIR]
+//   zero-bitcode c64-link OBJDIR NAME RUNTIME.c OUT.prg [--llvm-mos DIR] [--source FILE.c|FILE.s ...]
+//                         [--shadow-stack BYTES] [--stack-reserve BYTES] [--fast-multiply]
 //       llvm-mos: the bitcode in OBJDIR -> OUT.prg, through ll2mos and
 //       wasm2mos, linked with RUNTIME.c (c64/runtime.c, zerocore's native
-//       half) and llvm-mos's C library.
+//       half) and llvm-mos's C library. --shadow-stack sizes the stack
+//       compiled C# keeps object references on (2048 by default);
+//       --stack-reserve the room the heap leaves for the 6502's soft stack
+//       (1024 by default); --fast-multiply multiplies 32-bit numbers with a
+//       1 KB table of quarter squares, about twice as fast.
 //
 // Tools come from the cache (Tools.cs) unless given.
 using System.Diagnostics;
@@ -21,6 +26,12 @@ namespace ZeroBitcode;
 static class C64
 {
     static ToolFailure Fail(string message) => new("zero-bitcode", message);
+
+    // A size in bytes, as given: a whole number from 64 to 32768.
+    static int Bytes(string text) =>
+        int.TryParse(text, out int bytes) && bytes >= 64 && bytes <= 32768
+            ? bytes
+            : throw Fail($"'{text}' isn't a size in bytes (64 to 32768)");
 
     // ---- NativeAOT-LLVM -----------------------------------------------------------
 
@@ -61,7 +72,6 @@ static class C64
         if (entryPoints)
             ilcArgs.Add($"--generateunmanagedentrypoints:{name}");
         ilcArgs.Add($"-o:{Path.Combine(outDir, name + ".bc")}");
-
         if (OperatingSystem.IsMacOS())
         {
             // Microsoft publishes no NativeAOT-LLVM for Apple Silicon: Linux
@@ -128,15 +138,30 @@ static class C64
     {
         string? llvmMos = null;
         var positional = new List<string>();
+        // The program's own C or assembly (ZeroC64Source in a project): 6502
+        // code for what the IL is too big or too slow for, compiled and
+        // optimized with the rest.
+        var sources = new List<string>();
+        // The memory a program keeps for its two stacks, when it says how
+        // much: its heap gets the rest.
+        var sizes = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--llvm-mos" && i + 1 < args.Length)
                 llvmMos = args[++i];
+            else if (args[i] == "--source" && i + 1 < args.Length)
+                sources.Add(Path.GetFullPath(args[++i]));
+            else if (args[i] == "--shadow-stack" && i + 1 < args.Length)
+                sizes.Add($"-DZERO_SHADOW_STACK={Bytes(args[++i])}");
+            else if (args[i] == "--stack-reserve" && i + 1 < args.Length)
+                sizes.Add($"-Wl,--defsym,__stack_reserve_size={Bytes(args[++i])}");
+            else if (args[i] == "--fast-multiply")
+                sizes.Add("-DZERO_FAST_MULTIPLY");
             else
                 positional.Add(args[i]);
         }
         if (positional.Count != 4)
-            throw Fail("usage: zero-bitcode c64-link OBJDIR NAME RUNTIME.c OUT.prg [--llvm-mos DIR]");
+            throw Fail("usage: zero-bitcode c64-link OBJDIR NAME RUNTIME.c OUT.prg [--llvm-mos DIR] [--source FILE ...]");
         string obj = positional[0], name = positional[1], runtime = positional[2], output = positional[3];
         llvmMos ??= Tools.LlvmMosFolder();
         string clang = Path.Combine(llvmMos, "bin", OperatingSystem.IsWindows() ? "clang.exe" : "clang");
@@ -186,6 +211,7 @@ static class C64
         var separate = new List<string>();
         var extra = Directory.GetFiles(outDir, "*.s").Order(StringComparer.Ordinal)
             .Concat(new[] { "data.c", "external.c" }.Select(f => Path.Combine(outDir, f)).Where(File.Exists))
+            .Concat(sources)
             .ToList();
         //
         // -mlto-zp=0: no zero page for the optimizer's variables and stack
@@ -193,7 +219,7 @@ static class C64
         // so a C# local the 6502 compiler put in the zero page would be null
         // to C# as soon as its address was taken (a NullReferenceException
         // from `&local`, or `fixed`, in a method it proved isn't re-entered).
-        string[] mos = ["--config", "mos-c64.cfg", "-Os", "-mlto-zp=0", "-Wall", "-Wno-override-module", "-Wno-unused-command-line-argument"];
+        string[] mos = ["--config", "mos-c64.cfg", "-Os", "-mlto-zp=0", "-Wall", "-Wno-override-module", "-Wno-unused-command-line-argument", .. sizes];
         // save-basic.o: by default an llvm-mos program never returns (it has
         // overwritten memory BASIC uses). This saves that memory at the start
         // and puts it back at the end, so the program ends at BASIC's READY.
@@ -208,6 +234,12 @@ static class C64
 
             Match registers = Regex.Match(log, @"ran out of registers during register allocation in function '(.*?)'");
             string? method = registers.Success ? registers.Groups[1].Value : null;
+            // A crash of the backend (a segmentation fault in the register
+            // allocator, seen with an F# hash table lookup) names the
+            // function in LLVM's stack dump.
+            Match crash = Regex.Match(log, @"Running pass '.*?' on function '@(.*?)'");
+            if (method == null && crash.Success)
+                method = crash.Groups[1].Value.Trim('"');
             if (method == null && log.Contains("LLVM ERROR", StringComparison.Ordinal))
             {
                 var (_, trace) = Capture(clang, [.. mos, .. whole, .. separate, .. extra, runtime, saveBasic, "-o", output,
