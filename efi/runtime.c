@@ -594,6 +594,23 @@ int clock_gettime(int clock, i64 *timespec)
     return 0;
 }
 
+// ---- random bytes, for lib/CryptoRandom.cs ----------------------------------
+//
+// From the firmware's EFI_RNG_PROTOCOL, with its default algorithm. Firmware
+// without one (OVMF has it only when the CPU has RDRAND or QEMU gives the
+// machine a virtio-rng device) gets -1, and RandomNumberGenerator throws.
+
+int getentropy(void *buffer, usize length)
+{
+    static const Guid rng_guid = RNG_GUID;
+    static Rng *rng;
+    if (length > 256)
+        return -1;
+    if (!rng && EFI_ERROR(efi_system->boot_services->locate_protocol(&rng_guid, 0, (void **)&rng)))
+        return rng = 0, -1;
+    return EFI_ERROR(rng->get_rng(rng, 0, length, buffer)) ? -1 : 0;
+}
+
 // ---- threads ----------------------------------------------------------------
 //
 // One processor, no scheduler: as on DOS, a thread runs to its end when it is

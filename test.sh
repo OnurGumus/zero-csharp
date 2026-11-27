@@ -105,6 +105,9 @@ SAMPLES=(
     Llama
     Unicode
     Numerics
+    Crypto
+    CryptoErrors
+    CryptoRandom
     Formats
     Keys
     Tensors
@@ -115,7 +118,7 @@ SAMPLES=(
 )
 
 # Samples WebAssembly can't run (as in build.sh): the fiber samples switch stacks.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches "
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors "
 # Samples UEFI can't run (as in build.sh): lib/ has directories only on Linux,
 # macOS, Windows and WebAssembly.
 NOT_UEFI=" Directories Network "
@@ -167,6 +170,8 @@ DOS_SAMPLES=(
     Llama
     Unicode
     Numerics
+    Crypto
+    CryptoErrors
     Formats
     Keys
     Tensors
@@ -229,6 +234,8 @@ ARM_SAMPLES=(
     Llama
     Unicode
     Numerics
+    Crypto
+    CryptoErrors
     Formats
     Keys
     Tensors
