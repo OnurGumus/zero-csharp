@@ -99,6 +99,7 @@ public struct Road
 
 public struct Map
 {
+    // docs:map-join
     public Pool<Town> Towns;
     public Pool<Road> Roads;
 
@@ -117,12 +118,14 @@ public struct Map
         OneWay(b, a, km);
     }
 
+    // The new road goes in front of the town's chain of roads.
     void OneWay(Handle<Town> from, Handle<Town> to, int km)
     {
         ref Town town = ref Towns[from];
         town.FirstRoad = Roads.Add(
             new Road { To = to, Km = km, Next = town.FirstRoad });
     }
+    // docs:end
 
     // docs:map-remove
     // The town and its own roads go. Roads to it from other towns stay,
@@ -180,6 +183,21 @@ public static class Program
     static int s_failures;
     static int s_sectionChecks;
     static int s_sectionFailures;
+
+    static void PoolBasics(Arena arena)
+    {
+        // docs:pool-basics
+        var jobs = Pool<Job>.Create(arena);
+        Handle<Job> build = jobs.Add(new Job { Id = 1 });
+        jobs[build].Id = 10;          // a ref: changes the job in place
+        jobs.Remove(build);           // its slot is free again
+        Handle<Job> lint = jobs.Add(new Job { Id = 5 });  // reuses it
+        bool found = jobs.Contains(build);    // false: build is stale
+        // jobs[build] here would stop the program.
+        // docs:end
+        Check("a stale handle misses the item in its old slot",
+            !found && jobs[lint].Id == 5 && jobs.Count == 1 && lint != build);
+    }
 
     // docs:distance
     // The shortest way by road, in km, or -1 if there is none. The search's
@@ -349,15 +367,17 @@ public static class Program
         Arena.DebugChecks = false;
         Section("Ptr itself");
 
+        PoolBasics(arena);
+        Section("pool basics");
+
         // docs:pool
         var jobs = Pool<Job>.Create(arena);
         Handle<Job> build = jobs.Add(new Job { Id = 1 });
         Handle<Job> test = jobs.Add(new Job { Id = 2, WaitsFor = build });
         Handle<Job> ship = jobs.Add(new Job { Id = 3, WaitsFor = test });
         jobs.Remove(test);
-        // ship still holds the handle, but it no longer finds anything,
-        // even once the slot is used again for another job.
-        Handle<Job> docs = jobs.Add(new Job { Id = 4 });
+        Handle<Job> docs = jobs.Add(new Job { Id = 4 });  // test's old slot
+        // ship.WaitsFor is test's handle: it finds nothing, not docs.
         bool waiting = jobs.Contains(jobs[ship].WaitsFor);   // false
         // docs:end
         Check("a removed item is refused", !waiting && !jobs.TryGet(test, out _) && jobs.Count == 3);
@@ -440,6 +460,14 @@ public static class Program
         // docs:end
         Check("Add and Remove", Digits(list) == 10304050 && list.Count == 4);
         Check("a removed node is refused", !list.Remove(two) && !list.Contains(two));
+        // docs:linked-list-walk
+        // Each node's Next is the handle of the one after it; the last
+        // node's Next is the null handle, which ends the walk.
+        int total = 0;
+        for (var node = list.First; !node.IsNull; node = list[node].Next)
+            total += list[node].Value;          // 10 + 30 + 40 + 50
+        // docs:end
+        Check("walks forward along Next", total == 130);
         int backward = 0;
         for (var node = list.Last; !node.IsNull; node = list[node].Previous)
             backward = backward * 100 + list[node].Value;
