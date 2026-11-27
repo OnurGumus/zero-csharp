@@ -364,6 +364,42 @@ static async Task<int> Consume(Channel<int> channel)
 behind these waits, so a loop over them allocates nothing, and a program that never calls them
 doesn't link their code.
 
+## Guard state across an await
+
+Fibers switch only where code waits, so code that doesn't wait needs no lock. Code that reads
+something, awaits, and writes it back does: another async method can run during the await and its
+update is lost. `SemaphoreSlim` (`lib/SemaphoreSlim.cs`) works as in .NET, and with a count of 1 it's
+the lock for that:
+
+<!-- sample: samples/Tasks.cs semaphore -->
+```csharp
+// Reads the total, waits, writes it back: without the gate, another
+// call could run in the wait and its update would be lost.
+static readonly SemaphoreSlim s_gate = new(1);
+static int s_total;
+
+static async Task AddOne()
+{
+    await s_gate.WaitAsync();
+    try
+    {
+        int seen = s_total;
+        await Task.Yield(); // others run here
+        s_total = seen + 1;
+    }
+    finally
+    {
+        s_gate.Release();
+    }
+}
+```
+
+A larger count limits how many run at once, for example how many connections are open. `WaitAsync`
+costs no fiber, and waiters get in in the order they came. A timeout makes it return `false`, and a
+canceled token cancels it. `Wait()` blocks a fiber instead. Releasing past the maximum ends the
+program, as .NET's `SemaphoreFullException` would. A semaphore belongs to one thread, like the rest of
+the tasks, so `Parallel.For`'s threads can't share one: they use `Interlocked`.
+
 ## Cancel
 
 `CancellationTokenSource` and `CancellationToken` (`lib/Cancellation.cs`) work as in .NET: `Cancel`,
