@@ -128,7 +128,9 @@ let ticker =
             ticks.Value <- ticks.Value + 1
     }
 let tickerTask = Async.StartAsTask(ticker, cancellationToken = cts2.Token)
-Async.RunSynchronously(Async.Sleep 60)
+// Wait for ticks rather than a fixed time: timers run late on a busy CI Mac.
+while ticks.Value <= 2 do
+    Async.RunSynchronously(Async.Sleep 5)
 cts2.Cancel()
 Task.WhenAny(tickerTask :> Task).Wait()
 printfn "ticker ran: %b, canceled: %b" (ticks.Value > 2) tickerTask.IsCanceled
