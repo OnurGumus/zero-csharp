@@ -2,8 +2,10 @@
 # Runs samples/Https.cs against OpenSSL's s_server on this machine, once per
 # case: each cipher suite, RSA and ECDSA certificates (P-256 and P-384), a
 # server that asks for a client certificate, and the cases that must fail
+# cleanly, with TryAuthenticateAsClient's reason and no exception
 # (TLS 1.2 only, a P-384 key share only, a wrong host name, an unknown root),
-# and a server that wants P-256 and asks for it with a HelloRetryRequest.
+# servers that hang up mid-handshake (scripts/tls-hangup.py), and a server
+# that wants P-256 and asks for it with a HelloRetryRequest.
 #
 # Usage:  scripts/tls-interop.sh [--mac | other ./run.sh target flags]
 # Needs:  OpenSSL 3.0 or newer (CI uses Ubuntu 24.04's), and the Https sample built for the target
@@ -50,12 +52,38 @@ check() {
         (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null && break
         sleep 0.1
     done
+    run_client "$name" "$expect" "$host" $server
+}
+
+# The same against scripts/tls-hangup.py, which hangs up mid-handshake.
+hangup() {
+    local name=$1 mode=$2
+    port=$((port + 1))
+    rm -f ready
+    python3 "$root/scripts/tls-hangup.py" "$port" "$mode" ready >server.log 2>&1 &
+    local server=$!
+    # It takes one connection, so wait for its file rather than knocking.
+    for _ in $(seq 50); do
+        [ -f ready ] && break
+        sleep 0.1
+    done
+    run_client "$name" fail localhost $server
+}
+
+# Runs Https against the server just started; a failure must be a clean one:
+# TryAuthenticateAsClient's reason ("SslStream: ..."), not an exception.
+run_client() {
+    local name=$1 expect=$2 host=$3 server=$4
     out=$(cd "$root" && timeout 30 ./run.sh "${TARGET[@]}" Https "$host:$port" / </dev/null 2>&1)
     code=$?
     kill $server 2>/dev/null
     wait $server 2>/dev/null
-    local got=fail
-    [ $code -eq 0 ] && printf '%s' "$out" | grep -q "200 ok" && got=ok
+    local got=other
+    if [ $code -eq 0 ] && printf '%s' "$out" | grep -q "200 ok"; then
+        got=ok
+    elif [ $code -eq 1 ] && printf '%s' "$out" | head -1 | grep -q "^SslStream: "; then
+        got=fail
+    fi
     if [ "$got" = "$expect" ]; then
         pass=$((pass + 1))
         echo "ok   $name"
@@ -82,5 +110,10 @@ check "P-256 (HelloRetryRequest)" ok localhost -cert p256.pem -key p256.key -gro
 check "P-384 key share only"   fail localhost -cert p256.pem -key p256.key -groups P-384
 check "wrong host name"        fail 127.0.0.1 -cert named.pem -key named.key
 check "unknown root"           fail localhost -cert self.pem -key p256.key
+hangup "hang-up: closed after ClientHello"      close
+hangup "hang-up: reset after ClientHello"       reset
+hangup "hang-up: half a record, then closed"    half
+hangup "hang-up: reset after ServerHello"       hello-reset
+hangup "hang-up: bad record, alert into a reset" bad-record
 echo "$pass passed, $fail failed"
 exit $fail

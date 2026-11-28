@@ -21,9 +21,14 @@
 //
 // What differs from .NET:
 // - A throw ends the program unless a Catch.Run is waiting (lib/Catch.cs).
-//   TryAuthenticateAsClient doesn't throw for anything the server does: it
-//   returns false with the error. (Read and Write still throw IOException for
-//   a broken connection, as NetworkStream does.)
+//   TryAuthenticateAsClient returns false with the reason instead, whatever
+//   the server sends and however it hangs up, as long as the inner stream
+//   doesn't throw: lib's NetworkStream doesn't (a broken connection reads as
+//   0 and drops writes, and its Error says why), so over a TcpClient it never
+//   throws (scripts/tls-interop.sh checks hang-ups). A stream of your own that
+//   throws still ends the program. After the handshake, Read and Write throw
+//   IOException for a record that fails its check or an alert, as .NET's do;
+//   a connection that just ends reads as 0.
 // - ApplicationProtocols is an array, not a List.
 // - Dispose doesn't send close_notify, as in .NET; ShutdownAsync does.
 // - EnabledSslProtocols may only be None (the default) or include Tls13.
@@ -220,7 +225,8 @@ namespace System.Net.Security
 
         /// <summary>
         /// Runs the handshake; false, with the reason, if the server can't be trusted or
-        /// doesn't speak TLS 1.3 as this does. Doesn't throw for anything the server sends.
+        /// doesn't speak TLS 1.3 as this does. Doesn't throw for anything the server sends or does, over lib's NetworkStream
+        /// (a stream of your own that throws still ends the program).
         /// After a failure the stream is of no further use.
         /// </summary>
         public bool TryAuthenticateAsClient(SslClientAuthenticationOptions options, out string error)
