@@ -53,6 +53,10 @@ for s in Minimal Strings Threads; do
     trace samples/$s.cs --arch x64 --ldflags $P/native/linux-x64/zerocore.o --ldflags "-z nostart-stop-gc"
     trace samples/$s.cs $WIN
 done
+# Android: Bionic from the layout (lib/linux/arm64/bionic) instead of glibc.
+for s in Minimal Strings Threads; do
+    trace samples/$s.cs --arch arm64 --libc bionic --ldflags $P/native/android-arm64/zerocore.o --ldflags $P/native/android-arm64/runtime.o --ldflags "-z max-page-size=16384" --ldflags "-z nostart-stop-gc"
+done
 trace samples/Minimal.cs --arch arm64 -m dotprod --ldflags $P/native/linux-arm64/zerocore.o --ldflags "-z nostart-stop-gc"
 trace samples/Minimal.cs --arch x64 -m x86-64-v3 --ldflags $P/native/linux-x64/zerocore.o --ldflags "-z nostart-stop-gc"
 trace samples/Minimal.cs --arch x64 -Os --ldflags $P/native/linux-x64/zerocore.o --ldflags "-z nostart-stop-gc"
