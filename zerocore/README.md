@@ -122,6 +122,6 @@ On 2026-11-28 the two were compared mechanically. zerocore, `../lib` and the C a
 - Comparing token sequences finds longer shared stretches in two files only. `System/Span.cs` shares .NET's span constructors with `throw` replaced by `Environment.FailFast`, which any library without catchable exceptions has to do. `System/SpanHelpers.cs` shares element-by-element copy loops.
 - Allocation, casts, startup, `string` and `object` share nothing longer than a few tokens.
 
-A comparison like this finds copying, not code that was rewritten closely enough to dodge it. If you plan to ship a commercial product on zerocore, have someone qualified review it first. This isn't legal advice.
+A text comparison shows what was copied, but it can't prove how something was written, so it supports the MIT license rather than guaranteeing it. If your company reviews the licenses of what it ships, this section and the notices file are what to give the reviewer. This isn't legal advice.
 
 bflat itself (the compiler driver) remains AGPL-3.0. Using it to compile a program doesn't put its code in the output; zerolib was the part that ended up in every binary.
