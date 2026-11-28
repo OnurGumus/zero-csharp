@@ -1,5 +1,5 @@
 PASS no arena: allocating calls fail cleanly (4 checks)
-PASS spans: compare, search, slice (21 checks)
+PASS spans: compare, search, slice (27 checks)
 PASS spans: trim and split (9 checks)
 PASS parse (10 checks)
 PASS parse: int, ulong, hex (12 checks)

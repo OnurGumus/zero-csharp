@@ -1,3 +1,5 @@
 PASS ChaCha20-Poly1305 refusals (7 checks)
+PASS AES-GCM refusals (8 checks)
 PASS EncryptedStream refusals (9 checks)
-PASS Arguments (10 checks)
+PASS Arguments (13 checks)
+PASS Certificate refusals (12 checks)

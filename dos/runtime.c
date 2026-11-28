@@ -453,6 +453,13 @@ u32 dos_ticks(void)
 // random bytes, and RandomNumberGenerator throws.
 int getentropy(void *buffer, size_t length) { (void)buffer; (void)length; return -1; }
 
+// Directories, for lib/Directory.cs: there are none to list here, so opendir
+// finds nothing. (X509Chain's search for the system's root certificates looks
+// for Android's directory of them and links these in.)
+void *opendir(const char *path) { (void)path; return 0; }
+void *readdir64(void *dir) { (void)dir; return 0; }
+int closedir(void *dir) { (void)dir; return -1; }
+
 // clock_gettime, with Linux's clock numbers as lib/Clock.cs passes them. 0 is
 // the wall clock: DOS's date and time, which is usually local time. Anything
 // else is the monotonic clock: dos_ticks, to the millisecond, carried past its

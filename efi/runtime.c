@@ -651,6 +651,13 @@ int getentropy(void *buffer, usize length)
     return EFI_ERROR(rng->get_rng(rng, 0, length, buffer)) ? -1 : 0;
 }
 
+// Directories, for lib/Directory.cs: there are none to list here, so opendir
+// finds nothing. (X509Chain's search for the system's root certificates looks
+// for Android's directory of them and links these in.)
+void *opendir(const char *path) { (void)path; return 0; }
+void *readdir64(void *dir) { (void)dir; return 0; }
+int closedir(void *dir) { (void)dir; return -1; }
+
 // ---- threads ----------------------------------------------------------------
 //
 // One processor, no scheduler: as on DOS, a thread runs to its end when it is

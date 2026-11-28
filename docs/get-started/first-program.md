@@ -29,16 +29,42 @@ public static class Program
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Hello.fs file -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Example: zero-mode "Hello World" in F#, through printfn (no .NET runtime).
+// Hello.cs is the same program in C#. The SDK's tests (fsharp_doc_samples)
+// build it as an F# zero project's Program.fs.
+
+printfn "Hello from zero-mode!"
+```
+
+<div class="lang-text" data-lang="csharp">
+
 `Console.WriteLine` is the call you know from .NET, but no .NET runtime runs behind it. Zero mode
 has none: the program is compiled to machine code, and `lib/`, which every zero-mode program is built
 with, supplies `Console`. It holds the text in a buffer, encodes it as UTF-8 and writes each line to
 standard output in one call. [Coming from .NET](coming-from-dotnet.html) lists what else `Console`
 has, and what it doesn't.
 
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+`printfn` is the call you know from F#, but no .NET runtime runs behind it. Zero mode has none: the
+program is compiled to machine code, and the SDK's own small FSharp.Core and `lib/` supply what it
+calls. `printfn` formats the line in a small buffer it reuses and writes it to standard output in
+one call. [Write a program in F#](../how-to/write-fsharp.html) lists what else F# has, and what it
+doesn't.
+
+</div>
+
 ## Build and run it
 
 With the .NET 10 SDK and the templates ([Install with dotnet](install-with-dotnet.html)), make a
-project and put the program above in its `Program.cs`, in place of what's there:
+project and put the program above in its `Program.cs`, in place of what's there (for F#,
+`dotnet new zero -lang F# -o Hello` and `Program.fs`):
 
 ```bash
 dotnet new zero -o Hello
@@ -70,6 +96,14 @@ A Debug build is unoptimized and carries debug information, for debugging. `dotn
 optimizes it and leaves out the debug information and the symbol table. Either needs nothing
 installed to run: no .NET, no runtime, only the C library every system has. In the repository,
 `./build.sh Hello` builds it optimized for size: 13 KB on Linux.
+
+<div class="lang-text" data-lang="fsharp">
+
+The F# program is bigger: built with `-c Release` for `linux-arm64`, 38 KB where the C# one is
+16 KB. Most of the difference is `printfn`'s formatter, which reads the format when the program
+runs; `Minimal` below, which has no `printfn`, is 18 KB in F# and 15 KB in C#.
+
+</div>
 
 ## Calling C directly
 
@@ -107,12 +141,50 @@ public static class Program
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Minimal.fs file -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Example: Minimal zero-mode "Hello World" in F#: the C library's puts, called
+// directly. Minimal.cs is the same program in C#. The SDK's tests
+// (fsharp_doc_samples) build it as an F# zero project's Program.fs.
+#nowarn "9" // a native pointer: the call below reads through it
+
+open System.Runtime.InteropServices
+open Microsoft.FSharp.NativeInterop
+
+[<DllImport("libc")>]
+extern int puts(nativeint s)
+
+// puts reads up to the 0 that ends the text.
+let say (text: byte[]) =
+    use bytes = fixed text
+    puts (NativePtr.toNativeInt bytes) |> ignore
+
+// "..."B is the text's bytes.
+say "Hello from zero-mode!\000"B
+```
+
+<div class="lang-text" data-lang="csharp">
+
 That's possible because a zero-mode program is a native program: `[DllImport("libc")]` binds to the C
 function when the program is linked, with no marshalling layer in between. The message is a
 `stackalloc` byte array, which is safe to create; only the call that reads through the pointer needs
 an `unsafe` block, with a comment saying why it's safe. That is C# 15's
 [updated memory safety rules](../concepts/safety-rules.html) at work. `Tiny`, which prints `Hi` the
 same way, is the smallest sample: 12 KB.
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+That's possible because a zero-mode program is a native program: `[<DllImport("libc")>]` binds to
+the C function when the program is linked, with no marshalling layer in between. `"..."B` is the
+text's bytes, and `use bytes = fixed text` pins them and gives their address, inside a function as
+F# requires. F# has no `unsafe` block: `#nowarn "9"` at the top says the file reads through a native
+pointer on purpose, which is what the C# version's comment says.
+
+</div>
 
 Most programs use `Console` and the rest of `lib/`: arenas, strings and collections. The
 [tutorial](../tutorial/index.html) starts from there.

@@ -42,6 +42,17 @@ scores.Set(3, 175);
 scores.Set(-42, 999);
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs dict -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let scores = Dict<int, int>.Create(arena)
+scores.Set(1, 100) |> ignore
+scores.Set(2, 250) |> ignore
+scores.Set(3, 175) |> ignore
+scores.Set(-42, 999) |> ignore
+```
+
 The same rules hold for all five:
 
 - **A handle.** A collection is one pointer to a header in its arena. `var b = a` shares the contents,
@@ -70,6 +81,20 @@ public struct Node
     public Ptr<Node> Prev;
     public Ptr<Node> Next;
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs node -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// One item of a doubly linked list: a struct can't contain itself, but it
+// can hold pointers to others of its kind.
+[<Struct>]
+type Node =
+    val mutable Number: int
+    val mutable Prev: Ptr<Node>
+    val mutable Next: Ptr<Node>
+    new(number, prev) = { Number = number; Prev = prev; Next = Ptr<Node>() }
 ```
 
 `ptr.Value` is a `ref` to the item, to read or change in place, and no `unsafe` is needed. A
@@ -112,6 +137,33 @@ public struct Chain
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs chain -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The list itself: its two ends, and the arena its items live in.
+[<Struct>]
+type Chain =
+    val mutable Arena: Arena
+    val mutable First: Ptr<Node>
+    val mutable Last: Ptr<Node>
+    new(arena) = { Arena = arena; First = Ptr<Node>(); Last = Ptr<Node>() }
+
+    member this.AddLast(number: int) =
+        let node = this.Arena.New(Node(number, this.Last))
+        if this.Last.IsNull then this.First <- node
+        else this.Last.Value.Next <- node
+        this.Last <- node
+
+    // Takes the node out by joining its neighbours to each other.
+    member this.Remove(node: Ptr<Node>) =
+        let n = &node.Value
+        if n.Prev.IsNull then this.First <- n.Next
+        else n.Prev.Value.Next <- n.Next
+        if n.Next.IsNull then this.Last <- n.Prev
+        else n.Next.Value.Prev <- n.Prev
+```
+
 Recursion works as it does with classes:
 
 <!-- sample: samples/Links.cs insert -->
@@ -128,6 +180,20 @@ static Ptr<TreeNode> Insert(Arena arena, Ptr<TreeNode> node, int key)
         n.Right = Insert(arena, n.Right, key);
     return node;
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs insert -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Recursion works as it would with classes.
+let rec insert (arena: Arena) (node: Ptr<TreeNode>) (key: int) =
+    if node.IsNull then arena.New(TreeNode(key))
+    else
+        let n = &node.Value
+        if key < n.Key then n.Left <- insert arena n.Left key
+        else n.Right <- insert arena n.Right key
+        node
 ```
 
 - **`default` is null.** `IsNull` tells you; `Value` on a null `Ptr` stops the program with
@@ -224,6 +290,20 @@ public struct Job
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs task -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A task that waits for another: items in a pool point at each other with
+// handles, which are plain structs too.
+[<Struct>]
+type Job =
+    val mutable Id: int
+    val mutable WaitsFor: Handle<Job>
+    new(id, waitsFor) = { Id = id; WaitsFor = waitsFor }
+    new(id) = Job(id, Handle<Job>())
+```
+
 `Add` returns a handle, `pool[handle]` is a `ref` to the item, and `Remove` frees its slot:
 
 <!-- sample: samples/Links.cs pool-basics -->
@@ -234,6 +314,19 @@ jobs[build].Id = 10;          // a ref: changes the job in place
 jobs.Remove(build);           // its slot is free again
 Handle<Job> lint = jobs.Add(new Job { Id = 5 });  // reuses it
 bool found = jobs.Contains(build);    // false: build is stale
+// jobs[build] here would stop the program.
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs pool-basics -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let jobs = Pool<Job>.Create(arena)
+let build = jobs.Add(Job(1))
+jobs[build].Id <- 10          // a ref: changes the job in place
+jobs.Remove(build) |> ignore  // its slot is free again
+let lint = jobs.Add(Job(5))   // reuses it
+let found = jobs.Contains(build)  // false: build is stale
 // jobs[build] here would stop the program.
 ```
 
@@ -252,6 +345,20 @@ jobs.Remove(test);
 Handle<Job> docs = jobs.Add(new Job { Id = 4 });  // test's old slot
 // ship.WaitsFor is test's handle: it finds nothing, not docs.
 bool waiting = jobs.Contains(jobs[ship].WaitsFor);   // false
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs pool -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let jobs = Pool<Job>.Create(arena)
+let build = jobs.Add(Job(1))
+let test = jobs.Add(Job(2, build))
+let ship = jobs.Add(Job(3, test))
+jobs.Remove(test) |> ignore
+let docs = jobs.Add(Job(4))   // test's old slot
+// ship's WaitsFor is test's handle: it finds nothing, not docs.
+let waiting = jobs.Contains(jobs[ship].WaitsFor)   // false
 ```
 
 `test` was in slot 1 and `docs` took it over, but `ship`'s handle still has `test`'s
@@ -291,6 +398,26 @@ Handle<Job> theirs = jobs.Move(ref mine);
 // owner reaches the job.
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs remove-while-walking -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+for number in numbers do
+    if numbers[number] % 2 = 1 then
+        numbers.Remove(number) |> ignore  // allowed while walking
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs move -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let mutable mine = jobs.Add(Job(7))
+let copy = mine
+let theirs = jobs.Move(&mine)
+// mine is now null, and every copy of it is refused: only the new owner
+// reaches the job.
+```
+
 `MoveTo(other, ref handle)` does the same into another pool. Its main use is keeping one result
 from [a scratch pool](../concepts/memory.html#temporary-memory-the-compiler-checks), whose memory
 is gone when the scratch block ends.
@@ -312,6 +439,23 @@ list.AddLast(5);
 list.Remove(two);
 foreach (ref int item in list)
     item *= 10;                         // 10, 30, 40, 50
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs linked-list -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let list = LinkedList<int>.Create(arena)
+let two = list.AddLast(2)
+list.AddFirst(1) |> ignore
+let four = list.AddAfter(two, 4)
+list.AddBefore(four, 3) |> ignore
+list.AddLast(5) |> ignore
+list.Remove(two) |> ignore
+let mutable node = list.First
+while not node.IsNull do
+    list[node].Value <- list[node].Value * 10   // 10, 30, 40, 50
+    node <- list[node].Next
 ```
 
 `foreach` is the easy way through, but you can follow the links yourself. `list.First` is the
@@ -340,6 +484,19 @@ The walk stops at the null handle after the last node:
 int total = 0;
 for (var node = list.First; !node.IsNull; node = list[node].Next)
     total += list[node].Value;          // 10 + 30 + 40 + 50
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs linked-list-walk -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Each node's Next is the handle of the one after it; the last node's
+// Next is the null handle, which ends the walk.
+let mutable total = 0
+let mutable node = list.First
+while not node.IsNull do
+    total <- total + list[node].Value          // 10 + 30 + 40 + 50
+    node <- list[node].Next
 ```
 
 A handle you walk with is checked like any other: if a node is removed while you hold its handle,
@@ -382,6 +539,24 @@ map.RemoveTown(ford);
 int after = Distance(map, harbor, lake);    // 560, mill to lake
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs map-use -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let map = RoadMap(arena)
+let harbor, mill = map.AddTown(1), map.AddTown(2)
+let ford, hill = map.AddTown(3), map.AddTown(4)
+let lake = map.AddTown(5)
+map.Join(harbor, mill, 230)
+map.Join(mill, ford, 150)
+map.Join(ford, lake, 150)
+map.Join(mill, lake, 330)
+map.Join(harbor, hill, 260)
+let before = distance map harbor lake   // 530, through ford
+map.RemoveTown(ford)
+let after = distance map harbor lake    // 560, mill to lake
+```
+
 ### Towns and roads
 
 Towns and roads live in two pools. A town has any number of roads, so it holds a handle to its first
@@ -415,6 +590,26 @@ public struct Road
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs map -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A map: towns joined by roads, in two pools. A town holds a handle to the
+// first of its roads and each road one to the next, so a town has as many
+// roads as it needs, and every link is a plain struct.
+[<Struct>]
+type Town =
+    val mutable Id: int
+    val mutable FirstRoad: Handle<Road>
+    new(id) = { Id = id; FirstRoad = Handle<Road>() }
+
+and [<Struct>] Road =
+    val mutable To: Handle<Town>
+    val mutable Km: int
+    val mutable Next: Handle<Road>
+    new(``to``, km, next) = { To = ``to``; Km = km; Next = next }
+```
+
 `Map` keeps the two pools. Adding a road puts it in front of its town's list:
 
 <!-- sample: samples/Links.cs map-join -->
@@ -446,6 +641,30 @@ void OneWay(Handle<Town> from, Handle<Town> to, int km)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs map-join -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+[<Struct>]
+type RoadMap =
+    val Towns: Pool<Town>
+    val Roads: Pool<Road>
+    new(arena: Arena) =
+        { Towns = Pool<Town>.Create(arena); Roads = Pool<Road>.Create(arena) }
+
+    member this.AddTown(id) = this.Towns.Add(Town(id))
+
+    // The new road goes in front of the town's chain of roads.
+    member this.OneWay(from: Handle<Town>, ``to``: Handle<Town>, km) =
+        let town = &this.Towns[from]
+        town.FirstRoad <- this.Roads.Add(Road(``to``, km, town.FirstRoad))
+
+    // A road both ways.
+    member this.Join(a, b, km) =
+        this.OneWay(a, b, km)
+        this.OneWay(b, a, km)
+```
+
 ### Removing a town
 
 `RemoveTown` walks the town's own roads, removes each, then removes the town:
@@ -465,6 +684,21 @@ public void RemoveTown(Handle<Town> town)
     }
     Towns.Remove(town);
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs map-remove -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The town and its own roads go. Roads to it from other towns stay,
+// but their handle no longer finds it.
+member this.RemoveTown(town: Handle<Town>) =
+    let mutable road = this.Towns[town].FirstRoad
+    while not road.IsNull do
+        let next = this.Roads[road].Next
+        this.Roads.Remove(road) |> ignore
+        road <- next
+    this.Towns.Remove(town) |> ignore
 ```
 
 It doesn't touch the roads *to* the town from other towns. After `RemoveTown(ford)`, `mill` still
@@ -535,6 +769,46 @@ static int Distance(Map map, Handle<Town> from, Handle<Town> to)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs distance -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The shortest way by road, in km, or -1 if there is none. The search's own
+// tables are scratch memory, gone when it returns.
+let shortest =
+    ScratchFuncIn<Trip, int>(fun scratch trip ->
+        let best = scratch.Dict<Handle<Town>, int>()
+        let done' = scratch.HashSet<Handle<Town>>()
+        best.Set(trip.From, 0) |> ignore
+        let mutable result = -2
+        while result = -2 do
+            // The nearest town not done yet (a scan, to keep it short).
+            let mutable here = Handle<Town>()
+            let mutable km = Int32.MaxValue
+            for entry in best do
+                if not (done'.Contains entry.Key) && entry.Value < km then
+                    here <- entry.Key
+                    km <- entry.Value
+            if here.IsNull then result <- -1
+            elif here = trip.To then result <- km
+            else
+                done'.Add(here) |> ignore
+                let mutable road = trip.Map.Towns[here].FirstRoad
+                while not road.IsNull do
+                    let r = trip.Map.Roads[road]
+                    // A road to a removed town leads nowhere.
+                    if trip.Map.Towns.Contains(r.To) then
+                        let mutable known = 0
+                        let found = best.TryGet(r.To, &known)
+                        if not found || km + r.Km < known then
+                            best.Set(r.To, km + r.Km) |> ignore
+                    road <- r.Next
+        result)
+
+let distance (map: RoadMap) from ``to`` =
+    Arena.Scratch(Trip(map, from, ``to``), shortest)
+```
+
 ### Sweeping out dead roads
 
 The roads left behind still take slots in the `Roads` pool. Where towns come and go often, sweep
@@ -552,6 +826,8 @@ previous road's `Next`:
 
   FirstRoad --> [ To: lake | Next ] ------------------------> [ To: harbor ]
 ```
+
+<div class="lang-text" data-lang="csharp">
 
 <!-- sample: samples/Links.cs map-prune -->
 ```csharp
@@ -581,6 +857,14 @@ public int Prune()
 }
 ```
 
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+This one has no F# version: it moves a `ref` along the chain (`link = ref Roads[road].Next`), and an F# byref can't be pointed elsewhere once made. In F#, walk the chain with the previous road's handle instead, and set its `Next` (or the town's `FirstRoad`) to skip the road.
+
+</div>
+
 Removing the road without unlinking it would leave the list leading to a removed road, and the next
 walk along it would stop the program at `Roads[road]`. Since roads here go both ways, `RemoveTown`
 could instead follow each of its roads to the other end and remove the road back, and no sweep
@@ -598,6 +882,16 @@ var byId = RefDict<int, string>.Create(arena);
 byId.Set(7, "seven");
 byId.Set(3, Str.Format(arena, $"three is {3}"));
 byId.Set(9, null);
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs refdict -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let byId = RefDict<int, string>.Create(arena)
+byId.Set(7, "seven") |> ignore
+byId.Set(3, arena.Sprintf "three is %d" 3) |> ignore
+byId.Set(9, null) |> ignore
 ```
 
 Hand out each id once and never reuse it. A map entry left behind for an object that is gone would
@@ -626,6 +920,20 @@ public struct Modulo : IEqualityComparer<int>
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs modulo -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A comparer with state: keys that leave the same remainder are one key.
+[<Struct>]
+type Modulo =
+    val By: int
+    new(by) = { By = by }
+    interface IEqualityComparer<int> with
+        member m.Equals(a, b) = a % m.By = b % m.By
+        member m.GetHashCode(value) = value % m.By
+```
+
 <!-- sample: samples/Collections.cs dict-comparer -->
 ```csharp
 // As in .NET, 0.0 and -0.0 are one key; by raw bytes, they're two.
@@ -644,6 +952,26 @@ lastDigit.Set(13, 1);
 lastDigit.Set(23, 2);  // the same key as 13
 lastDigit.TryGet(3, out int atThree);
 Console.WriteLine($"Modulo 10: {lastDigit.Count} key, [3] = {atThree}");
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs dict-comparer -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// As in .NET, 0.0 and -0.0 are one key; by raw bytes, they're two.
+let byValue = Dict<float, int>.Create(more)
+let byBytes = Dict<float, int, ByteEqualityComparer<float>>.Create(more)
+byBytes.Set(0.0, 1) |> ignore
+byBytes.Set(-0.0, 2) |> ignore
+byValue.Set(0.0, 1) |> ignore
+byValue.Set(-0.0, 2) |> ignore
+printfn "By bytes: %d keys; by value: %d" byBytes.Count byValue.Count
+
+let lastDigit = Dict<int, int, Modulo>.Create(more, comparer = Modulo(10))
+lastDigit.Set(13, 1) |> ignore
+lastDigit.Set(23, 2) |> ignore  // the same key as 13
+let _, atThree = lastDigit.TryGet(3)
+printfn "Modulo 10: %d key, [3] = %d" lastDigit.Count atThree
 ```
 
 A `HashSet` is a `Dict` without values. `Add` returns false for an item that is already there:
@@ -666,6 +994,26 @@ var both = seen.Clone(more);
 both.IntersectWith(odds);      // in seen and odds: 1, 3, 5, 9
 var evens = seen.Clone(more);
 evens.ExceptWith(odds);        // in seen, not odds: 2, 4, 6
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs hashset -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let seen = HashSet<int>.Create(more)
+let mutable duplicates = 0
+for id in [| 3; 1; 4; 1; 5; 9; 2; 6; 5; 3; 5 |] do
+    if not (seen.Add id) then
+        duplicates <- duplicates + 1
+printfn "%d distinct, %d duplicates" seen.Count duplicates
+
+let odds = HashSet<int>.Create(more)
+for i in 1 .. 2 .. 9 do
+    odds.Add(i) |> ignore
+let both = seen.Clone(more)
+both.IntersectWith(odds) |> ignore    // in seen and odds: 1, 3, 5, 9
+let evens = seen.Clone(more)
+evens.ExceptWith(odds) |> ignore      // in seen, not odds: 2, 4, 6
 ```
 
 ## Queues, stacks and priorities
@@ -694,6 +1042,28 @@ while (queue.TryDequeue(out int item))
     inOrder &= item == expected++;
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs queue -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let queue = Queue<int>.Create(more)
+for i in 1 .. 40 do
+    queue.Enqueue(i) |> ignore
+let mutable expected = 1
+let mutable inOrder = true
+for _ in 1 .. 30 do   // past half: the rest move to the front
+    let _, item = queue.TryDequeue()
+    inOrder <- inOrder && item = expected
+    expected <- expected + 1
+for i in 41 .. 50 do
+    queue.Enqueue(i) |> ignore
+let _, front = queue.TryPeek()
+let mutable item = 0
+while queue.TryDequeue(&item) do
+    inOrder <- inOrder && item = expected
+    expected <- expected + 1
+```
+
 A `PriorityQueue` gives the smallest priority first, by its `IComparable<T>`, or by a comparer struct
 named as a third type argument (`PriorityQueue<TElement, TPriority, TComparer>`). Elements with equal
 priorities come out in no particular order:
@@ -709,6 +1079,23 @@ Console.Write("By priority:");
 while (tasks.TryDequeue(out char task, out int priority))
     Console.Write($" {task}{priority}");
 Console.WriteLine();
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs priority-queue -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let tasks = PriorityQueue<char, int>.Create(more)
+tasks.Enqueue('c', 3) |> ignore
+tasks.Enqueue('a', 1) |> ignore
+tasks.Enqueue('d', 4) |> ignore
+tasks.Enqueue('b', 2) |> ignore
+printf "By priority:"
+let mutable task = ' '
+let mutable priority = 0
+while tasks.TryDequeue(&task, &priority) do
+    printf " %c%d" task priority
+printfn ""
 ```
 
 ## Sort and iterate
@@ -733,6 +1120,17 @@ public struct Descending : IComparer<int>
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs descending -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A comparer as a struct: Sort is compiled for it; Compare is a direct call.
+[<Struct>]
+type Descending =
+    interface IComparer<int> with
+        member _.Compare(a, b) = b.CompareTo(a)
+```
+
 <!-- sample: samples/Collections.cs sort-comparers -->
 ```csharp
 unsorted.Sort();                  // by int's IComparable<int>
@@ -748,6 +1146,26 @@ Console.WriteLine($"BinarySearch(19): {span.BinarySearch(19)}, "
     + $"(20) would go at {~span.BinarySearch(20)}");
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs sort-comparers -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+unsorted.Sort()                   // by int's IComparable<int>
+printf "Sort():     "
+printList unsorted
+unsorted.Sort(Descending())       // by a struct: an IComparer<int>
+printf "Descending: "
+printList unsorted
+
+// Spans sort in place too.
+let search (values: int[]) =
+    let span = Span<int>(values)
+    span.Sort()
+    printfn "BinarySearch(19): %d, (20) would go at %d"
+        (span.BinarySearch(19)) (~~~(span.BinarySearch(20)))
+search values
+```
+
 ## Copy into another arena
 
 `var b = a` doesn't copy. `Clone(target)` makes an independent copy, in the same arena or another one.
@@ -759,6 +1177,16 @@ Arena keep = Arena.Create(4096);
 StrDict<int> countsCopy = counts.Clone(keep); // keys are copied into keep too
 List<int> snapshot = numbers.Clone(keep);
 Dict<int, int> scoresCopy = scores.Clone(keep);
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Collections.fs clone -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let keep = Arena.Create(4096un)
+let countsCopy = counts.Clone(keep)   // keys are copied into keep too
+let snapshot = numbers.Clone(keep)
+let scoresCopy = scores.Clone(keep)
 ```
 
 After this, the sample changes the originals, destroys their arena, and keeps using the clones. A

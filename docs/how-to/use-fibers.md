@@ -37,6 +37,21 @@ for (int id = 1; id <= 3; id++)
 Fiber.Run();
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs yield -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Three fibers take turns: each logs its number and yields, so the log
+// interleaves them, in the order they were spawned.
+let log = ref ([]: int list)
+for id in 1 .. 3 do
+    Fiber.Spawn(id, fun id ->
+        for _ in 1 .. 3 do
+            log.Value <- id :: log.Value
+            Fiber.Yield()) |> ignore
+Fiber.Run()
+```
+
 Spawn copies the state onto the fiber's stack, so it allocates nothing beyond the stack itself. A
 fiber can spawn more fibers. They join the end of the line.
 
@@ -71,6 +86,32 @@ Fiber.Spawn(stages, static p =>
         p.Total += square;
 });
 Fiber.Run();
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs pipeline -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A pipeline: one fiber produces numbers, one squares them, and one adds
+// them up. Receive returns false once its channel is closed and drained,
+// which ends each loop.
+let numbers = Channel<int>()
+let squares = Channel<int>()
+let total = ref 0
+Fiber.Spawn((), fun () ->
+    for i in 1 .. 100 do
+        numbers.Send(i)
+    numbers.Close()) |> ignore
+Fiber.Spawn((), fun () ->
+    let mutable n = 0
+    while numbers.Receive(&n) do
+        squares.Send(n * n)
+    squares.Close()) |> ignore
+Fiber.Spawn((), fun () ->
+    let mutable square = 0
+    while squares.Receive(&square) do
+        total.Value <- total.Value + square) |> ignore
+Fiber.Run()
 ```
 
 If every fiber left is waiting on a channel, none of them can run again, and `Run` stops the program
@@ -120,6 +161,35 @@ Fiber.Spawn(transfer, static t =>
 Fiber.Run();
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs pipe -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A pipe streams bytes through a buffer of fixed size from an arena: here
+// 64 bytes carry 10,000. The writer waits whenever the buffer is full, so it
+// never runs more than 64 bytes ahead of the reader.
+let arena = Arena.Create(4096un)
+let pipe = Pipe(arena, 64)
+let received = ref 0
+Fiber.Spawn((), fun () ->
+    let chunk: byte[] = Array.zeroCreate 100
+    let mutable sent = 0
+    while sent < 10_000 do
+        let n = min chunk.Length (10_000 - sent)
+        for i in 0 .. n - 1 do
+            chunk[i] <- byte (sent + i)
+        pipe.Write(ReadOnlySpan<byte>(chunk, 0, n)) |> ignore
+        sent <- sent + n
+    pipe.Close()) |> ignore
+Fiber.Spawn((), fun () ->
+    let buffer: byte[] = Array.zeroCreate 37
+    let mutable n = pipe.Read(Span<byte>(buffer))
+    while n > 0 do
+        received.Value <- received.Value + n
+        n <- pipe.Read(Span<byte>(buffer))) |> ignore
+Fiber.Run()
+```
+
 `Close` works from either end. After it, `Read` returns what's left and then 0, and `Write` returns
 false instead of waiting, so a reader that has seen enough can close the pipe to stop the writer.
 `Write` also takes text, which goes in as UTF-8. The arena has to outlive every fiber that uses the
@@ -150,6 +220,22 @@ Fiber.Spawn(streamed, static t => t.Pipe.AsStream().CopyTo(t.Copy));
 Fiber.Run();
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs pipe-stream -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// AsStream makes the pipe a System.IO.Stream, for code that takes one:
+// CopyTo here reads until the writer disposes its end.
+let streamed = Pipe(arena, 16)
+let copy = new MemoryStream()
+Fiber.Spawn((), fun () ->
+    use output = streamed.AsStream()
+    for _ in 1 .. 10 do
+        output.Write(ReadOnlySpan<byte>("0123456789"B))) |> ignore
+Fiber.Spawn((), fun () -> streamed.AsStream().CopyTo(copy)) |> ignore
+Fiber.Run()
+```
+
 ## Sleep
 
 `Fiber.Sleep` lets the other fibers run for at least that many milliseconds. When nothing else is
@@ -171,11 +257,28 @@ Fiber.Run();
 long took = (Clock.Monotonic - start) / 1_000_000;
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs sleep -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Sleeping fibers wake in the order of their deadlines, whatever the order
+// they were spawned in.
+let woke = ref ([]: int list)
+for ms in [ 30; 10; 20 ] do
+    Fiber.Spawn(ms, fun ms ->
+        Fiber.Sleep(int64 ms)
+        woke.Value <- ms :: woke.Value) |> ignore
+let start = Clock.Monotonic
+Fiber.Run()
+let took = (Clock.Monotonic - start) / 1_000_000L
+```
+
 ## Fire on a timer
 
 `System.Timers.Timer` (`lib/Timers.cs`) raises `Elapsed` every `Interval` milliseconds, as in .NET,
 but on a fiber of its own rather than a thread pool thread. So a timer fires only while the thread
-is in `Fiber.Run`, and `Run` returns once every timer has stopped and every other fiber has ended:
+is in `Fiber.Run`, and `Run` returns once every timer has stopped and every other fiber has ended.
+F# subscribes with `timer.Elapsed.Add(fun _ -> ...)`, as it does to any .NET event:
 
 <!-- sample: samples/Timers.cs timer -->
 ```csharp
@@ -191,6 +294,22 @@ timer.Elapsed += (sender, e) =>
 };
 timer.Start();
 Fiber.Run();
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs timer -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Fires every 20 ms, on a fiber of its own, until its handler stops it.
+// Fiber.Run returns once every timer has stopped.
+let timer = new System.Timers.Timer(20.0)
+let ticks = ref 0
+timer.Elapsed.Add(fun _ ->
+    ticks.Value <- ticks.Value + 1
+    printfn "tick %d" ticks.Value
+    if ticks.Value = 5 then timer.Stop())
+timer.Start()
+Fiber.Run()
 ```
 
 `System.Threading.Timer` works the same way, with a callback, a due time and a period
@@ -212,6 +331,23 @@ using (var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(10)))
             timer.Dispose();
     Console.WriteLine($"ticks: {ticks}");
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs periodic-async -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Ticks every 10 ms without a fiber of its own; Dispose ends the loop.
+use timer = new PeriodicTimer(TimeSpan.FromMilliseconds(10.0))
+let mutable ticked = 0
+let mutable running = true
+while running do
+    let! tick = timer.WaitForNextTickAsync()
+    if tick then
+        ticked <- ticked + 1
+        if ticked = 3 then timer.Dispose()
+    else running <- false
+printfn "ticks: %d" ticked
 ```
 
 A handler runs on the same thread as everything else, so it needs no locks, and two calls of one
@@ -240,7 +376,9 @@ Where it differs from .NET:
 `lib/Tasks.cs` builds `Task`, `Task<T>` and `async`/`await` on fibers. As in .NET, an async method
 starts on its caller's stack and runs until it awaits something that isn't done yet. Then its state
 machine is copied into a small box on the heap, about a hundred bytes, and the call returns, so the
-caller goes on:
+caller goes on. In F#, `task { }` runs the same way on the same fibers: `let!` and `do!` take a
+`Task`, a `ValueTask`, `Task.Yield()` or what `ConfigureAwait` returns, as they do in .NET
+([Write a program in F#](write-fsharp.html#wait-without-blocking-task-async-and-agents)):
 
 <!-- sample: samples/Tasks.cs order -->
 ```csharp
@@ -253,12 +391,36 @@ static async Task<int> Twice(string name, int value, int delay)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs order -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let twice (name: string) value (delay: int) =
+    task {
+        steps <- steps + name + "1 "
+        do! Task.Delay(delay)
+        steps <- steps + name + "2 "
+        return value * 2
+    }
+```
+
 <!-- sample: samples/Tasks.cs await -->
 ```csharp
 // Each call runs until its first await, then returns, and the
 // caller goes on: a and b wait at the same time, on fibers.
 Task<int> a = Twice("a", 1, 30), b = Twice("b", 2, 10);
 s_log += "main ";
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs await -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Each call runs until its first wait, then returns, and the caller
+// goes on: a and b wait at the same time, on fibers.
+let a = twice "a" 1 30
+let b = twice "b" 2 10
+steps <- steps + "main "
 ```
 
 When the awaited task completes, the box goes on a queue that one fiber per thread, the dispatcher,
@@ -270,6 +432,14 @@ works through: it runs each method on to its next await or its end. `Task.WhenAl
 // Three delays of 50 ms side by side take about 50 ms, not 150.
 int[] all = await Task.WhenAll(
     Twice("x", 1, 50), Twice("y", 2, 50), Twice("z", 3, 50));
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs when-all -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Three delays of 50 ms side by side take about 50 ms, not 150.
+let! (all: int[]) = Task.WhenAll(twice "x" 1 50, twice "y" 2 50, twice "z" 3 50)
 ```
 
 `Main` can be `async`. Awaiting outside a fiber, as `Main` does, runs the fibers until the task is
@@ -288,6 +458,8 @@ done, so an async program needs no `Fiber.Run`. `samples/Tasks.cs` runs these ex
 - A method that blocks more than it awaits can have a fiber of its own instead, from its first wait
   to its end:
 
+<div class="lang-text" data-lang="csharp">
+
 <!-- sample: samples/Tasks.cs own-fiber -->
 ```csharp
 // A fiber of its own from the first await to the end, for a method
@@ -301,6 +473,14 @@ static async Task<int> Sleeper(int times)
     return times;
 }
 ```
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+This one is C# only: `[AsyncMethodBuilder]` chooses how a C# `async` method runs. An F# `task { }` that mostly blocks can run on a fiber of its own with `Fiber.Spawn`, and give its result through a `TaskCompletionSource`.
+
+</div>
 
 - `ValueTask` and `ValueTask<T>` work as in .NET, and so do `async ValueTask` methods: one that
   finishes without waiting allocates nothing at all. A timer's or a channel's `ValueTask` reuses
@@ -359,6 +539,22 @@ static async Task<int> SpinElsewhere()
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs run-on-thread -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Busy for ms milliseconds without waiting: on a fiber this would stop
+// every other fiber; on another thread it doesn't.
+let spin ms =
+    let finish = Clock.Monotonic + int64 ms * 1_000_000L
+    let mutable turns = 0
+    while Clock.Monotonic < finish do
+        turns <- turns + 1
+    turns
+
+let spinElsewhere () = task { return! Task.RunOnThread(fun () -> spin 50) }
+```
+
 The threads come from a pool per calling thread. An idle worker takes the call. When every worker
 is busy, a new one starts, up to 64, and after that calls queue on the least busy worker. `Fiber.Run`
 doesn't return while calls are still running. A token is checked when the call is made; a running
@@ -387,6 +583,15 @@ StartThread(0); // calls CompleteElsewhere there
 int answer = await s_one.Task;
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs thread-completion-await -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let one = ThreadCompletionSource<int>()
+Task.RunOnThread(fun () -> completeElsewhere one) |> ignore
+let! answer = one.Task
+```
+
 and complete it anywhere:
 
 <!-- sample: samples/Tasks.cs thread-completion -->
@@ -397,6 +602,16 @@ static void CompleteElsewhere()
     BusyFor(20);
     s_one!.SetResult(42);
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs thread-completion -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Runs on another thread: completes the source made on this one.
+let completeElsewhere (source: ThreadCompletionSource<int>) =
+    spin 20 |> ignore
+    source.SetResult(42)
 ```
 
 The result travels back through a pipe that `Fiber.Run` polls, so the task completes, and whatever
@@ -434,6 +649,31 @@ static async Task<int> Consume(Channel<int> channel)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs channel-async -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Sends 1..10 and closes; the reader's loop ends there.
+let produce (channel: Channel<int>) =
+    task {
+        for i in 1 .. 10 do
+            do! channel.SendAsync(i)
+        channel.Close()
+    }
+
+let consume (channel: Channel<int>) =
+    task {
+        let mutable sum = 0
+        let mutable more = true
+        while more do
+            let! waiting = channel.WaitToReceiveAsync()
+            let mutable value = 0
+            if waiting && channel.TryReceive(&value) then sum <- sum + value
+            else more <- waiting
+        return sum
+    }
+```
+
 `ReceiveAllAsync` and `WaitToReceiveAsync` stop when the channel is closed and empty. Awaiting
 `ReceiveAsync` then ends the program, as .NET's `ReadAsync` throws. The channel reuses the tasks
 behind these waits, so a loop over them allocates nothing, and a program that never calls them
@@ -469,6 +709,27 @@ static async Task AddOne()
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs semaphore -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Reads the total, waits, writes it back: without the gate, another call
+// could run in the wait and its update would be lost.
+let gate = new SemaphoreSlim(1)
+let mutable shared = 0
+
+let addOne () =
+    task {
+        do! gate.WaitAsync()
+        try
+            let seen = shared
+            do! Task.Yield() // others run here
+            shared <- seen + 1
+        finally
+            gate.Release() |> ignore
+    }
+```
+
 A larger count limits how many run at once, for example how many connections are open. `WaitAsync`
 costs no fiber, and waiters get in in the order they came. A timeout makes it return `false`, and a
 canceled token cancels it. `Wait()` blocks a fiber instead. Releasing past the maximum ends the
@@ -499,6 +760,18 @@ using (var cts = new CancellationTokenSource(20))
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs cancel -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A delay of 10 s, canceled after 20 ms: SuppressThrowing makes the
+// wait return (a plain one would end the program).
+use cts = new CancellationTokenSource(20)
+let pause = Task.Delay(10_000, cts.Token)
+do! pause.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing)
+printfn "canceled: %b" pause.IsCanceled
+```
+
 Or check the token between steps:
 
 <!-- sample: samples/Tasks.cs cancel-loop -->
@@ -517,6 +790,22 @@ static async Task<int> Work(CancellationToken token)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs cancel-loop -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Works until canceled, checking the token between steps; returns how many
+// steps it did.
+let work (token: CancellationToken) =
+    task {
+        let mutable count = 0
+        while not token.IsCancellationRequested do
+            do! Task.Delay(5)
+            count <- count + 1
+        return count
+    }
+```
+
 Code ported from .NET that catches `OperationCanceledException` has to be changed to one of these,
 or to `Catch.RunAsync`.
 `SuppressThrowing` works on a `Task`, not a `Task<T>` (there would be no result to return), as in
@@ -532,6 +821,8 @@ the real clock when given `TimeProvider.System`. A test can give it a fake clock
 only when the test says, so code that waits an hour is checked at once. `ManualTime` in
 `samples/Timers.cs` is one, in some 80 lines, like .NET's `FakeTimeProvider`:
 
+<div class="lang-text" data-lang="csharp">
+
 <!-- sample: samples/Timers.cs fake-time -->
 ```csharp
 var time = new ManualTime();
@@ -541,6 +832,14 @@ bool early = delay.IsCompleted;     // false
 time.Advance(TimeSpan.FromMinutes(1));
 bool done = delay.IsCompleted;      // true
 ```
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+`ManualTime` is a class of the C# sample (a `TimeProvider` whose clock moves only when told). F# can derive from `TimeProvider` the same way, and pass it to `Task.Delay` and the timers just as C# does.
+
+</div>
 
 A provider of your own overrides `GetTimestamp`, `TimestampFrequency`, `GetUtcNow` and `CreateTimer`.
 The waits above then run on the timers it creates. The system's timers are `System.Threading.Timer`s,
@@ -569,6 +868,33 @@ for (int id = 1; id <= 2; id++)
 Fiber.Run();
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs scratch -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Each fiber has its own Arena.Scratch arena, so a fiber can wait inside
+// Scratch: both fill a buffer, yield, and find their values still there
+// after the other has opened and closed a scope.
+let intact = ref ([]: int list)
+let clobber = ScratchAction(fun other -> other.AllocSpan<int>(256).Fill(-1))
+let fillYieldCheck =
+    ScratchActionIn<int>(fun scratch id ->
+        let mine = scratch.AllocSpan<int>(256)
+        mine.Fill(id)
+        Fiber.Yield()
+        Arena.Scratch(clobber)
+        Fiber.Yield()
+        let mutable ok = true
+        for value in mine do
+            ok <- ok && value = id
+        if ok then intact.Value <- id :: intact.Value)
+for id in 1 .. 2 do
+    Fiber.Spawn(id, fun id -> Arena.Scratch(id, fillYieldCheck)) |> ignore
+Fiber.Run()
+```
+
+<div class="lang-text" data-lang="csharp">
+
 <!-- sample: samples/Fibers.cs scratch-body -->
 ```csharp
 static void FillYieldCheck(
@@ -586,6 +912,8 @@ static void FillYieldCheck(
         s.log.Add(s.id);
 }
 ```
+
+</div>
 
 A fiber can also wait inside a `Scratch` call in a buffer of its own, or inside `ScratchOnStack`, whose
 memory is on the fiber's stack (see [Scratch memory](../concepts/memory.html)): that memory stands in for

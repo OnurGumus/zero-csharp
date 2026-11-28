@@ -254,3 +254,19 @@ for x in [ -4; 7; 42; 300 ] do
     let size = match x with Low -> "low" | Mid -> "mid" | High -> "high"
     let seventh = match x with A -> "A" | B -> "B" | C -> "C" | D -> "D" | E -> "E" | F -> "F" | G -> "G"
     printfn "%d: %d, %s, %s, %s, %s, %s" x d even small sign size seventh
+
+// Structural equality, hashing and order of arrays and tuples, also boxed
+// inside lists, options, sets and maps.
+let squares3 = [| 1; 4; 9 |]
+printfn "arrays: %b %b %b %d %d" (squares3 = [| 1; 4; 9 |]) (squares3 = [| 1; 4 |]) ([| "x" |] = [| "x" |]) (compare [| 1; 2 |] [| 1; 3 |]) (compare [| 1; 2; 0 |] [| 9 |])
+printfn "array hash: %b, nested: %b, of tuples: %b" (hash [| 1; 2 |] = hash [| 1; 2 |]) ([| [| 1 |] |] = [| [| 1 |] |]) ([| (1, "a") |] = [| (1, "a") |])
+printfn "tuples: %b %b %b" ([ (1, "a") ] = [ (1, "a") ]) (Some (1, 2) = Some (1, 2)) (hash [ (1, 2) ] = hash [ (1, 2) ])
+printfn "set of tuples: %d, map with tuple keys: %s" (Set.ofList [ (1, 2); (0, 5); (1, 2) ]).Count ((Map.ofList [ ((1, "x"), "one"); ((0, "y"), "zero") ])[(1, "x")])
+printfn "sorted: %s" (List.sort [ (2, "b"); (1, "z"); (1, "a") ] |> List.map (fun (n, s) -> sprintf "%d%s" n s) |> String.concat ",")
+printfn "sorted arrays: %s" (List.sort [ [| 2 |]; [| 1; 1 |]; [| 1 |] ] |> List.map (fun x -> string x.Length) |> String.concat ",")
+
+// The Result module.
+let ok: Result<int, string> = Ok 3
+let bad: Result<int, string> = Error "no"
+printfn "Result: %s %s %b %b" (string (Result.map ((+) 1) ok |> Result.toOption)) (string (Result.mapError String.length bad |> Result.toList)) (Result.isOk ok) (Result.isError ok)
+printfn "Result: %d %d %d %b %b" (Result.defaultValue 0 bad) (Result.bind (fun x -> Ok(x * 2)) ok |> Result.defaultWith String.length) (Result.fold (+) 10 ok) (Result.exists ((=) 3) ok) (Result.contains 4 ok)

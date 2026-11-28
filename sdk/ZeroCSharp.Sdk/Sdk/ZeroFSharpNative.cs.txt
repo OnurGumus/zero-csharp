@@ -606,7 +606,7 @@ public class ZeroFSharpNative : Task
                     if (parentTable == TypeDef)
                     {
                         Uses(usersOfType, generatedType, parentRow, m);
-                        if (call && UnsafeMethodNamed(parentRow, Str(Cell(MemberRef, row, 1)), ParameterCount(_blobs + Cell(MemberRef, row, 2))))
+                        if (call && UnsafeMethodNamed(parentRow, Str(Cell(MemberRef, row, 1)), Shape(_blobs + Cell(MemberRef, row, 2))))
                             Add(unsafeCalls, m, Call(DisplayName(RuntimeTypeName(parentRow).Replace("+", "."), Str(Cell(MemberRef, row, 1))), offset));
                     }
                     else if (parentTable == TypeRef && call)
@@ -751,12 +751,12 @@ public class ZeroFSharpNative : Task
 
     // Whether the type has a method of this name and parameter count with
     // [RequiresUnsafe] (on it or its property).
-    private bool UnsafeMethodNamed(int type, string name, int parameters)
+    private bool UnsafeMethodNamed(int type, string name, string shape)
     {
         if (_methodOwner == null) _methodOwner = Owners(5, _rows[MethodDef]);
         int first = Cell(TypeDef, type, 5), next = type < _rows[TypeDef] ? Cell(TypeDef, type + 1, 5) : _rows[MethodDef] + 1;
         for (int m = first; m < next; m++)
-            if (MethodName(m) == name && ParameterCount(_blobs + Cell(MethodDef, m, 4)) == parameters
+            if (MethodName(m) == name && Shape(_blobs + Cell(MethodDef, m, 4)) == shape
                 && IsMarked(m, "RequiresUnsafeAttribute"))
                 return true;
         return false;
@@ -779,7 +779,7 @@ public class ZeroFSharpNative : Task
         if (other == null) return null;
         int type = other.FindType(Str(Cell(TypeRef, r, 2)), path);
         string name = Str(Cell(MemberRef, memberRef, 1));
-        if (type == 0 || !other.UnsafeMethodNamed(type, name, ParameterCount(_blobs + Cell(MemberRef, memberRef, 2))))
+        if (type == 0 || !other.UnsafeMethodNamed(type, name, Shape(_blobs + Cell(MemberRef, memberRef, 2))))
             return null;
         return DisplayName(path[path.Count - 1], name);
     }
@@ -880,6 +880,77 @@ public class ZeroFSharpNative : Task
             }
         }
         return null;
+    }
+
+    // A method signature's shape, to tell overloads apart from another
+    // assembly, whose tokens differ: the generic parameter count, then the
+    // return type and each parameter's, with classes and structs by name.
+    // Two overloads with as many parameters (Arena.Scratch's) differ here.
+    private string Shape(int blob)
+    {
+        CompressedLength(blob, out int p);
+        int convention = _pe[p++];
+        var shape = new System.Text.StringBuilder();
+        if ((convention & 0x10) != 0) shape.Append('g').Append(CompressedInt(ref p));
+        int parameters = CompressedInt(ref p);
+        for (int i = 0; i <= parameters; i++)
+        {
+            shape.Append(i == 0 ? "(" : ",");
+            TypeShape(ref p, shape);
+        }
+        return shape.Append(')').ToString();
+    }
+
+    private void TypeShape(ref int p, System.Text.StringBuilder shape)
+    {
+        int start = p, element = _pe[p];
+        switch (element)
+        {
+            case 0x11: case 0x12:    // VALUETYPE, CLASS
+                p++;
+                shape.Append(TypeDefOrRefName(CompressedInt(ref p)));
+                return;
+            case 0x13: case 0x1E:    // VAR, MVAR
+                p++;
+                shape.Append(element == 0x13 ? "!" : "!!").Append(CompressedInt(ref p));
+                return;
+            case 0x0F: case 0x10: case 0x1D: case 0x45:    // PTR, BYREF, SZARRAY, PINNED
+                p++;
+                shape.Append(element.ToString("x2")).Append(' ');
+                TypeShape(ref p, shape);
+                return;
+            case 0x1F: case 0x20:    // a custom modifier: not part of the shape
+                p++;
+                CompressedInt(ref p);
+                TypeShape(ref p, shape);
+                return;
+            case 0x15:    // GENERICINST: the type, then its arguments
+                p++;
+                shape.Append('<');
+                TypeShape(ref p, shape);
+                int count = CompressedInt(ref p);
+                for (int i = 0; i < count; i++)
+                {
+                    shape.Append(' ');
+                    TypeShape(ref p, shape);
+                }
+                shape.Append('>');
+                return;
+            default:    // a primitive, or an array or function pointer: its kind
+                SkipType(ref p);
+                shape.Append(element.ToString("x2"));
+                return;
+        }
+    }
+
+    // The name (namespace and name) of a TypeDefOrRef coded index's type;
+    // "?" for a TypeSpec, which a signature doesn't name this way.
+    private string TypeDefOrRefName(int coded)
+    {
+        int tag = coded & 3, row = coded >> 2;
+        if (tag == 0) return Str(Cell(TypeDef, row, 2)) + "." + Str(Cell(TypeDef, row, 1));
+        if (tag == 1) return Str(Cell(TypeRef, row, 2)) + "." + Str(Cell(TypeRef, row, 1));
+        return "?";
     }
 
     // Moves p past a type in a signature (II.23.2.12).

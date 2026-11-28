@@ -1041,6 +1041,171 @@ public partial struct Arena
             thread->Arena.Restore(mark);
         }
     }
+
+    // ---- For F#'s printf (fsharp/printf/Printf.fs) ----
+
+    // Each thread's format buffer (OpenFormatScope): objects are bumped in
+    // [Start, End); Outer is where they went before the scope, for a
+    // ToString of the program's and for what doesn't fit. Made on a thread's
+    // first printf, from malloc, and kept: a thread that ends leaves its
+    // buffer behind, as it would its own heap objects.
+    internal struct FormatBuffer
+    {
+        internal byte* Start;
+        internal byte* Ptr;
+        internal byte* End;
+        internal AllocatorSetting Outer;
+        internal int Depth;
+    }
+
+    [ThreadStatic] static FormatBuffer* t_formatBuffer;
+
+    // 4 KB holds what a line of printf makes; 1 KB on a microcontroller or a
+    // Commodore 64 (page sizes of 1 KB and 256 bytes, as ScratchBlockSize).
+    static nuint FormatBufferSize => getpagesize() <= 1024 ? (nuint)1024 : 4096;
+
+    // ObjectAllocator's function inside a format scope: zeroed and 8-byte
+    // aligned, as every object. What doesn't fit goes where objects went
+    // before: it outlives the scope, as it would have without one.
+    static unsafe void* AllocateFormatObject(void* context, nuint size)
+    {
+        unsafe
+        {
+            // SAFETY: OpenFormatScope set this thread's live buffer as the
+            // context; Ptr stays within [Start, End).
+            FormatBuffer* buffer = (FormatBuffer*)context;
+            nuint rounded = (size + 7) & ~(nuint)7;
+            if ((nuint)(buffer->End - buffer->Ptr) >= rounded)
+            {
+                byte* at = buffer->Ptr;
+                buffer->Ptr = at + rounded;
+                System.Runtime.InteropServices.NativeMemory.Clear(at, size);
+                return at;
+            }
+            return buffer->Outer.Allocate(buffer->Outer.Context, size);
+        }
+    }
+
+    /// <summary>
+    /// For F#'s printf: until the returned scope is disposed, the objects the
+    /// program creates go in a small buffer of this thread's, and disposing
+    /// the scope takes them all back. printf boxes its values, formats and
+    /// writes inside one, so a printfn leaves nothing behind but what its call
+    /// site made. Text that must outlive the scope (sprintf's) leaves it
+    /// through CopyOut. Code of the program's that printf calls, a value's
+    /// ToString, runs outside it, through ToStringOutsideFormatScope, so
+    /// whatever that code keeps stays. What doesn't fit in the buffer goes
+    /// where objects went before, and stays.
+    /// </summary>
+    /// <safety>
+    /// Nothing created inside may outlive the scope: not in a static field,
+    /// not in an object from outside. Only printf's own code runs inside.
+    /// </safety>
+    public static unsafe FormatScope OpenFormatScope()
+    {
+        FormatScope scope = default;
+        unsafe
+        {
+            // SAFETY: the buffer is this thread's alone; scopes open and close
+            // in reverse order, each putting back what it found.
+            FormatBuffer* buffer = t_formatBuffer;
+            if (buffer == null)
+            {
+                nuint size = FormatBufferSize;
+                buffer = (FormatBuffer*)System.Runtime.InteropServices.NativeMemory.Alloc((nuint)sizeof(FormatBuffer) + size);
+                if (buffer == null)
+                    Environment.FailFast("Arena.OpenFormatScope: out of memory");
+                buffer->Start = (byte*)(buffer + 1);
+                buffer->Ptr = buffer->Start;
+                buffer->End = buffer->Start + size;
+                buffer->Depth = 0;
+                t_formatBuffer = buffer;
+            }
+            // The outermost scope starts from an empty buffer. (After a throw
+            // that jumped out of a scope, Depth stays above 0: objects then
+            // pile up, and go where they went before once the buffer is full.)
+            if (buffer->Depth == 0)
+                buffer->Ptr = buffer->Start;
+            buffer->Depth++;
+            scope.Buffer = buffer;
+            scope.Mark = buffer->Ptr;
+            scope.Outer = buffer->Outer;
+            scope.Before = CurrentAllocator();
+            // Opened inside another (not from a ToString, which runs outside):
+            // what doesn't fit still goes where it went before them both.
+            delegate*<void*, nuint, void*> format = &AllocateFormatObject;
+            if (scope.Before.Allocate != format)
+                buffer->Outer = scope.Before;
+            System.Runtime.ObjectAllocator.Set(format, buffer);
+        }
+        scope.Open = true;
+        return scope;
+    }
+
+    /// <summary>
+    /// value.ToString(), with the objects it creates allocated where they
+    /// went before the innermost format scope: a ToString is the program's
+    /// code, and may keep what it makes (a cache in a field, a static).
+    /// Outside a format scope, the same as value.ToString().
+    /// </summary>
+    public static string ToStringOutsideFormatScope(object value)
+    {
+        if (value == null)
+            return null;
+        AllocatorSetting inside = CurrentAllocator();
+        unsafe
+        {
+            delegate*<void*, nuint, void*> format = &AllocateFormatObject;
+            if (inside.Allocate != format)
+                return value.ToString();
+            // SAFETY: inside a format scope, the context is this thread's buffer.
+            SetAllocator(((FormatBuffer*)inside.Context)->Outer);
+        }
+        string text = value.ToString();
+        SetAllocator(inside);
+        return text;
+    }
+
+    /// <summary>From OpenFormatScope, for a using block (F#'s use).</summary>
+    public ref struct FormatScope : System.IDisposable
+    {
+        internal FormatBuffer* Buffer;
+        internal byte* Mark;
+        internal AllocatorSetting Outer;
+        internal AllocatorSetting Before;
+        internal bool Open;
+
+        /// <summary>
+        /// A copy of <paramref name="text"/> made where objects went before
+        /// the scope, so it outlives it. Null stays null.
+        /// </summary>
+        public readonly string CopyOut(string text)
+        {
+            if (!Open)
+                Environment.FailFast("Arena.FormatScope.CopyOut: the scope is closed");
+            return CopyStringWith(Before, text);
+        }
+
+        /// <summary>
+        /// Puts back where objects went before, and takes back everything made
+        /// inside. A second Dispose does nothing.
+        /// </summary>
+        public void Dispose()
+        {
+            if (!Open)
+                return;
+            Open = false;
+            SetAllocator(Before);
+            unsafe
+            {
+                // SAFETY: the buffer is this thread's, and this the innermost
+                // scope: nothing made after Mark is used again.
+                Buffer->Ptr = Mark;
+                Buffer->Outer = Outer;
+                Buffer->Depth--;
+            }
+        }
+    }
 }
 
 // What Catch.Run (Catch.cs) asks of Arena.Scratch, as virtual methods of an

@@ -18,8 +18,9 @@
 // This is the record layer of TLS 1.3 (RFC 8446 section 5) for
 // TLS_CHACHA20_POLY1305_SHA256: give it the keys and IVs that a TLS
 // handshake derives and it reads and writes what a TLS peer does. Here it
-// serves two programs of yours that share a secret; SslStream will put a
-// handshake in front of it.
+// serves two programs of yours that share a secret. To talk to TLS servers,
+// use SslStream (lib/SslStream.cs), which has the handshake and the other
+// cipher suites.
 //
 // Not in .NET (its CryptoStream is for block cipher transforms); the name is ours.
 

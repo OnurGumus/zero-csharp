@@ -117,11 +117,13 @@ public class EndOfStreamException : IOException
 /// </summary>
 public abstract class Stream : IDisposable, IAsyncDisposable
 {
-    static Stream s_null;
     byte[] _chunk; // for the span Read and Write of a subclass that has only the byte[] ones
 
     /// <summary>A stream that reads nothing and throws writes away.</summary>
-    public static Stream Null => s_null ??= new NullStream();
+    public static Stream Null => NullHolder.Value;
+
+    // Made by a static constructor, so it's allocated outside any object scope (lib/Arena.cs).
+    static class NullHolder { internal static readonly Stream Value = new NullStream(); }
 
     /// <summary>Whether Read works.</summary>
     public abstract bool CanRead { get; }

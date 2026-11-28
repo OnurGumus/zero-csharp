@@ -6,6 +6,9 @@ z true 3 2.5
 a--7
 interpolated 42 and 84 and zero
 1.5 True
+[   42] [3.14] [-7  ] [00FF] [1,234,567]
+2.500|    2.72|  Some(3)
+Infinity -Infinity true true Infinity
 no newline 
 1+2
      7|3.14|%

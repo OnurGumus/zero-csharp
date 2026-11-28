@@ -23,7 +23,19 @@ namespace System.Text
     // besides these. Classes outside zerocore can't derive from Encoding.
     public abstract unsafe class Encoding
     {
-        private static Encoding s_utf8, s_utf8NoBom, s_ascii, s_latin1, s_unicode, s_bigEndianUnicode, s_utf32, s_utf32BigEndian;
+        // Each encoding is made by a static constructor of its own, on first
+        // use: what a static constructor makes is allocated outside any object
+        // scope a program has open then (lib/Arena.cs), where a cache filled
+        // inside one would be freed with it. One class each keeps the others
+        // out of programs that don't use them.
+        private static class Utf8Bom { internal static readonly Encoding Value = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true); }
+        private static class Utf8NoBom { internal static readonly Encoding Value = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false); }
+        private static class Ascii { internal static readonly Encoding Value = new ASCIIEncoding(); }
+        private static class Latin1One { internal static readonly Encoding Value = new Latin1Encoding(); }
+        private static class Utf16 { internal static readonly Encoding Value = new UnicodeEncoding(bigEndian: false, byteOrderMark: true); }
+        private static class Utf16BigEndian { internal static readonly Encoding Value = new UnicodeEncoding(bigEndian: true, byteOrderMark: true); }
+        private static class Utf32 { internal static readonly Encoding Value = new UTF32Encoding(bigEndian: false, byteOrderMark: true); }
+        private static class Utf32BigEndian { internal static readonly Encoding Value = new UTF32Encoding(bigEndian: true, byteOrderMark: true); }
 
         private protected readonly bool _throwOnInvalid;
 
@@ -31,20 +43,20 @@ namespace System.Text
 
         // UTF-8 that writes a byte order mark where a preamble is asked for
         // (GetPreamble); GetBytes never writes one.
-        public static Encoding UTF8 => s_utf8 ??= new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        public static Encoding UTF8 => Utf8Bom.Value;
 
         // UTF-8 without a byte order mark, as .NET (Core) has it.
-        public static Encoding Default => s_utf8NoBom ??= new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        public static Encoding Default => Utf8NoBom.Value;
 
-        public static Encoding ASCII => s_ascii ??= new ASCIIEncoding();
+        public static Encoding ASCII => Ascii.Value;
 
-        public static Encoding Latin1 => s_latin1 ??= new Latin1Encoding();
+        public static Encoding Latin1 => Latin1One.Value;
 
-        public static Encoding Unicode => s_unicode ??= new UnicodeEncoding(bigEndian: false, byteOrderMark: true);
+        public static Encoding Unicode => Utf16.Value;
 
-        public static Encoding BigEndianUnicode => s_bigEndianUnicode ??= new UnicodeEncoding(bigEndian: true, byteOrderMark: true);
+        public static Encoding BigEndianUnicode => Utf16BigEndian.Value;
 
-        public static Encoding UTF32 => s_utf32 ??= new UTF32Encoding(bigEndian: false, byteOrderMark: true);
+        public static Encoding UTF32 => Utf32.Value;
 
         // 65001, 20127, 28591, 1200, 1201, 12000 or 12001; anything else ends
         // the program.
@@ -58,7 +70,7 @@ namespace System.Text
                 case 1200: return Unicode;
                 case 1201: return BigEndianUnicode;
                 case 12000: return UTF32;
-                case 12001: return s_utf32BigEndian ??= new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+                case 12001: return Utf32BigEndian.Value;
             }
             Environment.FailFast("Encoding.GetEncoding: only UTF-8, ASCII, Latin-1, UTF-16 and UTF-32 are available");
             return null;

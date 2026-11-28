@@ -109,6 +109,7 @@ SAMPLES=(
     Numerics
     Crypto
     CryptoErrors
+    Certificates
     CryptoRandom
     Formats
     Parsing
@@ -178,6 +179,7 @@ DOS_SAMPLES=(
     Numerics
     Crypto
     CryptoErrors
+    Certificates
     Formats
     Parsing
     Cultures
@@ -247,6 +249,7 @@ ARM_SAMPLES=(
     Numerics
     Crypto
     CryptoErrors
+    Certificates
     Formats
     Parsing
     Cultures
