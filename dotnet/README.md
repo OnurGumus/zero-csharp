@@ -59,8 +59,11 @@ Changes inside `lib/` for .NET are behind `#if ZERO_DOTNET`.
 
 ## What differs from zero mode
 
-`known-differences.txt` names every check of the samples that fails on .NET, with the reason.
-In short:
+`known-differences.txt` names every check of the samples that fails on .NET, with the reason,
+and the samples that don't run there at all. `dotnet/test.sh` fails when a sample does anything
+else: a check that isn't listed fails, or a listed one passes. CI runs it on Linux (the `dotnet`
+job of `.github/workflows/test.yml`), with a stress run of the samples that wait and do input
+and output, and the TLS cases. In short:
 
 - **Objects are the garbage collector's.** `Arena.AllocateObjectsHere` has no effect, so nothing
   measures "0 bytes on the heap", and the checks for objects used after their scope find nothing.
