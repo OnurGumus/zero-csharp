@@ -180,7 +180,7 @@ namespace System.Threading.Tasks
     }
 
     /// <summary>An operation that completes later: await it, or Wait for it.</summary>
-    public class Task
+    public partial class Task
     {
         bool _completed;
         bool _canceled;
