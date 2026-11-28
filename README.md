@@ -102,6 +102,8 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - `Span<T>`, arrays, `stackalloc`, pointers and function pointers
 - Strings with `==`, `+` and `switch`, numbers' `ToString(format)`, `Parse` and `TryParse`; `lib/` adds
   arena strings and span operations
+- `CultureInfo` and `NumberFormatInfo` with the invariant culture, as .NET has them with
+  `InvariantGlobalization` set
 - Casts (`is`, `as`, `(T)x`), boxing, records, anonymous types, tuples
 - Lambdas and delegates, `try`/`finally`, `using`
 - Static fields and static constructors, `Main(string[] args)`, top-level statements
@@ -111,7 +113,7 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - `async`/`await` with `Task`, `ValueTask` and cancellation, on fibers; async sockets and files
 
 Every `new` is a `calloc` that is never freed. There is no LINQ from .NET (`lib/Seq.cs`
-has `Where`, `Select` and friends without allocating), no culture-aware formatting, and casts that need
+has `Where`, `Select` and friends without allocating), no culture but the invariant one, and casts that need
 variance stop the program. [Limits](https://onurgumus.github.io/zero-csharp/concepts/limits.html) has
 the full list.
 

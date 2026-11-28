@@ -108,6 +108,7 @@ SAMPLES=(
     Numerics
     Formats
     Parsing
+    Cultures
     Keys
     Tensors
     TensorsAvx
@@ -116,8 +117,9 @@ SAMPLES=(
     "${SMALL_SAMPLES[@]}"
 )
 
-# Samples WebAssembly can't run (as in build.sh): the fiber samples switch stacks.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches "
+# Samples WebAssembly can't run (as in build.sh): the fiber samples switch stacks,
+# and Catches and Cultures catch exceptions, which Catch.Run can't do there.
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches Cultures "
 # Samples UEFI can't run (as in build.sh): lib/ has directories only on Linux,
 # macOS, Windows and WebAssembly.
 NOT_UEFI=" Directories Network "
@@ -171,6 +173,7 @@ DOS_SAMPLES=(
     Numerics
     Formats
     Parsing
+    Cultures
     Keys
     Tensors
     TensorTypes
@@ -234,6 +237,7 @@ ARM_SAMPLES=(
     Numerics
     Formats
     Parsing
+    Cultures
     Keys
     Tensors
     TensorTypes
@@ -263,6 +267,7 @@ R4_SAMPLES=(
     Records
     Shapes
     Refs
+    Cultures
     "${SMALL_SAMPLES[@]}"
     Blink
 )
