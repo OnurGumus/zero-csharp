@@ -123,8 +123,12 @@ namespace System.Globalization
         // writable NumberFormatInfo yet.
         public NumberFormatInfo NumberFormat => NumberFormatInfo.InvariantInfo;
 
+        // The invariant dates and times, read-only, likewise.
+        public DateTimeFormatInfo DateTimeFormat => DateTimeFormatInfo.InvariantInfo;
+
         public object GetFormat(Type formatType)
-            => formatType == typeof(NumberFormatInfo) ? NumberFormat : null;
+            => formatType == typeof(NumberFormatInfo) ? NumberFormat
+            : formatType == typeof(DateTimeFormatInfo) ? DateTimeFormat : null;
 
         // A writable copy, as in .NET.
         public object Clone() => new CultureInfo(isReadOnly: false);

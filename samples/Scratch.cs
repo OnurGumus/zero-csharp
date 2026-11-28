@@ -397,26 +397,30 @@ public static class Program
         Section("types of your own");
 
         // docs:dict
-        // Count each roll and keep only the counts: the dictionary and the set
-        // go with the scratch memory, the copy stays in an arena of yours.
+        // Count each roll in a dictionary that goes away with the scratch
+        // memory; only the most common roll comes out.
         int[] rolls = { 3, 6, 3, 1, 6, 3 };
         var dice = new Job { Input = rolls };
-        Arena results = Arena.Create(4096);
-        int distinct = Arena.Scratch(ref dice,
+        int mostCommon = Arena.Scratch(ref dice,
             static (scoped ScratchScope scratch, scoped ref Job state) =>
             {
                 ScratchDict<int, int> counts = scratch.Dict<int, int>();
-                ScratchHashSet<int> seen = scratch.HashSet<int>();
+                int best = 0, bestCount = 0;
                 foreach (int roll in state.Input)
                 {
                     counts.TryGet(roll, out int count);
-                    counts.Set(roll, count + 1);
-                    seen.Add(roll);
+                    counts.Set(roll, ++count);
+                    if (count > bestCount)
+                        (best, bestCount) = (roll, count);
                 }
-                return seen.Count;
+                return best;
             });
         // docs:end
-        Check("counted", distinct == 3);
+        Check("counted", mostCommon == 3);
+        // docs:dict-clone
+        // Clone copies a scratch dictionary into an arena of yours, to keep
+        // after the callback.
+        Arena results = Arena.Create(4096);
         Dict<int, int> kept = Arena.Scratch(ref results,
             static (scoped ScratchScope scratch, scoped ref Arena target) =>
             {
@@ -426,6 +430,7 @@ public static class Program
                 squares.Remove(50);
                 return squares.Clone(target);
             });
+        // docs:end
         Check("Clone keeps a copy", kept.Count == 99 && kept.TryGet(9, out int nine) && nine == 81 && !kept.ContainsKey(50));
         int changed = Arena.Scratch(static (scoped ScratchScope scratch) =>
         {
