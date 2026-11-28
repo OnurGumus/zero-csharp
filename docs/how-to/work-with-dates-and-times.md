@@ -69,6 +69,29 @@ loop, use `TryFormat` into a span, or a hole, which formats straight into the ou
 `Console.WriteLine($"{t:yyyy-MM-dd}")` or `Str.Format(arena, $"{t:o}")`. A format .NET refuses throws
 the same `FormatException`.
 
+A `DateTimeFormatInfo` of your own changes the names, patterns, separators and AM/PM designators
+that `ToString` uses ("o", "r", "s" and "u" stay the same everywhere, as in .NET):
+
+<!-- sample: samples/CustomFormats.cs dates -->
+```csharp
+string[] months = { "Januar", "Februar", "März", "April", "Mai", "Juni",
+    "Juli", "August", "September", "Oktober", "November", "Dezember", "" };
+var german = new DateTimeFormatInfo
+{
+    ShortDatePattern = "dd.MM.yyyy",
+    LongTimePattern = "HH:mm:ss",
+    DayNames = new[] { "Sonntag", "Montag", "Dienstag", "Mittwoch",
+        "Donnerstag", "Freitag", "Samstag" },
+    // Next to a day number .NET uses the genitive names: set both.
+    MonthNames = months,
+    MonthGenitiveNames = months,
+};
+var day = new DateTime(2026, 3, 5, 14, 7, 9);
+Is("d", day.ToString("d", german), "05.03.2026");
+Is("names", day.ToString("dddd, d. MMMM yyyy", german),
+    "Donnerstag, 5. März 2026");
+```
+
 ## Offsets: one instant, anywhere
 
 A `DateTime` is a clock reading; a `DateTimeOffset` is a reading and how far it is from UTC, so it

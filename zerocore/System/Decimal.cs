@@ -699,11 +699,11 @@ namespace System
         // All the digits, trailing zeros too: 1.50m is "1.50". Formats round
         // half away from zero: 2.675m.ToString("F2") is "2.68".
         public override string ToString() => ToString((string)null);
-        public string ToString(string format) => Number.DecimalToString(_lo64, _hi32, Scale, IsNegative, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.DecimalToString(_lo64, _hi32, Scale, IsNegative, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatDecimal(_lo64, _hi32, Scale, IsNegative, destination, out charsWritten, format);
+            Number.TryFormatDecimal(_lo64, _hi32, Scale, IsNegative, destination, out charsWritten, format, provider);
 
         // Digits with an optional sign, decimal point and exponent ("e5",
         // "E-3"), as .NET's Parse takes with NumberStyles.Float; digits beyond

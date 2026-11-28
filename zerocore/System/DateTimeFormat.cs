@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace System
 {
     // .NET's date and time formats in the invariant culture, for DateTime,
@@ -13,6 +15,81 @@ namespace System
     {
         // A DateTime formats with no offset; a DateTimeOffset with its own.
         internal static readonly TimeSpan NullOffset = TimeSpan.MinValue;
+
+        // Names and patterns of your own (a writable DateTimeFormatInfo) are
+        // read only through this, which such a DateTimeFormatInfo sets: a
+        // program without one keeps the invariant culture's built in.
+        internal abstract class DateCulture
+        {
+            internal abstract DateTimeFormatInfo InfoFor(IFormatProvider provider);
+            internal abstract string FullPattern(DateTimeFormatInfo info);
+            internal abstract string OffsetPattern(DateTimeFormatInfo info);
+            internal abstract string[] Patterns(DateTimeFormatInfo info, char format);
+            internal abstract string MonthName(DateTimeFormatInfo info, int month, bool abbreviated, ReadOnlySpan<char> format, int index, int length);
+        }
+
+        private sealed class CultureDates : DateCulture
+        {
+            internal override DateTimeFormatInfo InfoFor(IFormatProvider provider)
+            {
+                DateTimeFormatInfo info = DateTimeFormatInfo.GetInstance(provider);
+                return ReferenceEquals(info, DateTimeFormatInfo.InvariantInfo) ? null : info;
+            }
+
+            internal override string FullPattern(DateTimeFormatInfo info) => info.FullPattern;
+            internal override string OffsetPattern(DateTimeFormatInfo info) => info.OffsetPattern;
+            internal override string[] Patterns(DateTimeFormatInfo info, char format) => info.GetAllDateTimePatterns(format);
+
+            // A month's name from your own names: the genitive form (as "1 of
+            // January" puts it) next to a day number, when it has one.
+            internal override string MonthName(DateTimeFormatInfo info, int month, bool abbreviated, ReadOnlySpan<char> format, int index, int length)
+            {
+                string[] names = abbreviated ? info._abbreviatedMonthNames : info._monthNames;
+                if (IsGenitive(format, index, length))
+                {
+                    string[] forms = abbreviated ? info._abbreviatedMonthGenitiveNames : info._monthGenitiveNames;
+                    bool differ = false;
+                    for (int k = 0; k < 12 && !differ; k++)
+                        differ = forms[k] != names[k];
+                    if (differ)
+                        names = forms;
+                }
+                return names[month - 1];
+            }
+
+            // Whether "d" or "dd" (not "ddd") is before or after the month at
+            // index, as .NET's IsUseGenitiveForm decides.
+            private static bool IsGenitive(ReadOnlySpan<char> format, int index, int length)
+            {
+                int i;
+                for (i = index - 1; i >= 0 && format[i] != 'd'; i--) { }
+                if (i >= 0)
+                {
+                    int repeat = 0;
+                    while (--i >= 0 && format[i] == 'd')
+                        repeat++;
+                    if (repeat <= 1)
+                        return true;
+                }
+                for (i = index + length; i < format.Length && format[i] != 'd'; i++) { }
+                if (i < format.Length)
+                {
+                    int repeat = 0;
+                    while (++i < format.Length && format[i] == 'd')
+                        repeat++;
+                    if (repeat <= 1)
+                        return true;
+                }
+                return false;
+            }
+        }
+
+        private static DateCulture s_culture;
+
+        internal static void UseCultures() => s_culture ??= new CultureDates();
+
+        // The names and patterns for a provider: null for the invariant ones.
+        internal static DateTimeFormatInfo InfoFor(IFormatProvider provider) => s_culture == null ? null : s_culture.InfoFor(provider);
 
         private const string InvalidString = "Input string was not in a correct format.";
 
@@ -57,12 +134,15 @@ namespace System
             private readonly Span<char> _buffer;
             public int Length;
             private char _last;
+            // Names and patterns of your own, or null for the invariant ones.
+            public DateTimeFormatInfo Info;
 
             public Writer(Span<char> buffer)
             {
                 _buffer = buffer;
                 Length = 0;
                 _last = '\0';
+                Info = null;
             }
 
             public bool Fits => Length <= _buffer.Length;
@@ -113,26 +193,26 @@ namespace System
 
         // ---- entry points ----
 
-        internal static string Format(DateTime value, string format, TimeSpan offset)
-            => ToText(What.DateTime, value.Ticks, value.Kind, value, offset.Ticks, format == null ? default : Number.AsSpan(format));
+        internal static string Format(DateTime value, string format, TimeSpan offset, IFormatProvider provider = null)
+            => ToText(What.DateTime, value.Ticks, value, offset.Ticks, format == null ? default : Number.AsSpan(format), InfoFor(provider));
 
-        internal static bool TryFormat(DateTime value, Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, TimeSpan offset)
-            => Try(What.DateTime, value, offset.Ticks, format, destination, out charsWritten);
+        internal static bool TryFormat(DateTime value, Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, TimeSpan offset, IFormatProvider provider = null)
+            => Try(What.DateTime, value, offset.Ticks, format, destination, out charsWritten, InfoFor(provider));
 
-        internal static string FormatDate(DateOnly value, string format)
-            => ToText(What.Date, value.DayNumber * TimeSpan.TicksPerDay, DateTimeKind.Unspecified, new DateTime(value.DayNumber * TimeSpan.TicksPerDay), NullOffset.Ticks, format == null ? default : Number.AsSpan(format));
+        internal static string FormatDate(DateOnly value, string format, IFormatProvider provider = null)
+            => ToText(What.Date, value.DayNumber * TimeSpan.TicksPerDay, new DateTime(value.DayNumber * TimeSpan.TicksPerDay), NullOffset.Ticks, format == null ? default : Number.AsSpan(format), InfoFor(provider));
 
-        internal static bool TryFormatDate(DateOnly value, Span<char> destination, out int charsWritten, ReadOnlySpan<char> format)
-            => Try(What.Date, new DateTime(value.DayNumber * TimeSpan.TicksPerDay), NullOffset.Ticks, format, destination, out charsWritten);
+        internal static bool TryFormatDate(DateOnly value, Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider provider = null)
+            => Try(What.Date, new DateTime(value.DayNumber * TimeSpan.TicksPerDay), NullOffset.Ticks, format, destination, out charsWritten, InfoFor(provider));
 
-        internal static string FormatTime(TimeOnly value, string format)
-            => ToText(What.Time, value.Ticks, DateTimeKind.Unspecified, new DateTime(value.Ticks), NullOffset.Ticks, format == null ? default : Number.AsSpan(format));
+        internal static string FormatTime(TimeOnly value, string format, IFormatProvider provider = null)
+            => ToText(What.Time, value.Ticks, new DateTime(value.Ticks), NullOffset.Ticks, format == null ? default : Number.AsSpan(format), InfoFor(provider));
 
-        internal static bool TryFormatTime(TimeOnly value, Span<char> destination, out int charsWritten, ReadOnlySpan<char> format)
-            => Try(What.Time, new DateTime(value.Ticks), NullOffset.Ticks, format, destination, out charsWritten);
+        internal static bool TryFormatTime(TimeOnly value, Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider provider = null)
+            => Try(What.Time, new DateTime(value.Ticks), NullOffset.Ticks, format, destination, out charsWritten, InfoFor(provider));
 
         internal static string FormatTimeSpan(TimeSpan value, string format)
-            => ToText(What.Interval, value.Ticks, DateTimeKind.Unspecified, default, 0, format == null ? default : Number.AsSpan(format));
+            => ToText(What.Interval, value.Ticks, default, 0, format == null ? default : Number.AsSpan(format), null);
 
         internal static bool TryFormatTimeSpan(TimeSpan value, Span<char> destination, out int charsWritten, ReadOnlySpan<char> format)
         {
@@ -141,9 +221,9 @@ namespace System
             return Done(ref w, out charsWritten);
         }
 
-        private static bool Try(What what, DateTime value, long offset, ReadOnlySpan<char> format, Span<char> destination, out int charsWritten)
+        private static bool Try(What what, DateTime value, long offset, ReadOnlySpan<char> format, Span<char> destination, out int charsWritten, DateTimeFormatInfo info)
         {
-            Writer w = new Writer(destination);
+            Writer w = new Writer(destination) { Info = info };
             Write(ref w, what, value, offset, format, true);
             return Done(ref w, out charsWritten);
         }
@@ -159,10 +239,10 @@ namespace System
             return false;
         }
 
-        private static string ToText(What what, long ticks, DateTimeKind kind, DateTime value, long offset, ReadOnlySpan<char> format)
+        private static string ToText(What what, long ticks, DateTime value, long offset, ReadOnlySpan<char> format, DateTimeFormatInfo info)
         {
             char* stack = stackalloc char[64];
-            Writer w = new Writer(new Span<char>(stack, 64));
+            Writer w = new Writer(new Span<char>(stack, 64)) { Info = info };
             if (what == What.Interval)
                 WriteInterval(ref w, ticks, format);
             else
@@ -173,7 +253,7 @@ namespace System
             char[] buffer = new char[w.Length];
             fixed (char* p = buffer)
             {
-                Writer again = new Writer(new Span<char>(p, w.Length));
+                Writer again = new Writer(new Span<char>(p, w.Length)) { Info = info };
                 if (what == What.Interval)
                     WriteInterval(ref again, ticks, format);
                 else
@@ -201,7 +281,7 @@ namespace System
                             RoundTripDate(ref w, value);
                             return;
                         case 'r':
-                            Custom(ref w, value, "ddd, dd MMM yyyy", offset);
+                            Invariant(ref w, value, "ddd, dd MMM yyyy", offset);
                             return;
                         case 'd':
                         case 'm':
@@ -225,10 +305,10 @@ namespace System
                     switch (format[0] | 0x20)
                     {
                         case 'o':
-                            Custom(ref w, value, "HH':'mm':'ss'.'fffffff", offset);
+                            Invariant(ref w, value, "HH':'mm':'ss'.'fffffff", offset);
                             return;
                         case 'r':
-                            Custom(ref w, value, "HH':'mm':'ss", offset);
+                            Invariant(ref w, value, "HH':'mm':'ss", offset);
                             return;
                         case 't':
                             break;
@@ -242,8 +322,19 @@ namespace System
                 }
             }
 
+            DateTimeFormatInfo info = w.Info;
             if (format.Length == 0)
-                format = Number.AsSpan(isOffset ? "MM/dd/yyyy HH:mm:ss zzz" : "G");
+            {
+                if (!isOffset)
+                    format = Number.AsSpan("G");
+                else if (info == null)
+                    format = Number.AsSpan("MM/dd/yyyy HH:mm:ss zzz");
+                else
+                {
+                    Custom(ref w, value, s_culture.OffsetPattern(info), offset);
+                    return;
+                }
+            }
 
             if (format.Length == 1)
             {
@@ -258,31 +349,33 @@ namespace System
                     case 'R':
                         if (isOffset)
                             value = new DateTime(value.Ticks - offset);
-                        Custom(ref w, value, Rfc1123, NullOffset.Ticks);
+                        Invariant(ref w, value, Rfc1123, NullOffset.Ticks);
                         return;
                     case 'u':
                         if (isOffset)
                             value = new DateTime(value.Ticks - offset);
-                        Custom(ref w, value, UniversalSortable, NullOffset.Ticks);
+                        Invariant(ref w, value, UniversalSortable, NullOffset.Ticks);
                         return;
                     case 'U':
                         if (isOffset)
                             throw new FormatException(InvalidString);
-                        Custom(ref w, value.ToUniversalTime(), FullDateTime, offset);
+                        Custom(ref w, value.ToUniversalTime(), info == null ? FullDateTime : s_culture.FullPattern(info), offset);
                         return;
-                    case 'd': pattern = ShortDate; break;
-                    case 'D': pattern = LongDate; break;
-                    case 'f': pattern = LongDate + " " + ShortTime; break;
-                    case 'F': pattern = FullDateTime; break;
-                    case 'g': pattern = ShortDate + " " + ShortTime; break;
-                    case 'G': pattern = ShortDate + " " + LongTime; break;
+                    case 's':
+                        Invariant(ref w, value, Sortable, offset);
+                        return;
+                    case 'd': pattern = info == null ? ShortDate : info._shortDatePattern; break;
+                    case 'D': pattern = info == null ? LongDate : info._longDatePattern; break;
+                    case 'f': pattern = info == null ? LongDate + " " + ShortTime : info._longDatePattern + " " + info._shortTimePattern; break;
+                    case 'F': pattern = info == null ? FullDateTime : s_culture.FullPattern(info); break;
+                    case 'g': pattern = info == null ? ShortDate + " " + ShortTime : info._shortDatePattern + " " + info._shortTimePattern; break;
+                    case 'G': pattern = info == null ? ShortDate + " " + LongTime : info._shortDatePattern + " " + info._longTimePattern; break;
                     case 'm':
-                    case 'M': pattern = MonthDay; break;
-                    case 's': pattern = Sortable; break;
-                    case 't': pattern = ShortTime; break;
-                    case 'T': pattern = LongTime; break;
+                    case 'M': pattern = info == null ? MonthDay : info._monthDayPattern; break;
+                    case 't': pattern = info == null ? ShortTime : info._shortTimePattern; break;
+                    case 'T': pattern = info == null ? LongTime : info._longTimePattern; break;
                     case 'y':
-                    case 'Y': pattern = YearMonth; break;
+                    case 'Y': pattern = info == null ? YearMonth : info._yearMonthPattern; break;
                     default:
                         throw new FormatException(InvalidString);
                 }
@@ -422,6 +515,15 @@ namespace System
         private static void Custom(ref Writer w, DateTime value, string format, long offset)
             => Custom(ref w, value, Number.AsSpan(format), offset);
 
+        // "o", "r", "s", "u": the invariant culture's, whatever the provider.
+        private static void Invariant(ref Writer w, DateTime value, string format, long offset)
+        {
+            DateTimeFormatInfo info = w.Info;
+            w.Info = null;
+            Custom(ref w, value, Number.AsSpan(format), offset);
+            w.Info = info;
+        }
+
         private static void Custom(ref Writer w, DateTime value, ReadOnlySpan<char> format, long offset)
         {
             long ticks = value.Ticks;
@@ -483,10 +585,21 @@ namespace System
                         break;
                     case 't':
                         length = Repeat(format, i, c);
-                        if (length == 1)
-                            w.Add(hour < 12 ? 'A' : 'P');
+                        if (w.Info == null)
+                        {
+                            if (length == 1)
+                                w.Add(hour < 12 ? 'A' : 'P');
+                            else
+                                w.Add(hour < 12 ? "AM" : "PM");
+                        }
                         else
-                            w.Add(hour < 12 ? "AM" : "PM");
+                        {
+                            string designator = hour < 12 ? w.Info._amDesignator : w.Info._pmDesignator;
+                            if (length != 1)
+                                w.Add(designator);
+                            else if (designator.Length >= 1)
+                                w.Add(designator[0]);
+                        }
                         break;
                     case 'd':
                         length = Repeat(format, i, c);
@@ -495,7 +608,10 @@ namespace System
                         else
                         {
                             int dayOfWeek = (int)((ticks / TimeSpan.TicksPerDay + 1) % 7);
-                            w.Add(length == 3 ? AbbreviatedDayName(dayOfWeek) : DayName(dayOfWeek));
+                            if (w.Info == null)
+                                w.Add(length == 3 ? AbbreviatedDayName(dayOfWeek) : DayName(dayOfWeek));
+                            else
+                                w.Add(length == 3 ? w.Info._abbreviatedDayNames[dayOfWeek] : w.Info._dayNames[dayOfWeek]);
                         }
                         timeOnly = false;
                         break;
@@ -503,8 +619,10 @@ namespace System
                         length = Repeat(format, i, c);
                         if (length <= 2)
                             w.Digits((ulong)month, length);
-                        else
+                        else if (w.Info == null)
                             w.Add(length == 3 ? AbbreviatedMonthName(month) : MonthName(month));
+                        else
+                            w.Add(s_culture.MonthName(w.Info, month, length == 3, format, i, length));
                         timeOnly = false;
                         break;
                     case 'y':
@@ -524,11 +642,17 @@ namespace System
                         RoundTripZone(ref w, value, offset);
                         break;
                     case ':':
-                        w.Add(':');
+                        if (w.Info == null)
+                            w.Add(':');
+                        else
+                            w.Add(w.Info._timeSeparator);
                         length = 1;
                         break;
                     case '/':
-                        w.Add('/');
+                        if (w.Info == null)
+                            w.Add('/');
+                        else
+                            w.Add(w.Info._dateSeparator);
                         length = 1;
                         break;
                     case '\'':
@@ -801,25 +925,25 @@ namespace System
 
         private const string StandardFormats = "dDfFgGmMoOrRstTuUyY";
 
-        internal static string[] AllFormats(DateTime value, char format)
+        internal static string[] AllFormats(DateTime value, char format, IFormatProvider provider = null)
         {
             if (format != '\0')
-                return FormatsFor(value, format);
+                return FormatsFor(value, format, provider);
             int count = 0;
             for (int i = 0; i < StandardFormats.Length; i++)
-                count += FormatsFor(value, StandardFormats[i]).Length;
+                count += FormatsFor(value, StandardFormats[i], provider).Length;
             string[] all = new string[count];
             int n = 0;
             for (int i = 0; i < StandardFormats.Length; i++)
             {
-                string[] some = FormatsFor(value, StandardFormats[i]);
+                string[] some = FormatsFor(value, StandardFormats[i], provider);
                 for (int j = 0; j < some.Length; j++)
                     all[n++] = some[j];
             }
             return all;
         }
 
-        private static string[] FormatsFor(DateTime value, char format)
+        private static string[] FormatsFor(DateTime value, char format, IFormatProvider provider)
         {
             switch (format)
             {
@@ -829,14 +953,15 @@ namespace System
                 case 'O':
                 case 's':
                 case 'u':
-                    return new[] { Format(value, format.ToString(), NullOffset) };
+                    return new[] { Format(value, format.ToString(), NullOffset, provider) };
                 case 'd': case 'D': case 'f': case 'F': case 'g': case 'G':
                 case 'm': case 'M': case 't': case 'T': case 'y': case 'Y': case 'U':
-                    string[] patterns = Patterns(format);
+                    DateTimeFormatInfo info = InfoFor(provider);
+                    string[] patterns = info == null ? Patterns(format) : s_culture.Patterns(info, format);
                     DateTime target = format == 'U' ? value.ToUniversalTime() : value;
                     string[] results = new string[patterns.Length];
                     for (int i = 0; i < patterns.Length; i++)
-                        results[i] = Format(target, patterns[i], NullOffset);
+                        results[i] = Format(target, patterns[i], NullOffset, provider);
                     return results;
                 default:
                     throw new FormatException(InvalidString);

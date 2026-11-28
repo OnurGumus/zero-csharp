@@ -74,13 +74,13 @@ namespace System
 
         public override string ToString() => DateTimeFormat.FormatDate(this, null);
         public string ToString(string format) => DateTimeFormat.FormatDate(this, format);
-        public string ToString(IFormatProvider provider) => DateTimeFormat.FormatDate(this, null);
-        public string ToString(string format, IFormatProvider provider) => DateTimeFormat.FormatDate(this, format);
+        public string ToString(IFormatProvider provider) => DateTimeFormat.FormatDate(this, null, provider);
+        public string ToString(string format, IFormatProvider provider) => DateTimeFormat.FormatDate(this, format, provider);
         public string ToLongDateString() => DateTimeFormat.FormatDate(this, "D");
         public string ToShortDateString() => DateTimeFormat.FormatDate(this, "d");
 
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null)
-            => DateTimeFormat.TryFormatDate(this, destination, out charsWritten, format);
+            => DateTimeFormat.TryFormatDate(this, destination, out charsWritten, format, provider);
     }
 
     // A time of day with no date: ticks since midnight, with .NET's members,
@@ -228,12 +228,12 @@ namespace System
 
         public override string ToString() => DateTimeFormat.FormatTime(this, null);
         public string ToString(string format) => DateTimeFormat.FormatTime(this, format);
-        public string ToString(IFormatProvider provider) => DateTimeFormat.FormatTime(this, null);
-        public string ToString(string format, IFormatProvider provider) => DateTimeFormat.FormatTime(this, format);
+        public string ToString(IFormatProvider provider) => DateTimeFormat.FormatTime(this, null, provider);
+        public string ToString(string format, IFormatProvider provider) => DateTimeFormat.FormatTime(this, format, provider);
         public string ToLongTimeString() => DateTimeFormat.FormatTime(this, "T");
         public string ToShortTimeString() => DateTimeFormat.FormatTime(this, "t");
 
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null)
-            => DateTimeFormat.TryFormatTime(this, destination, out charsWritten, format);
+            => DateTimeFormat.TryFormatTime(this, destination, out charsWritten, format, provider);
     }
 }

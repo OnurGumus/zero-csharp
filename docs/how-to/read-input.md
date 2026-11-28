@@ -119,9 +119,9 @@ while (true)
 
 `int.Parse`, `double.TryParse` and the rest work as in .NET, on every integer type, `double`, `float`
 and `Half`, with every overload: a `string` or a `ReadOnlySpan<char>` (so the slice goes straight in),
-a `NumberStyles`, and an `IFormatProvider` such as `CultureInfo.InvariantCulture`. The culture is
-always the invariant one, the only one there is (see [Cultures](../concepts/strings.html#cultures)):
-the decimal point is `.` and the group separator `,`.
+a `NumberStyles`, and an `IFormatProvider`. By default the culture is the invariant one: the decimal
+point is `.` and the group separator `,`. A `NumberFormatInfo` of your own changes them (see
+[Formats of your own](../concepts/strings.html#formats-of-your-own)).
 
 <!-- sample: samples/Parsing.cs integers -->
 ```csharp

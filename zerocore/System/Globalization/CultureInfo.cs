@@ -6,18 +6,84 @@ namespace System.Globalization
     // .NET compiles, and asking for any other culture throws what .NET throws
     // in that mode.
     //
-    // CurrentCulture and the rest are one setting for the whole program, not
-    // one per thread: every culture that can exist behaves the same, so only
-    // which object comes back could tell them apart.
+    // CurrentCulture and CurrentUICulture belong to each thread, as in .NET:
+    // a thread that hasn't set them gets DefaultThreadCurrentCulture, else
+    // the invariant culture. Fibers on one thread share its setting (.NET's
+    // follows each async flow).
     public class CultureInfo : IFormatProvider
     {
         internal const int LocaleInvariant = 0x007F;
         private const string InvariantName = "Invariant Language (Invariant Country)";
         private const string InvariantOnly = "Only the invariant culture is supported in globalization-invariant mode. See https://aka.ms/GlobalizationInvariantMode for more information.";
 
-        private static CultureInfo s_invariant, s_current, s_currentUI, s_defaultThread, s_defaultThreadUI;
+        private static CultureInfo s_invariant, s_defaultThread, s_defaultThreadUI;
+
+        // Each thread's current cultures, behind a pthread key of their own
+        // (made when a thread first sets one) rather than [ThreadStatic],
+        // which the Windows build can't compile inside the core library.
+        private struct ThreadCultures
+        {
+            public nint Current, CurrentUI;
+        }
+
+        private static nuint s_key;
+        private static int s_keyState; // 0 none, 1 being made, 2 ready
+
+        private static unsafe ThreadCultures* Mine(bool create)
+        {
+            if (System.Threading.Volatile.Read(ref s_keyState) != 2)
+            {
+                if (!create)
+                    return null;
+                if (System.Threading.Interlocked.CompareExchange(ref s_keyState, 1, 0) == 0)
+                {
+                    nuint key = 0;
+                    // No destructor: a thread that set a culture leaves its 16
+                    // bytes when it ends (a callback from the system isn't
+                    // possible in the WebAssembly and DOS builds).
+                    if (System.Runtime.Platform.pthread_key_create(&key, null) != 0)
+                        Environment.FailFast("CultureInfo: no thread key");
+                    s_key = key;
+                    System.Threading.Volatile.Write(ref s_keyState, 2);
+                }
+                while (System.Threading.Volatile.Read(ref s_keyState) != 2)
+                {
+                    // another thread is making it
+                }
+            }
+            ThreadCultures* mine = (ThreadCultures*)System.Runtime.Platform.pthread_getspecific(s_key);
+            if (mine == null && create)
+            {
+                mine = (ThreadCultures*)System.Runtime.Platform.calloc(1, (nuint)sizeof(ThreadCultures));
+                if (mine == null || System.Runtime.Platform.pthread_setspecific(s_key, mine) != 0)
+                    Environment.FailFast("CultureInfo: can't keep the thread's cultures");
+            }
+            return mine;
+        }
+
+        private static unsafe CultureInfo ThreadCulture(bool ui)
+        {
+            ThreadCultures* mine = Mine(false);
+            if (mine == null)
+                return null;
+            nint value = ui ? mine->CurrentUI : mine->Current;
+            return System.Runtime.CompilerServices.Unsafe.As<nint, CultureInfo>(ref value);
+        }
+
+        private static unsafe void SetThreadCulture(CultureInfo culture, bool ui)
+        {
+            ThreadCultures* mine = Mine(true);
+            nint value = System.Runtime.CompilerServices.Unsafe.As<CultureInfo, nint>(ref culture);
+            if (ui)
+                mine->CurrentUI = value;
+            else
+                mine->Current = value;
+        }
 
         private readonly bool _isReadOnly;
+        // A writable culture's own formats, made when first asked for.
+        private NumberFormatInfo _numberFormat;
+        private DateTimeFormatInfo _dateTimeFormat;
 
         private CultureInfo(bool isReadOnly) => _isReadOnly = isReadOnly;
 
@@ -27,7 +93,20 @@ namespace System.Globalization
         // useUserOverride makes no difference.
         public CultureInfo(string name) : this(name, true) { }
 
-        public CultureInfo(string name, bool useUserOverride) => CheckName(name, name);
+        public CultureInfo(string name, bool useUserOverride)
+        {
+            CheckName(name, name);
+            MakeWritableFormats();
+        }
+
+        // A writable culture's formats are made with it, not when first asked
+        // for: so only programs that make one link the code for formats of
+        // their own (see Number.Culture.cs).
+        private void MakeWritableFormats()
+        {
+            _numberFormat = new NumberFormatInfo();
+            _dateTimeFormat = new DateTimeFormatInfo();
+        }
 
         // Only 127 (LOCALE_INVARIANT) exists.
         public CultureInfo(int culture) : this(culture, true) { }
@@ -38,6 +117,7 @@ namespace System.Globalization
             switch (culture)
             {
                 case LocaleInvariant:
+                    MakeWritableFormats();
                     return;
                 // LOCALE_NEUTRAL, _USER_DEFAULT, _SYSTEM_DEFAULT, _CUSTOM_DEFAULT
                 // and _CUSTOM_UNSPECIFIED: never a culture, in any mode.
@@ -56,14 +136,14 @@ namespace System.Globalization
 
         public static CultureInfo CurrentCulture
         {
-            get => s_current ?? s_defaultThread ?? InvariantCulture;
-            set => s_current = value ?? throw new ArgumentNullException("value");
+            get => ThreadCulture(false) ?? s_defaultThread ?? InvariantCulture;
+            set => SetThreadCulture(value ?? throw new ArgumentNullException("value"), false);
         }
 
         public static CultureInfo CurrentUICulture
         {
-            get => s_currentUI ?? s_defaultThreadUI ?? InvariantCulture;
-            set => s_currentUI = value ?? throw new ArgumentNullException("value");
+            get => ThreadCulture(true) ?? s_defaultThreadUI ?? InvariantCulture;
+            set => SetThreadCulture(value ?? throw new ArgumentNullException("value"), true);
         }
 
         // Null until set, as in .NET.
@@ -101,7 +181,14 @@ namespace System.Globalization
         {
             if (ci == null)
                 throw new ArgumentNullException("ci");
-            return ci._isReadOnly ? ci : new CultureInfo(isReadOnly: true);
+            if (ci._isReadOnly)
+                return ci;
+            CultureInfo copy = new CultureInfo(isReadOnly: true);
+            if (ci._numberFormat != null)
+                copy._numberFormat = NumberFormatInfo.ReadOnly(ci._numberFormat);
+            if (ci._dateTimeFormat != null)
+                copy._dateTimeFormat = DateTimeFormatInfo.ReadOnly(ci._dateTimeFormat);
+            return copy;
         }
 
         public string Name => "";
@@ -119,12 +206,35 @@ namespace System.Globalization
         public bool UseUserOverride => false;
         public CultureInfo Parent => InvariantCulture;
 
-        // The invariant numbers, read-only, for every culture: there is no
-        // writable NumberFormatInfo yet.
-        public NumberFormatInfo NumberFormat => NumberFormatInfo.InvariantInfo;
+        // A read-only culture's are the invariant ones; a writable culture
+        // (new CultureInfo(""), or a Clone) has writable copies of its own,
+        // which Parse and ToString follow once the culture is passed to them
+        // or made current.
+        public NumberFormatInfo NumberFormat
+        {
+            get => _numberFormat ?? NumberFormatInfo.InvariantInfo;
+            set
+            {
+                VerifyWritable();
+                _numberFormat = value ?? throw new ArgumentNullException("value");
+            }
+        }
 
-        // The invariant dates and times, read-only, likewise.
-        public DateTimeFormatInfo DateTimeFormat => DateTimeFormatInfo.InvariantInfo;
+        public DateTimeFormatInfo DateTimeFormat
+        {
+            get => _dateTimeFormat ?? DateTimeFormatInfo.InvariantInfo;
+            set
+            {
+                VerifyWritable();
+                _dateTimeFormat = value ?? throw new ArgumentNullException("value");
+            }
+        }
+
+        private void VerifyWritable()
+        {
+            if (_isReadOnly)
+                throw new InvalidOperationException("Instance is read-only.");
+        }
 
         // Casing and comparing, the invariant way (ordinal, as in .NET's
         // invariant mode).
@@ -136,7 +246,13 @@ namespace System.Globalization
             : formatType == typeof(DateTimeFormatInfo) ? DateTimeFormat : null;
 
         // A writable copy, as in .NET.
-        public object Clone() => new CultureInfo(isReadOnly: false);
+        public object Clone()
+        {
+            CultureInfo copy = new CultureInfo(isReadOnly: false);
+            copy._numberFormat = (NumberFormatInfo)NumberFormat.Clone();
+            copy._dateTimeFormat = (DateTimeFormatInfo)DateTimeFormat.Clone();
+            return copy;
+        }
 
         public void ClearCachedData() { }
 

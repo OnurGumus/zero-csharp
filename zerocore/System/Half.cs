@@ -196,11 +196,11 @@ namespace System
         // The shortest text that converts back to this value, as .NET writes it:
         // 0.1, 65500 (MaxValue, 65504), 6E-08 (Epsilon). Formats as for double.
         public override string ToString() => ToString((string)null);
-        public string ToString(string format) => Number.IeeeToString(_value, 10, 5, 5, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IeeeToString(_value, 10, 5, 5, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatIeee(_value, 10, 5, 5, destination, out charsWritten, format);
+            Number.TryFormatIeee(_value, 10, 5, 5, destination, out charsWritten, format, provider);
     }
 
     public static unsafe class BitConverter

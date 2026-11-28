@@ -34,11 +34,11 @@ namespace System
         public override bool Equals(object obj) => obj is sbyte other && (sbyte)this == other;
         public override int GetHashCode() => unchecked((int)this);
         public override string ToString() => Number.FormatInt64((long)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(long)(sbyte)this, true, 8, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(long)(sbyte)this, true, 8, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(long)(sbyte)this, true, 8, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(long)(sbyte)this, true, 8, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct Byte : IEquatable<byte>, IComparable<byte>, IComparable, ISpanFormattable
@@ -54,11 +54,11 @@ namespace System
         public override bool Equals(object obj) => obj is byte other && (byte)this == other;
         public override int GetHashCode() => unchecked((int)this);
         public override string ToString() => Number.FormatUInt64((ulong)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(byte)this, false, 8, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(byte)this, false, 8, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(byte)this, false, 8, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(byte)this, false, 8, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct Int16 : IEquatable<short>, IComparable<short>, IComparable, ISpanFormattable
@@ -74,11 +74,11 @@ namespace System
         public override bool Equals(object obj) => obj is short other && (short)this == other;
         public override int GetHashCode() => unchecked((int)this);
         public override string ToString() => Number.FormatInt64((long)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(long)(short)this, true, 16, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(long)(short)this, true, 16, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(long)(short)this, true, 16, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(long)(short)this, true, 16, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct UInt16 : IEquatable<ushort>, IComparable<ushort>, IComparable, ISpanFormattable
@@ -94,11 +94,11 @@ namespace System
         public override bool Equals(object obj) => obj is ushort other && (ushort)this == other;
         public override int GetHashCode() => unchecked((int)this);
         public override string ToString() => Number.FormatUInt64((ulong)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(ushort)this, false, 16, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(ushort)this, false, 16, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(ushort)this, false, 16, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(ushort)this, false, 16, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct Int32 : IEquatable<int>, IComparable<int>, IComparable, ISpanFormattable
@@ -114,11 +114,11 @@ namespace System
         public override bool Equals(object obj) => obj is int other && (int)this == other;
         public override int GetHashCode() => unchecked((int)this);
         public override string ToString() => Number.FormatInt64((long)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(long)(int)this, true, 32, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(long)(int)this, true, 32, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(long)(int)this, true, 32, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(long)(int)this, true, 32, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct UInt32 : IEquatable<uint>, IComparable<uint>, IComparable, ISpanFormattable
@@ -134,11 +134,11 @@ namespace System
         public override bool Equals(object obj) => obj is uint other && (uint)this == other;
         public override int GetHashCode() => unchecked((int)this);
         public override string ToString() => Number.FormatUInt64((ulong)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(uint)this, false, 32, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(uint)this, false, 32, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(uint)this, false, 32, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(uint)this, false, 32, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct Int64 : IEquatable<long>, IComparable<long>, IComparable, ISpanFormattable
@@ -154,11 +154,11 @@ namespace System
         public override bool Equals(object obj) => obj is long other && (long)this == other;
         public override int GetHashCode() => unchecked((int)this ^ (int)((long)this >> 32));
         public override string ToString() => Number.FormatInt64((long)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(long)this, true, 64, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(long)this, true, 64, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(long)this, true, 64, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(long)this, true, 64, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct UInt64 : IEquatable<ulong>, IComparable<ulong>, IComparable, ISpanFormattable
@@ -174,11 +174,11 @@ namespace System
         public override bool Equals(object obj) => obj is ulong other && (ulong)this == other;
         public override int GetHashCode() => unchecked((int)this ^ (int)((ulong)this >> 32));
         public override string ToString() => Number.FormatUInt64((ulong)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)this, false, 64, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)this, false, 64, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)this, false, 64, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)this, false, 64, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct IntPtr : IEquatable<nint>, IComparable<nint>, IComparable, ISpanFormattable
@@ -209,11 +209,11 @@ namespace System
         public override bool Equals(object obj) => obj is nint other && (nint)this == other;
         public override int GetHashCode() => unchecked((int)(long)(nint)this ^ (int)((long)(nint)this >> 32));
         public override string ToString() => Number.FormatInt64((nint)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(long)(nint)this, true, sizeof(nint) * 8, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(long)(nint)this, true, sizeof(nint) * 8, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(long)(nint)this, true, sizeof(nint) * 8, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(long)(nint)this, true, sizeof(nint) * 8, destination, out charsWritten, format, provider);
     }
 
     public unsafe partial struct UIntPtr : IEquatable<nuint>, IComparable<nuint>, IComparable, ISpanFormattable
@@ -232,11 +232,11 @@ namespace System
         public override bool Equals(object obj) => obj is nuint other && (nuint)this == other;
         public override int GetHashCode() => unchecked((int)(ulong)(nuint)this ^ (int)((ulong)(nuint)this >> 32));
         public override string ToString() => Number.FormatUInt64((nuint)this);
-        public string ToString(string format) => Number.IntegerToString((ulong)(nuint)this, false, sizeof(nuint) * 8, format);
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider) => Number.IntegerToString((ulong)(nuint)this, false, sizeof(nuint) * 8, format, provider);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null) =>
-            Number.TryFormatInteger((ulong)(nuint)this, false, sizeof(nuint) * 8, destination, out charsWritten, format);
+            Number.TryFormatInteger((ulong)(nuint)this, false, sizeof(nuint) * 8, destination, out charsWritten, format, provider);
     }
 
     // float and double have .NET's constants (NaN, PositiveInfinity, MaxValue,
@@ -299,17 +299,17 @@ namespace System
             return *(int*)&value;
         }
         public override string ToString() => ToString((string)null);
-        public string ToString(string format)
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider)
         {
             float value = (float)this;
-            return Number.IeeeToString(*(uint*)&value, 23, 8, 9, format);
+            return Number.IeeeToString(*(uint*)&value, 23, 8, 9, format, provider);
         }
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null)
         {
             float value = (float)this;
-            return Number.TryFormatIeee(*(uint*)&value, 23, 8, 9, destination, out charsWritten, format);
+            return Number.TryFormatIeee(*(uint*)&value, 23, 8, 9, destination, out charsWritten, format, provider);
         }
     }
 
@@ -368,17 +368,17 @@ namespace System
             return unchecked((int)bits ^ (int)(bits >> 32));
         }
         public override string ToString() => ToString((string)null);
-        public string ToString(string format)
+        public string ToString(string format) => ToString(format, null);
+        public string ToString(string format, IFormatProvider provider)
         {
             double value = (double)this;
-            return Number.IeeeToString(*(ulong*)&value, 52, 11, 17, format);
+            return Number.IeeeToString(*(ulong*)&value, 52, 11, 17, format, provider);
         }
-        public string ToString(IFormatProvider provider) => ToString();
-        public string ToString(string format, IFormatProvider provider) => ToString(format);
+        public string ToString(IFormatProvider provider) => ToString(null, provider);
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null)
         {
             double value = (double)this;
-            return Number.TryFormatIeee(*(ulong*)&value, 52, 11, 17, destination, out charsWritten, format);
+            return Number.TryFormatIeee(*(ulong*)&value, 52, 11, 17, destination, out charsWritten, format, provider);
         }
     }
 }

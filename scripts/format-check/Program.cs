@@ -2,6 +2,8 @@
 // namespace ZeroTest here) with .NET's in the invariant culture, for random
 // and edge values of every numeric type and every standard format.
 // Usage: check-formats.sh [iterations] [seed]
+using CultureInfo = System.Globalization.CultureInfo;
+using NumberFormatInfo = System.Globalization.NumberFormatInfo;
 using System;
 using System.Globalization;
 using ZeroTest;
@@ -15,7 +17,7 @@ static unsafe class Program
 
     static readonly string[] FloatFormats =
     {
-        "", "G", "g", "R", "G0", "G1", "G2", "G3", "G5", "G7", "G9", "G15", "G16", "G17", "G20", "G25", "g4",
+        "", "G", "g", "R", "R4", "r3", "R0", "G0", "G1", "G2", "G3", "G5", "G7", "G9", "G15", "G16", "G17", "G20", "G25", "g4",
         "F", "F0", "F1", "F2", "F3", "F5", "F10", "F17", "F25", "f2",
         "E", "E0", "E1", "E2", "E5", "E10", "E16", "E20", "e3",
         "N", "N0", "N1", "N3", "n2", "P", "P0", "P1", "P3", "p2", "C", "C0", "C3", "c1",
@@ -23,7 +25,7 @@ static unsafe class Program
 
     static readonly string[] IntegerFormats =
     {
-        "", "G", "g", "R", "G0", "G1", "G2", "G3", "G5", "G10", "G25", "g3",
+        "", "G", "g", "R", "R4", "r3", "R0", "G0", "G1", "G2", "G3", "G5", "G10", "G25", "g3",
         "D", "D0", "D1", "D5", "D10", "D25", "d3", "X", "X0", "X2", "X8", "X16", "X20", "x", "x4",
         "B", "B8", "B70", "b3",
         "F", "F0", "F2", "F5", "E", "E0", "E2", "E5", "E20", "e1", "N", "N0", "N2", "P", "P0", "P1", "C", "C0",
@@ -31,7 +33,7 @@ static unsafe class Program
 
     static readonly string[] DecimalFormats =
     {
-        "", "G", "g", "R", "G0", "G1", "G2", "G3", "G5", "G10", "G28", "G29", "G30", "g4",
+        "", "G", "g", "R", "R4", "r3", "R0", "G0", "G1", "G2", "G3", "G5", "G10", "G28", "G29", "G30", "g4",
         "F", "F0", "F1", "F2", "F5", "F30", "E", "E0", "E2", "E5", "E30", "e3",
         "N", "N0", "N2", "N4", "P", "P0", "P1", "C", "C0", "C3",
     };
@@ -85,7 +87,7 @@ static unsafe class Program
         {
             string expected = Net(() => v.ToString(f, CultureInfo.InvariantCulture));
             string actual = Zero(f, (char l, int p, ref Number.Sink s) => Number.FormatDouble(v, l, p, ref s));
-            bool shortest = f is "" or "G" or "g" or "R" or "G0";
+            bool shortest = f is "" or "G" or "g" or "R" or "R4" or "r3" or "R0" or "G0";
             if (shortest && double.IsFinite(v) && double.Parse(expected, CultureInfo.InvariantCulture) != v)
             {
                 netRoundTripBugs++;
@@ -233,5 +235,26 @@ static unsafe class Program
             Console.WriteLine($"{netRoundTripBugs} checks where .NET's shortest text doesn't read back (zerocore's must).");
         Console.WriteLine(failures == 0 ? $"All {checks} checks passed." : $"{failures} of {checks} checks FAILED.");
         return failures == 0 ? 0 : 1;
+    }
+}
+
+namespace ZeroTest
+{
+    using System;
+
+    static unsafe partial class Number
+    {
+        internal static string FromChars(char* chars, int length) => new string(chars, 0, length);
+        internal static ReadOnlySpan<char> AsSpan(string text) => text;
+        // Number.cs isn't copied; only a current culture with symbols of its own uses this.
+        internal static string IntegerToString(ulong raw, bool signed, int bits, string format, IFormatProvider provider) => throw new NotSupportedException();
+    }
+
+    // What the copied files ask of CultureInfo: the invariant culture.
+    public class CultureInfo : IFormatProvider
+    {
+        public static CultureInfo CurrentCulture { get; } = new CultureInfo();
+        public ZeroTest.NumberFormatInfo NumberFormat => ZeroTest.NumberFormatInfo.InvariantInfo;
+        public object GetFormat(Type formatType) => null;
     }
 }
