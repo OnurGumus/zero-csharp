@@ -1,9 +1,8 @@
-// Test: CultureInfo and NumberFormatInfo, as .NET has them with
-// InvariantGlobalization set. The invariant culture is the only one: code
-// that passes CultureInfo.InvariantCulture or CurrentCulture compiles and
-// formats and parses as .NET does in the invariant culture, and asking for
-// any other culture throws CultureNotFoundException with .NET's message.
-// Every expected value here is what .NET 10 gives in that mode.
+// Test: CultureInfo and NumberFormatInfo: the invariant culture, as .NET
+// has it, and the cultures in zerocore's table (CultureData), as .NET with
+// ICU gives them; a name outside the table throws CultureNotFoundException
+// with .NET's message. Every expected value here is .NET 10's, except that
+// CurrentCulture starts as the invariant culture, not the system's.
 // Exit code = number of failed checks.
 // Build: ./build.sh Cultures
 
@@ -43,7 +42,6 @@ public static class Program
         return e?.Message;
     }
 
-    const string InvariantOnly = "Only the invariant culture is supported in globalization-invariant mode. See https://aka.ms/GlobalizationInvariantMode for more information.";
 
     // A provider of the program's own: formatting and parsing ask it nothing
     // and use the invariant culture.
@@ -114,27 +112,31 @@ public static class Program
         Section("making cultures");
 
         // docs:other
-        string message = Thrown(() => new CultureInfo("de-DE"));
-        Check("another culture throws", message == InvariantOnly
-            + " (Parameter 'name')\nde-DE is an invalid culture identifier.");
+        CultureInfo german = new CultureInfo("de-DE");
+        Check("a culture from the table", german.EnglishName == "German (Germany)"
+            && 1234.5.ToString("N1", german) == "1.234,5");
+        string message = Thrown(() => new CultureInfo("@@"));
+        Check("a name it doesn't know throws", message == "Culture is not supported."
+            + " (Parameter 'name')\n@@ is an invalid culture identifier.");
         // docs:end
-        Check("GetCultureInfo lowercases the name", Thrown(() => CultureInfo.GetCultureInfo("en-US"))
-            == InvariantOnly + " (Parameter 'name')\nen-us is an invalid culture identifier.");
-        Check("only ASCII", Thrown(() => CultureInfo.GetCultureInfo("\u00C4B"))
-            == InvariantOnly + " (Parameter 'name')\n\u00C4b is an invalid culture identifier.");
-        Check("by number", Thrown(() => new CultureInfo(2748))
-            == InvariantOnly + " (Parameter 'culture')\n2748 (0x0abc) is an invalid culture identifier.");
+        Check("GetCultureInfo lowercases the name", Thrown(() => CultureInfo.GetCultureInfo("A@@"))
+            == "Culture is not supported. (Parameter 'name')\na@@ is an invalid culture identifier.");
+        Check("by number", new CultureInfo(1055).Name == "tr-TR" && Thrown(() => new CultureInfo(9999))
+            == "Culture is not supported. (Parameter 'culture')\n9999 (0x270f) is an invalid culture identifier.");
         Check("never a culture", Thrown(() => new CultureInfo(0x0400))
             == "Culture is not supported. (Parameter 'culture')\n1024 (0x0400) is an invalid culture identifier.");
-        Check("GetCultureInfo(int) checks differently", Thrown(() => CultureInfo.GetCultureInfo(0x0400))
-            == InvariantOnly + " (Parameter 'culture')\n1024 (0x0400) is an invalid culture identifier.");
         Check("negative", Thrown(() => new CultureInfo(-1)) != null && Thrown(() => CultureInfo.GetCultureInfo(0)) != null);
         Check("null", Thrown(() => new CultureInfo((string)null)) != null);
-        Exception caught = Catch.Run(() => new CultureInfo("fr"));
-        Check("its type", caught is CultureNotFoundException notFound && notFound.InvalidCultureName == "fr"
+        Exception caught = Catch.Run(() => new CultureInfo("@@"));
+        Check("its type", caught is CultureNotFoundException notFound && notFound.InvalidCultureName == "@@"
             && notFound.InvalidCultureId == null && caught is ArgumentException);
         Check("its own constructors", new CultureNotFoundException().Message == "Culture is not supported."
             && new CultureNotFoundException("p", "nm", "msg").Message == "msg (Parameter 'p')\nnm is an invalid culture identifier.");
+        Check("one object for a name", ReferenceEquals(CultureInfo.GetCultureInfo("tr-TR"), CultureInfo.GetCultureInfo("TR-tr"))
+            && CultureInfo.GetCultureInfo("tr-TR").IsReadOnly && !new CultureInfo("tr-TR").IsReadOnly);
+        Check("parents", CultureInfo.GetCultureInfo("zh-CN").Parent.Name == "zh-Hans"
+            && CultureInfo.GetCultureInfo("zh-Hans").Parent.Parent.Equals(invariant)
+            && CultureInfo.GetCultureInfo("de").IsNeutralCulture);
         Section("other cultures");
 
         NumberFormatInfo nfi = NumberFormatInfo.InvariantInfo;

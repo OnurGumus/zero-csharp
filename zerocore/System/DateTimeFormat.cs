@@ -540,7 +540,10 @@ namespace System
                 {
                     case 'g':
                         length = Repeat(format, i, c);
-                        w.Add("A.D.");
+                        if (w.Info == null)
+                            w.Add("A.D.");
+                        else
+                            w.Add(w.Info._eraName);
                         break;
                     case 'h':
                         length = Repeat(format, i, c);

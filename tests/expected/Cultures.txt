@@ -1,7 +1,7 @@
 PASS formatting and parsing (9 checks)
 PASS the invariant culture (10 checks)
 PASS making cultures (10 checks)
-PASS other cultures (10 checks)
+PASS other cultures (11 checks)
 PASS NumberFormatInfo (9 checks)
 
 All checks passed.
