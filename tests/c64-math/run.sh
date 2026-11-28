@@ -28,11 +28,14 @@ PY
 
 failed=0
 total=0
+# Twice: as usual, and with the table of quarter squares a project can ask
+# for (ZeroC64FastMultiply), which multiplies differently.
+for variant in "" -DZERO_FAST_MULTIPLY; do
 for spec in "8 800" "16 800" "32 600" "64 300"; do
     set -- $spec
     bits=$1 size=$2 batch=0
     while python3 tests/c64-math/gen.py "$bits" "$batch" "$size" "$work/cases.h"; do
-        "$LLVM_MOS/bin/mos-sim-clang" -Os -I "$work" tests/c64-math/check.c "$work/arith.c" -o "$work/check"
+        "$LLVM_MOS/bin/mos-sim-clang" -Os $variant -I "$work" tests/c64-math/check.c "$work/arith.c" -o "$work/check"
         if ! out=$("$LLVM_MOS/bin/mos-sim" "$work/check"); then
             echo "$out" | head -20
             failed=1
@@ -41,8 +44,9 @@ for spec in "8 800" "16 800" "32 600" "64 300"; do
         batch=$((batch + 1))
     done
 done
+done
 if [ "$failed" -ne 0 ]; then
     echo "FAIL C64 division and multiplication (c64/runtime.c)"
     exit 1
 fi
-echo "PASS C64 division and multiplication ($total pairs, 8 to 64 bits)"
+echo "PASS C64 division and multiplication ($total pairs, 8 to 64 bits, with and without the table)"

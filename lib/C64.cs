@@ -14,6 +14,9 @@
 //
 // C64.Reu reads and writes a RAM Expansion Unit, when there is one.
 //
+// C64.KernalRom = false switches the KERNAL ROM out, for the 8 KB of RAM
+// under it (C64.RamUnderKernal).
+//
 // Out.Line and In.ReadLine work as everywhere, through the C64's own screen
 // editor: text scrolls, and a typed line is handed over at RETURN. Print
 // puts characters at a position without moving that cursor.
@@ -56,6 +59,7 @@ public static class C64
     [DllImport("libc")] static safe extern int c64_matrix(int columns);
     [DllImport("libc")] static safe extern uint c64_ticks();
     [DllImport("libc")] static safe extern void c64_keep_time();
+    [DllImport("libc")] static safe extern void c64_kernal_rom(int on);
 
     // ---- memory ------------------------------------------------------------------
 
@@ -239,6 +243,43 @@ public static class C64
     }
 
     static bool s_kernalOff;
+
+    /// <summary>
+    /// Whether the KERNAL ROM is at $E000-$FFFF, as when the program starts. Switched out
+    /// (false), the RAM under it is there instead, about 8 KB more for the program:
+    /// RamUnderKernal. Whatever calls the KERNAL goes on working, Console and In among
+    /// them (each call switches the ROM in for as long as it takes), and so does its
+    /// interrupt: the keyboard, Ticks, the cursor. The program's end switches it back in.
+    /// </summary>
+    public static bool KernalRom
+    {
+        get => !s_kernalRomOff;
+        set
+        {
+            c64_kernal_rom(value ? 1 : 0);
+            s_kernalRomOff = !value;
+        }
+    }
+
+    static bool s_kernalRomOff;
+
+    /// <summary>
+    /// The RAM under the KERNAL ROM, $E000-$FF80: 8,065 bytes beyond the 50 KB a program
+    /// has, for data. Read it with KernalRom false: with the ROM in, reading gives the
+    /// ROM's bytes, though writing still reaches the RAM. (The KERNAL's jump table and
+    /// vectors above it are the program's while the ROM is out.)
+    /// </summary>
+    public static Span<byte> RamUnderKernal
+    {
+        get
+        {
+            unsafe
+            {
+                // SAFETY: $E000-$FF80 is RAM on every C64, used by nothing else.
+                return new Span<byte>((void*)0xE000, 0xFF81 - 0xE000);
+            }
+        }
+    }
 
     /// <summary>The joystick in port 2: Up, Down, Left, Right and Fire, added up; 0 when it is at rest.</summary>
     public static int Joystick => ~c64_peek(JoystickPort2) & 31;

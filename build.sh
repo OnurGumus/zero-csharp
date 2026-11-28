@@ -86,6 +86,7 @@ SMALL_SAMPLES=(
     SmallScratch
     SmallCatches
     SmallScratchBuffer
+    SmallDot
 )
 ALL_SAMPLES=(
     Tiny
@@ -211,6 +212,7 @@ C64_SAMPLES=(
     C64Demo
     Paddles
     C64Reu
+    C64RomOut
 )
 # A microcontroller has no SIMD to benchmark, and Vga is a PC game. Blink is
 # for microcontrollers only (lib/Board.cs: the LED, registers, a timer). The Uno R4
@@ -697,7 +699,7 @@ build_c64_bitcode() {
     check_bflat
     check_dos_ilc
     build_core "$CORE"
-    build_core "$C64_CORE" -d WASM
+    build_core "$C64_CORE" -d WASM -d C64
     build_lib
     for name in "$@"; do
         echo "[c64]   $name -> bitcode"
@@ -1156,7 +1158,7 @@ build_sdk_payload() {
     # The C64: zerocore's build for bitcode targets (single-threaded, 32-bit:
     # the WebAssembly one), which NativeAOT-LLVM compiles against, and the
     # native half llvm-mos links in.
-    build_core "$dir/native/c64/System.Private.CoreLib.dll" -d WASM
+    build_core "$dir/native/c64/System.Private.CoreLib.dll" -d WASM -d C64
     cp c64/runtime.c "$dir/native/c64/"
     # The microcontrollers (pico2, r4): the same zerocore, and arm/'s runtime,
     # boot block and board layouts, which zero-bitcode arm-link compiles.

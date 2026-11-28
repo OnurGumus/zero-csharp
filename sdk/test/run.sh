@@ -407,6 +407,10 @@ test_c64_target() {
     # A second build has nothing to do.
     if ! run_in "$dir" c64-again build -p:ZeroTarget=c64 -v:n; then fail "$name" "the second build failed"; return; fi
     if grep -q "c64-bitcode" "$LOG"; then fail "$name" "the second build compiled again"; return; fi
+    # The project's options for the C64's stacks and multiplication reach
+    # the link, and changing them links again.
+    if ! run_in "$dir" c64-options build -p:ZeroTarget=c64 -p:ZeroC64FastMultiply=true -p:ZeroC64ShadowStack=512 -p:ZeroC64StackReserve=768 -v:n; then fail "$name" "the build with C64 options failed"; return; fi
+    if ! grep -q -- "--shadow-stack 512 --stack-reserve 768 --fast-multiply" "$LOG"; then fail "$name" "the C64 options didn't reach the link"; return; fi
     pass "$name"
 }
 

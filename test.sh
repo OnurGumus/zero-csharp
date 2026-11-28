@@ -64,6 +64,7 @@ SMALL_SAMPLES=(
     SmallScratch
     SmallCatches
     SmallScratchBuffer
+    SmallDot
 )
 SAMPLES=(
     Tiny
@@ -197,6 +198,7 @@ C64_SAMPLES=(
     C64Demo
     Paddles
     C64Reu
+    C64RomOut
 )
 # Microcontrollers: no SIMD to benchmark, no PC screen for Vga. Blink is
 # theirs only, and checks itself. The Uno R4
@@ -643,6 +645,7 @@ test_dos() {
 test_c64() {
     tests/c64-math/run.sh
     ./build.sh --c64 > /dev/null
+    tests/c64-exit/run.sh
     # With a 512 KB REU, for C64Reu; the other samples don't use it.
     C64_VICE_OPTIONS="-reu -reusize 512" run_all "Commodore 64 (VICE)" c64 check
 }

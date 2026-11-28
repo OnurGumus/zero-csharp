@@ -36,15 +36,66 @@ i32 __managed__Main(i32 argc, char **argv);
 // nothing with: $D7FF, among the repeats of the sound chip's registers, where
 // it falls on a register the chip doesn't have. VICE's "debug cartridge"
 // (-debugcart) watches that address and ends the emulator with the code;
-// c64/run.sh relies on it. The KERNAL's interrupt goes back on first, in
-// case the program switched it off (C64.KernalInterrupt): without it BASIC
-// would have no cursor and read no keys.
+// c64/run.sh relies on it. The KERNAL ROM and its interrupt go back on
+// first, in case the program switched them off (C64.KernalRom,
+// C64.KernalInterrupt): without them BASIC would have no cursor and read no
+// keys.
 static void leave(int code)
 {
+    // $36 at the processor port: the KERNAL ROM in, the RAM at $A000 kept.
+    *(volatile unsigned char *)1 = (*(volatile unsigned char *)1 & 0xF8) | 0x06;
     *(volatile unsigned char *)0xDC0D = 0x81;
     *(volatile unsigned char *)0xD7FF = (unsigned char)code;
     exit(code);
 }
+
+// BASIC's own bookkeeping, mended before llvm-mos's save-basic.o copies its
+// zero page (.init.005) to put it back at the end. LOAD sets BASIC's end of
+// program (VARTAB, $2D/$2E) to the end of the file; a program bigger than
+// BASIC's 38,911 bytes ends past BASIC's top of memory (MEMSIZ, $37/$38),
+// and BASIC, given that back, says ?OUT OF MEMORY ERROR to every line typed
+// after the program ends (or at once, to what it finds after SYS). Such a
+// program BASIC can't hold anyway, so here it gets what NEW leaves: an
+// empty program at the start of BASIC's memory (TXTTAB, $2B/$2C), and the
+// variables after it. A smaller program is left as it was, and RUN runs it
+// again.
+//
+// And the program ends through BASIC's warm start ($A002, what RUN/STOP and
+// RESTORE do), last of all the exit code (.fini.999, after save-basic.o has
+// put BASIC's zero page back and the processor port has the ROMs in again):
+// it empties the 6502's stack, closes the channels and prints READY. A
+// return into the SYS line that started the program would have BASIC go on
+// reading that line, which a program bigger than BASIC's memory may have
+// overwritten.
+__asm__(
+    "  .section .fini.999,\"ax\",@progbits\n"
+    "  jmp ($a002)\n"
+    "  .text\n");
+__asm__(
+    "  .section .init.004,\"ax\",@progbits\n"
+    "  lda $37\n"                     // MEMSIZ >= VARTAB: it fits
+    "  cmp $2d\n"
+    "  lda $38\n"
+    "  sbc $2e\n"
+    "  bcs 1f\n"
+    "  ldy #0\n"                      // an empty program: its link 0
+    "  tya\n"
+    "  sta ($2b),y\n"
+    "  iny\n"
+    "  sta ($2b),y\n"
+    "  clc\n"                         // VARTAB, ARYTAB, STREND after it
+    "  lda $2b\n"
+    "  adc #2\n"
+    "  sta $2d\n"
+    "  sta $2f\n"
+    "  sta $31\n"
+    "  lda $2c\n"
+    "  adc #0\n"
+    "  sta $2e\n"
+    "  sta $30\n"
+    "  sta $32\n"
+    "1:\n"
+    "  .text\n");
 
 int main(void)
 {
@@ -114,8 +165,15 @@ void *ZeroGetModuleHeader(void *shadowStack) { (void)shadowStack; return __Ready
 
 // Compiled C# keeps the locals that hold object references on a stack of its
 // own, the "shadow stack", which every method gets as a hidden first
-// argument. It isn't checked for overflow; deep recursion needs more.
-static char shadow_stack[2048];
+// argument. It isn't checked for overflow; deep recursion needs more. A
+// project sets its size with ZeroC64ShadowStack (zero-bitcode passes it as
+// ZERO_SHADOW_STACK): a program that keeps few objects in locals can give
+// memory back, one that recurses deeply can have more.
+#ifndef ZERO_SHADOW_STACK
+#define ZERO_SHADOW_STACK 2048
+#endif
+char zero_shadow_stack[ZERO_SHADOW_STACK];
+#define shadow_stack zero_shadow_stack
 
 void *RhpReversePInvokeAndPushSparseVirtualUnwindFrame(i32 frame, void *a, i32 b)
 {
@@ -1557,6 +1615,432 @@ u16 __udivmodhi4(u16 n, u16 d, u16 *rem) { *rem = __umodhi3(n, d); return __udiv
 i8 __divmodqi4(i8 n, i8 d, i8 *rem) { *rem = __modqi3(n, d); return __divqi3(n, d); }
 i16 __divmodhi4(i16 n, i16 d, i16 *rem) { *rem = __modhi3(n, d); return __divhi3(n, d); }
 
+#ifdef ZERO_FAST_MULTIPLY
+// The low 32 bits of a * b, with a table of quarter squares, for a project
+// that asks for it (ZeroC64FastMultiply): 1 KB of RAM for a multiplication
+// two to four times faster. f(m) = floor(m^2 / 4) for m = 0..510, low bytes
+// then high bytes, filled at the start; a product of two bytes is then
+// f(x + y) - f(|x - y|), exactly. A 32-bit product is the bytes' products,
+// each added at its place, those that would land above the low 32 bits left
+// out and zero bytes skipped. A negative factor (its top bit set) is
+// negated first and the product at the end, so -5 costs what 5 does: the
+// low 32 bits come out the same.
+unsigned char zero_mul_lo[512] __attribute__((aligned(256)));
+unsigned char zero_mul_hi[512] __attribute__((aligned(256)));
+unsigned char zero_mul_r[8]; // the product, with room for carries past it
+
+__attribute__((constructor)) static void zero_mul_init(void)
+{
+    for (unsigned m = 0; m < 511; m++) {
+        unsigned f = (m >> 1) * (m - (m >> 1)); // floor(m^2 / 4) < 65536
+        zero_mul_lo[m] = (unsigned char)f;
+        zero_mul_hi[m] = (unsigned char)(f >> 8);
+    }
+}
+
+// a in A, X, __rc2, __rc3 (copied to __rc8-__rc11) and b in __rc4-__rc7;
+// the product in A, X, __rc2, __rc3 (built in __rc12-__rc15). When one
+// factor has 16 bits and the other 24, the usual case, its six products of
+// bytes are written out one after the other (about 50 cycles each, none for
+// a zero byte); f(x + y) is read through a pointer whose low byte is x,
+// with Y = y, so that the 6502 adds them. Wider numbers go through a loop
+// over the bytes. (The source of the unrolled part is generated: each
+// product is the same eighteen instructions.)
+__asm__(
+    "  .section .text.__mulsi3,\"ax\",@progbits\n"
+    "  .globl __mulsi3\n"
+    "__mulsi3:\n"
+    "  sta __rc8\n"
+    "  stx __rc9\n"
+    "  lda __rc2\n"
+    "  sta __rc10\n"
+    "  lda __rc3\n"
+    "  sta __rc11\n"
+    "  eor __rc7\n"  // the product's sign, kept on the stack
+    "  pha\n"
+    "  bit __rc11\n"  // |a|
+    "  bpl .Lfm1\n"
+    "  ldx #0\n"
+    "  ldy #4\n"
+    "  sec\n"
+    ".Lfm2:\n"
+    "  lda #0\n"
+    "  sbc __rc8,x\n"
+    "  sta __rc8,x\n"
+    "  inx\n"
+    "  dey\n"
+    "  bne .Lfm2\n"
+    ".Lfm1:\n"
+    "  bit __rc7\n"  // |b|
+    "  bpl .Lfm3\n"
+    "  ldx #0\n"
+    "  ldy #4\n"
+    "  sec\n"
+    ".Lfm4:\n"
+    "  lda #0\n"
+    "  sbc __rc4,x\n"
+    "  sta __rc4,x\n"
+    "  inx\n"
+    "  dey\n"
+    "  bne .Lfm4\n"
+    ".Lfm3:\n"
+    "  lda #0\n"
+    "  sta __rc12\n"
+    "  sta __rc13\n"
+    "  sta __rc14\n"
+    "  sta __rc15\n"
+    "  lda #mos16hi(zero_mul_lo)\n"  // pointers into the table's two halves
+    "  sta __rc17\n"
+    "  lda #mos16hi(zero_mul_hi)\n"
+    "  sta __rc19\n"
+    "  lda __rc6\n"  // b in 16 bits and a in 24: unrolled
+    "  ora __rc7\n"
+    "  bne .Lfm6\n"
+    "  lda __rc11\n"
+    "  beq .Lfm5\n"
+    ".Lfm6:\n"  // or a in 16 and b in 24: the same, swapped
+    "  lda __rc10\n"
+    "  ora __rc11\n"
+    "  bne .Lfm_wide\n"
+    "  lda __rc7\n"
+    "  beq .Lfm9\n"
+    ".Lfm_wide:\n"
+    "  jmp .Lfmul_general\n"
+    ".Lfm9:\n"
+    "  ldx #3\n"
+    ".Lfm10:\n"
+    "  lda __rc4,x\n"
+    "  ldy __rc8,x\n"
+    "  sta __rc8,x\n"
+    "  sty __rc4,x\n"
+    "  dex\n"
+    "  bpl .Lfm10\n"
+    ".Lfm5:\n"
+    "  lda __rc8\n"  // a0 * b0, at byte 0
+    "  beq .Lfm11\n"
+    "  sta __rc16\n"
+    "  sta __rc18\n"
+    "  ldy __rc4\n"
+    "  beq .Lfm11\n"
+    "  lda (__rc16),y\n"
+    "  sta __rc2\n"
+    "  lda (__rc18),y\n"
+    "  sta __rc3\n"
+    "  lda __rc8\n"
+    "  sec\n"
+    "  sbc __rc4\n"
+    "  bcs .Lfm12\n"
+    "  eor #$ff\n"
+    "  adc #1\n"
+    ".Lfm12:\n"
+    "  tax\n"
+    "  sec\n"
+    "  lda __rc2\n"
+    "  sbc zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda __rc3\n"
+    "  sbc zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  clc\n"
+    "  lda __rc2\n"
+    "  adc __rc12\n"
+    "  sta __rc12\n"
+    "  lda __rc13\n"
+    "  adc __rc3\n"
+    "  sta __rc13\n"
+    "  lda __rc14\n"
+    "  adc #0\n"
+    "  sta __rc14\n"
+    "  lda __rc15\n"
+    "  adc #0\n"
+    "  sta __rc15\n"
+    ".Lfm11:\n"
+    "  lda __rc8\n"  // a0 * b1, at byte 1
+    "  beq .Lfm13\n"
+    "  sta __rc16\n"
+    "  sta __rc18\n"
+    "  ldy __rc5\n"
+    "  beq .Lfm13\n"
+    "  lda (__rc16),y\n"
+    "  sta __rc2\n"
+    "  lda (__rc18),y\n"
+    "  sta __rc3\n"
+    "  lda __rc8\n"
+    "  sec\n"
+    "  sbc __rc5\n"
+    "  bcs .Lfm14\n"
+    "  eor #$ff\n"
+    "  adc #1\n"
+    ".Lfm14:\n"
+    "  tax\n"
+    "  sec\n"
+    "  lda __rc2\n"
+    "  sbc zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda __rc3\n"
+    "  sbc zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  clc\n"
+    "  lda __rc2\n"
+    "  adc __rc13\n"
+    "  sta __rc13\n"
+    "  lda __rc14\n"
+    "  adc __rc3\n"
+    "  sta __rc14\n"
+    "  lda __rc15\n"
+    "  adc #0\n"
+    "  sta __rc15\n"
+    ".Lfm13:\n"
+    "  lda __rc9\n"  // a1 * b0, at byte 1
+    "  beq .Lfm15\n"
+    "  sta __rc16\n"
+    "  sta __rc18\n"
+    "  ldy __rc4\n"
+    "  beq .Lfm15\n"
+    "  lda (__rc16),y\n"
+    "  sta __rc2\n"
+    "  lda (__rc18),y\n"
+    "  sta __rc3\n"
+    "  lda __rc9\n"
+    "  sec\n"
+    "  sbc __rc4\n"
+    "  bcs .Lfm16\n"
+    "  eor #$ff\n"
+    "  adc #1\n"
+    ".Lfm16:\n"
+    "  tax\n"
+    "  sec\n"
+    "  lda __rc2\n"
+    "  sbc zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda __rc3\n"
+    "  sbc zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  clc\n"
+    "  lda __rc2\n"
+    "  adc __rc13\n"
+    "  sta __rc13\n"
+    "  lda __rc14\n"
+    "  adc __rc3\n"
+    "  sta __rc14\n"
+    "  lda __rc15\n"
+    "  adc #0\n"
+    "  sta __rc15\n"
+    ".Lfm15:\n"
+    "  lda __rc9\n"  // a1 * b1, at byte 2
+    "  beq .Lfm17\n"
+    "  sta __rc16\n"
+    "  sta __rc18\n"
+    "  ldy __rc5\n"
+    "  beq .Lfm17\n"
+    "  lda (__rc16),y\n"
+    "  sta __rc2\n"
+    "  lda (__rc18),y\n"
+    "  sta __rc3\n"
+    "  lda __rc9\n"
+    "  sec\n"
+    "  sbc __rc5\n"
+    "  bcs .Lfm18\n"
+    "  eor #$ff\n"
+    "  adc #1\n"
+    ".Lfm18:\n"
+    "  tax\n"
+    "  sec\n"
+    "  lda __rc2\n"
+    "  sbc zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda __rc3\n"
+    "  sbc zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  clc\n"
+    "  lda __rc2\n"
+    "  adc __rc14\n"
+    "  sta __rc14\n"
+    "  lda __rc15\n"
+    "  adc __rc3\n"
+    "  sta __rc15\n"
+    ".Lfm17:\n"
+    "  lda __rc10\n"  // a2 * b0, at byte 2
+    "  beq .Lfm19\n"
+    "  sta __rc16\n"
+    "  sta __rc18\n"
+    "  ldy __rc4\n"
+    "  beq .Lfm19\n"
+    "  lda (__rc16),y\n"
+    "  sta __rc2\n"
+    "  lda (__rc18),y\n"
+    "  sta __rc3\n"
+    "  lda __rc10\n"
+    "  sec\n"
+    "  sbc __rc4\n"
+    "  bcs .Lfm20\n"
+    "  eor #$ff\n"
+    "  adc #1\n"
+    ".Lfm20:\n"
+    "  tax\n"
+    "  sec\n"
+    "  lda __rc2\n"
+    "  sbc zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda __rc3\n"
+    "  sbc zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  clc\n"
+    "  lda __rc2\n"
+    "  adc __rc14\n"
+    "  sta __rc14\n"
+    "  lda __rc15\n"
+    "  adc __rc3\n"
+    "  sta __rc15\n"
+    ".Lfm19:\n"
+    "  lda __rc10\n"  // a2 * b1, at byte 3
+    "  beq .Lfm21\n"
+    "  sta __rc16\n"
+    "  sta __rc18\n"
+    "  ldy __rc5\n"
+    "  beq .Lfm21\n"
+    "  lda (__rc16),y\n"
+    "  sta __rc2\n"
+    "  lda (__rc18),y\n"
+    "  sta __rc3\n"
+    "  lda __rc10\n"
+    "  sec\n"
+    "  sbc __rc5\n"
+    "  bcs .Lfm22\n"
+    "  eor #$ff\n"
+    "  adc #1\n"
+    ".Lfm22:\n"
+    "  tax\n"
+    "  sec\n"
+    "  lda __rc2\n"
+    "  sbc zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda __rc3\n"
+    "  sbc zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  clc\n"
+    "  lda __rc2\n"
+    "  adc __rc15\n"
+    "  sta __rc15\n"
+    ".Lfm21:\n"
+    "  jmp .Lfmul_sign\n"
+    // Wider: every pair of bytes whose product lands in the low 32 bits.
+    // __rc18/19 the factors, __rc17 j, Y i; the product in zero_mul_r.
+    ".Lfmul_general:\n"
+    "  lda #0\n"
+    "  ldx #7\n"
+    "2:\n"
+    "  sta zero_mul_r,x\n"
+    "  dex\n"
+    "  bpl 2b\n"
+    "  ldy #0\n"
+    ".Lfmul_i:\n"
+    "  lda __rc8,y\n"
+    "  bne 6f\n"
+    "  jmp .Lfmul_next_i\n"
+    "6:\n"
+    "  sta __rc18\n"
+    "  lda #0\n"
+    "  sta __rc17\n"
+    ".Lfmul_j:\n"
+    "  ldx __rc17\n"
+    "  lda __rc4,x\n"
+    "  bne 6f\n"
+    "  jmp .Lfmul_next_j\n"
+    "6:\n"
+    "  sta __rc19\n"
+    "  clc\n"
+    "  lda __rc18\n"
+    "  adc __rc19\n"
+    "  tax\n"
+    "  bcs 3f\n"
+    "  lda zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  jmp 4f\n"
+    "3:\n"
+    "  lda zero_mul_lo+256,x\n"
+    "  sta __rc2\n"
+    "  lda zero_mul_hi+256,x\n"
+    "  sta __rc3\n"
+    "4:\n"
+    "  lda __rc18\n"
+    "  sec\n"
+    "  sbc __rc19\n"
+    "  bcs 5f\n"
+    "  eor #$ff\n"
+    "  adc #1\n"
+    "5:\n"
+    "  tax\n"
+    "  sec\n"
+    "  lda __rc2\n"
+    "  sbc zero_mul_lo,x\n"
+    "  sta __rc2\n"
+    "  lda __rc3\n"
+    "  sbc zero_mul_hi,x\n"
+    "  sta __rc3\n"
+    "  tya\n"
+    "  clc\n"
+    "  adc __rc17\n"
+    "  tax\n"
+    "  clc\n"
+    "  lda __rc2\n"
+    "  adc zero_mul_r,x\n"
+    "  sta zero_mul_r,x\n"
+    "  lda __rc3\n"
+    "  adc zero_mul_r+1,x\n"
+    "  sta zero_mul_r+1,x\n"
+    "  lda zero_mul_r+2,x\n"
+    "  adc #0\n"
+    "  sta zero_mul_r+2,x\n"
+    "  lda zero_mul_r+3,x\n"
+    "  adc #0\n"
+    "  sta zero_mul_r+3,x\n"
+    ".Lfmul_next_j:\n"
+    "  inc __rc17\n"
+    "  tya\n"
+    "  clc\n"
+    "  adc __rc17\n"
+    "  cmp #4\n"
+    "  bcs 7f\n"
+    "  jmp .Lfmul_j\n"
+    "7:\n"
+    ".Lfmul_next_i:\n"
+    "  iny\n"
+    "  cpy #4\n"
+    "  bcs 7f\n"
+    "  jmp .Lfmul_i\n"
+    "7:\n"
+    "  ldx #3\n"
+    "8:\n"
+    "  lda zero_mul_r,x\n"
+    "  sta __rc12,x\n"
+    "  dex\n"
+    "  bpl 8b\n"
+    ".Lfmul_sign:\n"                  // the sign back
+    "  pla\n"
+    "  bpl 1f\n"
+    "  ldx #0\n"
+    "  ldy #4\n"
+    "  sec\n"
+    "2:\n"
+    "  lda #0\n"
+    "  sbc __rc12,x\n"
+    "  sta __rc12,x\n"
+    "  inx\n"
+    "  dey\n"
+    "  bne 2b\n"
+    "1:\n"
+    "  lda __rc14\n"
+    "  sta __rc2\n"
+    "  lda __rc15\n"
+    "  sta __rc3\n"
+    "  lda __rc12\n"
+    "  ldx __rc13\n"
+    "  rts\n"
+    "  .text\n");
+#else
 // The low 32 bits of a * b (the same for signed and unsigned numbers), in
 // assembly: a in A, X, __rc2, __rc3 and b in __rc4-__rc7. The factor with
 // fewer bytes is the multiplier, taken from the bottom a byte at a time:
@@ -1676,6 +2160,7 @@ __asm__(
     "  ldx __rc13\n"
     "  rts\n"
     "  .text\n");
+#endif
 
 // The other widths in C, the library's way: add a, shifting left, for each
 // 1 bit of b, until b has none left.
@@ -1958,6 +2443,353 @@ i32 cs_c64_reu_size(void)
     for (unsigned char i = 9; i-- > 0;)
         reu_copy(0x90, probe[i], &saved[i], 1);
     return size;
+}
+
+// ---- an int8 dot product (Kernels.DotI8) -----------------------------------------------
+//
+// The 6502 has no multiply instruction (__mulsi3 above takes about 1,000
+// cycles for two 16-bit numbers), so each product comes from a table of
+// quarter squares, f(m) = floor(m^2 / 4):
+//   a * b = f(a + b) - f(b - a)
+// exactly, for whole numbers. With A = a + 128 and B = b + 128 (a sign flip
+// of the top bit, so -127..127 become 1..255), entry k of the table holds
+// f(|k - 256|), so that f(a + b) is entry A + B and f(b - a) entry 256 - A
+// + B. Those sums cost nothing: a pointer's low byte holds A (or 256 - A)
+// and the Y register B, and (pointer),Y adds them.
+//
+// The table is 1 KB of RAM, built at the first call: its low bytes in two
+// pages, then its high bytes in two more. It is only in programs that call
+// DotI8. The values must be -127..127 (a = -128 would need entry 0 - 128).
+unsigned char zero_dot_table[1024] __attribute__((aligned(256)));
+unsigned char zero_dot_ready;
+unsigned zero_dot_left;     // products still to go
+u32 zero_dot_sum;           // the sum of the chunks so far
+
+void zero_dot_init(void)
+{
+    for (unsigned k = 0; k < 512; k++) {
+        unsigned m = k < 256 ? 256 - k : k - 256;
+        unsigned f = (m >> 1) * (m - (m >> 1)); // floor(m^2 / 4), in 16 bits
+        zero_dot_table[k] = (unsigned char)f;
+        zero_dot_table[512 + k] = (unsigned char)(f >> 8);
+    }
+    zero_dot_ready = 1;
+}
+
+// cs_c64_dot_i8(a, b, n), all in assembly: llvm-mos's calling convention
+// brings a in __rc2/3, b in __rc4/5 and n in A, X, __rc6, __rc7, and takes
+// the result in A, X, __rc2, __rc3; __rc2-__rc19 are free to use. (In C,
+// the 32-bit bookkeeping around the loop took 900 cycles a call: a C64
+// program's C has no zero page for its variables.)
+//
+// The products go in chunks of up to 255. The loop reads a and b with
+// absolute,X addressing, their addresses written into the instructions at
+// each chunk. Each product is added as an unsigned number, plus 32768 (its
+// high byte's top bit flipped), into a 24-bit sum (255 * 65535 < 2^24), and
+// count * 32768 comes off at the chunk's end: no sign to extend for each
+// one. About 100 cycles a product, and 150 a call.
+//   __rc6/7 and __rc8/9: the low bytes' pointers for f(a + b) and f(b - a);
+//   __rc10/11 and __rc12/13 the high bytes'; __rc14 the chunk's count;
+//   __rc15 a product's low byte; __rc16-18 the chunk's sum.
+__asm__(
+    "  .section .text.cs_c64_dot_i8,\"ax\",@progbits\n"
+    "  .globl cs_c64_dot_i8\n"
+    "cs_c64_dot_i8:\n"
+    "  ldy __rc7\n"
+    "  bpl .Ldot_some\n"
+    "  jmp .Ldot_none\n"                 // n < 0: nothing
+    ".Ldot_some:\n"
+    "  sta zero_dot_left\n"              // n's low 16 bits: no memory holds more
+    "  stx zero_dot_left+1\n"
+    "  lda zero_dot_ready\n"
+    "  bne .Ldot_ready\n"
+    "  lda __rc2\n"                      // build the table, keeping a and b
+    "  pha\n"
+    "  lda __rc3\n"
+    "  pha\n"
+    "  lda __rc4\n"
+    "  pha\n"
+    "  lda __rc5\n"
+    "  pha\n"
+    "  jsr zero_dot_init\n"
+    "  pla\n"
+    "  sta __rc5\n"
+    "  pla\n"
+    "  sta __rc4\n"
+    "  pla\n"
+    "  sta __rc3\n"
+    "  pla\n"
+    "  sta __rc2\n"
+    ".Ldot_ready:\n"
+    "  lda #0\n"
+    "  sta zero_dot_sum\n"
+    "  sta zero_dot_sum+1\n"
+    "  sta zero_dot_sum+2\n"
+    "  sta zero_dot_sum+3\n"
+    "  lda #mos16hi(zero_dot_table)\n"   // the low bytes' pages
+    "  sta __rc7\n"
+    "  sta __rc9\n"
+    "  clc\n"
+    "  adc #2\n"                         // the high bytes'
+    "  sta __rc11\n"
+    "  sta __rc13\n"
+    ".Ldot_chunk:\n"
+    "  lda zero_dot_left+1\n"
+    "  bne .Ldot_full\n"
+    "  lda zero_dot_left\n"
+    "  bne .Ldot_count\n"
+    "  jmp .Ldot_done\n"
+    ".Ldot_full:\n"
+    "  lda #255\n"
+    ".Ldot_count:\n"
+    "  sta __rc14\n"
+    "  sec\n"
+    "  lda zero_dot_left\n"
+    "  sbc __rc14\n"
+    "  sta zero_dot_left\n"
+    "  lda zero_dot_left+1\n"
+    "  sbc #0\n"
+    "  sta zero_dot_left+1\n"
+    "  lda __rc2\n"                      // a and b into the loop's loads
+    "  sta .Ldot_a+1\n"
+    "  lda __rc3\n"
+    "  sta .Ldot_a+2\n"
+    "  lda __rc4\n"
+    "  sta .Ldot_b+1\n"
+    "  lda __rc5\n"
+    "  sta .Ldot_b+2\n"
+    "  lda #0\n"
+    "  sta __rc16\n"
+    "  sta __rc17\n"
+    "  sta __rc18\n"
+    "  tax\n"
+    ".Ldot_loop:\n"
+    ".Ldot_a:\n"
+    "  lda $ffff,x\n"                    // A = a + 128
+    "  eor #$80\n"
+    "  sta __rc6\n"
+    "  sta __rc10\n"
+    "  eor #$ff\n"                       // 256 - A: A is 1-255, so no carry
+    "  clc\n"
+    "  adc #1\n"
+    "  sta __rc8\n"
+    "  sta __rc12\n"
+    ".Ldot_b:\n"
+    "  lda $ffff,x\n"                    // Y = B = b + 128
+    "  eor #$80\n"
+    "  tay\n"
+    "  sec\n"                            // f(a + b) - f(b - a) = a * b, 16 bits
+    "  lda (__rc6),y\n"
+    "  sbc (__rc8),y\n"
+    "  sta __rc15\n"
+    "  lda (__rc10),y\n"
+    "  sbc (__rc12),y\n"
+    "  eor #$80\n"                       // + 32768: unsigned
+    "  tay\n"
+    "  clc\n"
+    "  lda __rc15\n"
+    "  adc __rc16\n"
+    "  sta __rc16\n"
+    "  tya\n"
+    "  adc __rc17\n"
+    "  sta __rc17\n"
+    "  bcc .Ldot_next\n"
+    "  inc __rc18\n"
+    ".Ldot_next:\n"
+    "  inx\n"
+    "  cpx __rc14\n"
+    "  bne .Ldot_loop\n"
+    "  lda __rc14\n"                     // - count * 32768: count / 2 off the top
+    "  lsr a\n"                          // byte, count's low bit off bit 7 of
+    "  sta __rc19\n"                     // the middle one
+    "  lda #0\n"
+    "  ror a\n"
+    "  sta __rc15\n"
+    "  sec\n"
+    "  lda __rc17\n"
+    "  sbc __rc15\n"
+    "  sta __rc17\n"
+    "  lda __rc18\n"
+    "  sbc __rc19\n"
+    "  sta __rc18\n"
+    "  asl a\n"                          // the chunk's sign, as a fourth byte
+    "  lda #0\n"
+    "  adc #$ff\n"
+    "  eor #$ff\n"
+    "  sta __rc19\n"
+    "  clc\n"                            // the sum += the chunk's
+    "  lda __rc16\n"
+    "  adc zero_dot_sum\n"
+    "  sta zero_dot_sum\n"
+    "  lda __rc17\n"
+    "  adc zero_dot_sum+1\n"
+    "  sta zero_dot_sum+1\n"
+    "  lda __rc18\n"
+    "  adc zero_dot_sum+2\n"
+    "  sta zero_dot_sum+2\n"
+    "  lda __rc19\n"
+    "  adc zero_dot_sum+3\n"
+    "  sta zero_dot_sum+3\n"
+    "  clc\n"                            // a and b move on by the count
+    "  lda __rc2\n"
+    "  adc __rc14\n"
+    "  sta __rc2\n"
+    "  bcc 1f\n"
+    "  inc __rc3\n"
+    "1:\n"
+    "  clc\n"
+    "  lda __rc4\n"
+    "  adc __rc14\n"
+    "  sta __rc4\n"
+    "  bcc 2f\n"
+    "  inc __rc5\n"
+    "2:\n"
+    "  jmp .Ldot_chunk\n"
+    ".Ldot_done:\n"
+    "  lda zero_dot_sum+2\n"
+    "  sta __rc2\n"
+    "  lda zero_dot_sum+3\n"
+    "  sta __rc3\n"
+    "  lda zero_dot_sum\n"
+    "  ldx zero_dot_sum+1\n"
+    "  rts\n"
+    ".Ldot_none:\n"
+    "  lda #0\n"
+    "  sta __rc2\n"
+    "  sta __rc3\n"
+    "  tax\n"
+    "  rts\n"
+    "  .text\n");
+
+// ---- the RAM under the KERNAL ROM (C64.KernalRom) ---------------------------------------
+//
+// The processor port at $01 says what the 6502 sees at $A000 and $E000. A
+// program runs with $36: RAM at $A000 (BASIC's ROM is out), the KERNAL ROM at
+// $E000. With $35 the RAM under the KERNAL is there instead, 8 KB, and the
+// KERNAL isn't: C64.KernalRom = false. Writes reach that RAM either way.
+//
+// Without the KERNAL, two things would break, and both are mended in the RAM
+// at the KERNAL's own addresses, which the 6502 reads exactly when the ROM is
+// out:
+//
+// - Its jump table, $FF81-$FFF3, 39 entries of 3 bytes that programs call
+//   (CHROUT at $FFD2 prints a character: putchar, Console, the runtime's
+//   output and input all end there). Each entry in RAM is JSR
+//   zero_kernal_gate: the gate switches the ROM in, calls the same entry in
+//   it with the caller's A, X, Y and flags, and switches it out again,
+//   keeping the routine's A, X, Y and flags. So any code that calls the
+//   KERNAL works, the C library's and a program's own C as well.
+// - The interrupt vectors, $FFFA-$FFFF. The IRQ (the KERNAL's 60 a second:
+//   the keyboard, the jiffy clock, the cursor) and the NMI (the RESTORE key,
+//   RS-232) go to handlers in the program's RAM, which switch the ROM in
+//   and enter the KERNAL's own, with a return made to come back to them;
+//   they switch it out again and return to the program.
+//
+// What is left for the program is $E000-$FF80, 8,065 bytes. The program's
+// end switches the ROM back in.
+#define PORT (*(volatile unsigned char *)1)
+
+unsigned char zero_gate_a, zero_gate_x, zero_gate_p; // the gate's registers in transit
+
+void zero_kernal_gate(void);
+void zero_irq_ram(void);
+void zero_nmi_ram(void);
+__asm__(
+    "  .section .text.zero_kernal_gate,\"ax\",@progbits\n"
+    "  .globl zero_kernal_gate\n"
+    "zero_kernal_gate:\n"
+    "  sta zero_gate_a\n"
+    "  stx zero_gate_x\n"
+    "  php\n"
+    "  pla\n"
+    "  sta zero_gate_p\n"              // the caller's flags (some entries take C)
+    "  pla\n"                          // where the JSR at $FFxx returns: $FFxx + 2
+    "  sec\n"
+    "  sbc #2\n"
+    "  sta .Lgate_call+1\n"            // the entry, in the ROM ($FF81 and up: no borrow)
+    "  pla\n"                          // its high byte, $FF
+    "  lda $01\n"
+    "  pha\n"                          // the program's port, for the way back
+    "  and #$f8\n"
+    "  ora #$06\n"                     // $36: the KERNAL in, the RAM at $A000 kept
+    "  sta $01\n"
+    "  lda zero_gate_p\n"
+    "  pha\n"
+    "  lda zero_gate_a\n"
+    "  ldx zero_gate_x\n"
+    "  plp\n"
+    ".Lgate_call:\n"
+    "  jsr $ff00\n"
+    "  php\n"
+    "  sta zero_gate_a\n"
+    "  pla\n"
+    "  sta zero_gate_p\n"              // the routine's flags (C: an error)
+    "  pla\n"
+    "  sta $01\n"
+    "  lda zero_gate_p\n"
+    "  pha\n"
+    "  lda zero_gate_a\n"
+    "  plp\n"
+    "  rts\n"                          // to whoever called $FFxx
+    // An interrupt: the KERNAL in, then its handler, which ends with RTI to
+    // a frame pushed here (flags $04: interrupts off, not a BRK).
+    "  .globl zero_irq_ram\n"
+    "zero_irq_ram:\n"
+    "  pha\n"
+    "  lda $01\n"
+    "  pha\n"
+    "  and #$f8\n"
+    "  ora #$06\n"
+    "  sta $01\n"
+    "  lda #mos16hi(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #mos16lo(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #$04\n"
+    "  pha\n"
+    "  jmp $ff48\n"                    // the KERNAL's IRQ entry
+    ".Lirq_back:\n"
+    "  pla\n"
+    "  sta $01\n"
+    "  pla\n"
+    "  rti\n"
+    "  .globl zero_nmi_ram\n"
+    "zero_nmi_ram:\n"
+    "  pha\n"
+    "  lda $01\n"
+    "  pha\n"
+    "  and #$f8\n"
+    "  ora #$06\n"
+    "  sta $01\n"
+    "  lda #mos16hi(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #mos16lo(.Lirq_back)\n"
+    "  pha\n"
+    "  lda #$04\n"
+    "  pha\n"
+    "  jmp $fe43\n"                    // the KERNAL's NMI entry
+    "  .text\n");
+
+void cs_c64_kernal_rom(i32 on)
+{
+    if (on) {
+        PORT = (PORT & 0xF8) | 0x06;
+        return;
+    }
+    if ((PORT & 0x07) == 0x05)
+        return;
+    volatile unsigned char *under = (volatile unsigned char *)0xFF81;
+    for (unsigned char i = 0; i < 39; i++, under += 3) {
+        under[0] = 0x20; // JSR
+        under[1] = (unsigned char)(unsigned)zero_kernal_gate;
+        under[2] = (unsigned char)((unsigned)zero_kernal_gate >> 8);
+    }
+    volatile unsigned char *vectors = (volatile unsigned char *)0xFFFA;
+    vectors[0] = (unsigned char)(unsigned)zero_nmi_ram;
+    vectors[1] = (unsigned char)((unsigned)zero_nmi_ram >> 8);
+    vectors[4] = (unsigned char)(unsigned)zero_irq_ram;
+    vectors[5] = (unsigned char)((unsigned)zero_irq_ram >> 8);
+    PORT = (PORT & 0xF8) | 0x05;
 }
 
 // ---- fibers (lib/Fibers.cs) ---------------------------------------------------------
