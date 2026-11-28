@@ -32,7 +32,9 @@ for source in "$root"/lib/{CryptoHashes,CryptoChaCha,CryptoX25519,CryptoAes,Encr
               s/^namespace System\.Security\.Authentication/namespace ZeroTest.Authentication/;
               s/^using System\.Security\.Cryptography\.X509Certificates;/using ZeroTest.X509Certificates;/;
               s/^using System\.Security\.Cryptography;/using ZeroTest;/;
-              s/^using System\.Security\.Authentication;/using ZeroTest.Authentication;/' \
+              s/^using System\.Security\.Authentication;/using ZeroTest.Authentication;/;
+              s/^\s*\[System\.Runtime\.InteropServices\.DllImport\("\*"\)\]$//;
+              s/static unsafe extern void\* ZeroRootCertificate\(([^)]*)\);/static unsafe void* ZeroRootCertificate($1) => null;/' \
         "$source" > "$work/$(basename "$source")"
 done
 cat > "$work/Shims.cs" <<'SHIM'

@@ -131,6 +131,16 @@ int get_nprocs(void) { return 1; }
 
 int getentropy(void *buffer, size_t length) { (void)buffer; (void)length; return -1; }
 
+// ZeroRootCertificate, for lib/CryptoX509Chain.cs: the system's trusted root
+// certificates one at a time. Only Windows keeps them where this can ask
+// (win/runtime.c); elsewhere there are none here, and X509Chain reads a PEM
+// bundle instead.
+const void *ZeroRootCertificate(const void *previous, const unsigned char **data, int *length)
+{
+    (void)previous; (void)data; (void)length;
+    return 0;
+}
+
 // Directories, for lib/Directory.cs: there are none to list here, so opendir
 // finds nothing. (X509Chain's search for the system's root certificates looks
 // for Android's directory of them and links these in.)
