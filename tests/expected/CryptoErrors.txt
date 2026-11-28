@@ -1,0 +1,3 @@
+PASS ChaCha20-Poly1305 refusals (7 checks)
+PASS EncryptedStream refusals (9 checks)
+PASS Arguments (10 checks)

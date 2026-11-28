@@ -33,6 +33,19 @@ public sealed class Clobbered
     public int Count;
 }
 
+// docs:lock
+// A plain counter and an array filled in turn, shared by every thread of
+// a Parallel.For: `lock` lets one thread at a time in.
+public sealed class Shared
+{
+    public readonly object Gate = new();
+    public readonly Lock Gate2 = new();
+    public int Count;
+    public int[] Items = new int[2000];
+    public int Added;
+}
+// docs:end
+
 public static class Program
 {
     static int s_failures;
@@ -172,6 +185,65 @@ public static class Program
         Configured.Value = 3;
         Check("then its own copy", Configured.Value == 3 && Configured.ConstructorRuns == 1);
         Section("[ThreadStatic]");
+
+        var shared = new Shared();
+        // docs:lock-loop
+        Parallel.For(0, 20000, shared, static (s, i) =>
+        {
+            lock (s.Gate)
+            {
+                s.Count++;
+                if (i % 10 == 0)
+                    s.Items[s.Added++] = i;
+            }
+        });
+        // docs:end
+        Check("lock: every increment counted", shared.Count == 20000);
+        long itemSum = 0;
+        foreach (int item in shared.Items)
+            itemSum += item;
+        Check("lock: every item added once", shared.Added == 2000 && itemSum == 10L * 1999 * 2000 / 2);
+        shared.Count = 0;
+        Parallel.For(0, 20000, shared, static (s, i) =>
+        {
+            lock (s.Gate2)
+                s.Count++;
+        });
+        Check("Lock: every increment counted", shared.Count == 20000);
+        bool nested;
+        lock (shared.Gate)
+        {
+            lock (shared.Gate)
+                nested = Monitor.IsEntered(shared.Gate);
+            nested &= Monitor.IsEntered(shared.Gate);
+        }
+        Check("taken twice, left twice", nested && !Monitor.IsEntered(shared.Gate));
+        Check("TryEnter when free", Monitor.TryEnter(shared.Gate, 0) && shared.Gate2.TryEnter());
+        Monitor.Exit(shared.Gate);
+        shared.Gate2.Exit();
+        Check("left", !Monitor.IsEntered(shared.Gate) && !shared.Gate2.IsHeldByCurrentThread);
+        // Another thread can't take what this one holds; this one can take
+        // it again (Parallel.For's calling thread runs iterations too).
+        var held = new Shared();
+        Monitor.Enter(held.Gate);
+        held.Gate2.Enter();
+        Parallel.For(0, 64, held, static (h, i) =>
+        {
+            bool mine = PerThread.Name == "main";
+            bool took = Monitor.TryEnter(h.Gate, 1);
+            if (took)
+                Monitor.Exit(h.Gate);
+            bool took2 = h.Gate2.TryEnter(1);
+            if (took2)
+                h.Gate2.Exit();
+            if (took != mine || took2 != mine)
+                Interlocked.Increment(ref h.Count);
+        });
+        Monitor.Exit(held.Gate);
+        held.Gate2.Exit();
+        Check("only the holding thread takes it", held.Count == 0);
+        Check("left again", !Monitor.IsEntered(held.Gate) && !held.Gate2.IsHeldByCurrentThread);
+        Section("lock");
 
         Console.WriteLine();
         if (s_failures == 0)

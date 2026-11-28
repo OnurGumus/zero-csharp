@@ -99,7 +99,9 @@ if [ "${1:-}" = --win ]; then
     shift
     # LANG: Wine converts arguments and file names between UTF-16 and the
     # container's bytes in its locale; without a UTF-8 one, "é" becomes "?".
-    exec docker run --rm -i --platform linux/amd64 -e LANG=C.UTF-8 -v "$PWD:/w" -w /w "$WIN_IMAGE" wine64 "bin/win/$name.exe" "$@"
+    # --init: as PID 1, wine64 would ignore the signal test.sh's time limit
+    # sends (docker passes it on), and a hung program would run on.
+    exec docker run --rm -i --init --platform linux/amd64 -e LANG=C.UTF-8 -v "$PWD:/w" -w /w "$WIN_IMAGE" wine64 "bin/win/$name.exe" "$@"
 fi
 
 wasm=0

@@ -64,6 +64,7 @@ SMALL_SAMPLES=(
     SmallScratch
     SmallCatches
     SmallScratchBuffer
+    SmallDot
 )
 SAMPLES=(
     Tiny
@@ -106,6 +107,9 @@ SAMPLES=(
     Llama
     Unicode
     Numerics
+    Crypto
+    CryptoErrors
+    CryptoRandom
     Formats
     Parsing
     Cultures
@@ -118,8 +122,8 @@ SAMPLES=(
 )
 
 # Samples WebAssembly can't run (as in build.sh): the fiber samples switch stacks,
-# and Catches and Cultures catch exceptions, which Catch.Run can't do there.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches Cultures "
+# and Catches, CryptoErrors and Cultures catch exceptions, which Catch.Run can't do there.
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures "
 # Samples UEFI can't run (as in build.sh): lib/ has directories only on Linux,
 # macOS, Windows and WebAssembly.
 NOT_UEFI=" Directories Network "
@@ -171,6 +175,8 @@ DOS_SAMPLES=(
     Llama
     Unicode
     Numerics
+    Crypto
+    CryptoErrors
     Formats
     Parsing
     Cultures
@@ -194,6 +200,8 @@ C64_SAMPLES=(
     "${SMALL_SAMPLES[@]}"
     C64Demo
     Paddles
+    C64Reu
+    C64RomOut
 )
 # Microcontrollers: no SIMD to benchmark, no PC screen for Vga. Blink is
 # theirs only, and checks itself. The Uno R4
@@ -235,6 +243,8 @@ ARM_SAMPLES=(
     Llama
     Unicode
     Numerics
+    Crypto
+    CryptoErrors
     Formats
     Parsing
     Cultures
@@ -274,6 +284,13 @@ R4_SAMPLES=(
 
 EXPECTED=tests/expected
 failures=0
+
+# Each program run gets this many seconds (ZERO_TEST_TIMEOUT; 0 for no
+# limit), so a hung one fails with its name instead of running until CI's
+# six-hour job limit. Generous, for the emulators (Bochs, VICE, QEMU).
+# perl's alarm, because macOS has no timeout(1); a stopped run exits with
+# 142 (SIGALRM).
+TEST_TIMEOUT=${ZERO_TEST_TIMEOUT:-900}
 
 # $1: a label for the report; $2: "native", "wasm", "dos", ...; $3: "check" or "update"
 run_all() {
@@ -323,6 +340,9 @@ run_all() {
         run+=(--r4)
         samples=("${R4_SAMPLES[@]}")
     fi
+    if [ "$TEST_TIMEOUT" != 0 ]; then
+        run=(perl -e 'alarm shift; exec @ARGV or die "$ARGV[0]: $!\n"' "$TEST_TIMEOUT" "${run[@]}")
+    fi
 
     echo
     echo "== $label"
@@ -338,7 +358,11 @@ run_all() {
         [ "$target" = win ] && out=${out//$'\r'/}
         expected=$EXPECTED/$name.txt
 
-        if [ "$status" != 0 ]; then
+        if [ "$status" = 142 ]; then
+            echo "FAIL $name: still running after ${TEST_TIMEOUT}s, stopped (ZERO_TEST_TIMEOUT)"
+            echo "$out" | tail -5 | sed 's/^/       /'
+            failures=$((failures + 1))
+        elif [ "$status" != 0 ]; then
             echo "FAIL $name: exit code $status"
             # The checks that failed, wherever in the output they are (the
             # test samples print "failed: <check>" and "FAIL <section>"),
@@ -435,6 +459,20 @@ run_all() {
         fi
     fi
 
+    # A fiber waiting for a lock its thread took outside the fibers can never
+    # get it: lib/Monitor.cs stops the program with a message instead.
+    if [[ " ${samples[*]} " == *" Fibers "* ]]; then
+        status=0
+        out=$("${run[@]}" Fibers deadlock < /dev/null 2>&1) || status=$?
+        if [ "$status" = 0 ] || [[ "$out" != *"took outside the fibers"* ]]; then
+            echo "FAIL Fibers deadlock: not stopped with the message (exit code $status)"
+            echo "$out" | tail -3 | sed 's/^/       /'
+            failures=$((failures + 1))
+        else
+            echo "ok   Fibers deadlock (stopped, as it must be)"
+        fi
+    fi
+
     # A throw in an interrupt handler must stop the program, also when the
     # code it interrupted is inside a Catch.Run (microcontrollers only: the
     # other targets have no handlers written in C#).
@@ -453,9 +491,13 @@ run_all() {
     # Awaiting a canceled task plainly, ThrowIfCancellationRequested on a
     # canceled token, ReceiveAsync on a closed channel, a timer's reused
     # ValueTask a second time, a throw in an async void method, and one in
-    # async Main after an await must end the program with a message.
+    # async Main after an await, and releasing a full semaphore must end the
+    # program with a message.
     if [[ " ${samples[*]} " == *" Tasks "* ]] && [ "$target" != c64 ]; then
-        for case in "canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main"; do
+        cases=("canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main" "full|would exceed the maximum")
+        # Only where there are threads to complete it from.
+        case $target in dos|uefi|pico2|r4|c64|wasm|page) ;; *) cases+=("crossthread|completed from another thread") ;; esac
+        for case in "${cases[@]}"; do
             arg=${case%%|*}
             message=${case#*|}
             status=0
@@ -608,7 +650,9 @@ test_dos() {
 test_c64() {
     tests/c64-math/run.sh
     ./build.sh --c64 > /dev/null
-    run_all "Commodore 64 (VICE)" c64 check
+    tests/c64-exit/run.sh
+    # With a 512 KB REU, for C64Reu; the other samples don't use it.
+    C64_VICE_OPTIONS="-reu -reusize 512" run_all "Commodore 64 (VICE)" c64 check
 }
 
 test_pico2() {

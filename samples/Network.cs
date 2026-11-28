@@ -9,6 +9,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -21,6 +22,14 @@ public sealed class Echo
     public int Clients;     // how many connections the server takes
     public int Served;
     public int Correct;     // clients whose echo came back right
+}
+
+public sealed class Secure
+{
+    public TcpListener Listener;
+    public int Port;
+    public int Received;
+    public bool Correct;
 }
 
 public sealed class Bulk
@@ -153,6 +162,29 @@ public static class Program
         int n;
         while ((n = stream.Read(buffer)) > 0)
             stream.Write(buffer.Slice(0, n));
+    }
+    // docs:end
+
+    // docs:encrypted-handshake
+    // Both ends send a fresh X25519 public key and agree on a secret; the
+    // stream then makes keys from it and random bytes each end adds.
+    // Nothing here proves who is at the other end: that's what TLS's
+    // certificates add.
+    static EncryptedStream Encrypt(NetworkStream stream, bool isInitiator)
+    {
+        Span<byte> mine = stackalloc byte[32], myPublic = stackalloc byte[32];
+        Span<byte> theirPublic = stackalloc byte[32], shared = stackalloc byte[32];
+        X25519.GeneratePrivateKey(mine);
+        X25519.GetPublicKey(mine, myPublic);
+        stream.Write(myPublic);
+        stream.ReadExactly(theirPublic);
+        if (!X25519.TryGetSharedSecret(mine, theirPublic, shared))
+            throw new IOException("the other end sent a bad key");
+        EncryptedStream secure =
+            EncryptedStream.FromSharedSecret(stream, shared, isInitiator);
+        CryptographicOperations.ZeroMemory(mine);
+        CryptographicOperations.ZeroMemory(shared);
+        return secure;
     }
     // docs:end
 
@@ -467,6 +499,46 @@ public static class Program
         Check("every byte back", bulk.Received == bulk.Size);
         Check("in order", bulk.Ordered);
         Section("Backpressure");
+
+        // An echo server again, through EncryptedStream: 20000 bytes go out
+        // in two records and come back in records the server writes.
+        var secure = new Secure { Listener = new TcpListener(IPAddress.Loopback, 0) };
+        secure.Listener.Start();
+        secure.Port = ((IPEndPoint)secure.Listener.LocalEndpoint).Port;
+        Fiber.Spawn(secure, static s =>
+        {
+            using TcpClient client = s.Listener.AcceptTcpClient();
+            using EncryptedStream stream = Encrypt(client.GetStream(), isInitiator: false);
+            Span<byte> buffer = stackalloc byte[512];
+            int n;
+            while ((n = stream.Read(buffer)) > 0)   // 0 once the client closes
+                stream.Write(buffer.Slice(0, n));
+        });                                         // Dispose: the server closes too
+        Fiber.Spawn(secure, static s =>
+        {
+            using var client = new TcpClient();
+            client.Connect(IPAddress.Loopback, s.Port);
+            using EncryptedStream stream = Encrypt(client.GetStream(), isInitiator: true);
+            byte[] message = new byte[20000];
+            for (int i = 0; i < message.Length; i++)
+                message[i] = (byte)(i % 253);
+            stream.Write(message);
+            stream.Shutdown();
+            Span<byte> chunk = stackalloc byte[512];
+            s.Correct = true;
+            int n;
+            while ((n = stream.Read(chunk)) > 0)
+            {
+                for (int i = 0; i < n; i++)
+                    if (chunk[i] != (byte)((s.Received + i) % 253))
+                        s.Correct = false;
+                s.Received += n;
+            }
+        });
+        Fiber.Run();
+        secure.Listener.Stop();
+        Check("encrypted echo", secure.Received == 20000 && secure.Correct);
+        Section("Encrypted");
 
         // A client that resets its connection, and a connection closed from
         // another fiber while its reader waits, end only their own streams:
