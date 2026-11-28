@@ -1,8 +1,8 @@
 // Test: the built-in cultures, against .NET's answers with ICU: numbers and
 // dates in German, French, Hindi and Japanese, Turkish casing (the "i"
 // problem), parsing with a culture, CurrentCulture, and the table itself.
-// Comparing stays ordinal for every culture. scripts/cultures-check compares
-// every culture in the table with .NET's.
+// Sorting.cs has how each sorts. scripts/cultures-check compares every
+// culture in the table with .NET's.
 // Exit code = number of failed checks.
 // Build: ./build.sh Locales
 
@@ -92,6 +92,7 @@ public static class Program
         Is("ToUpper() follows the current culture", "i".ToUpper(), "İ");
         Is("so does char.ToUpper", char.ToUpper('i').ToString(), "İ");
         Is("and number text", 1.5.ToString(), "1,5");
+        Check("and string.Compare", string.Compare("ılık", "ilaç") < 0);
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         // docs:end
         Is("back to invariant", "i".ToUpper() + 1.5.ToString(), "I1.5");

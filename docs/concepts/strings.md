@@ -520,8 +520,8 @@ Is("Turkish lower case", "ISPARTA".ToLower(turkish), "ısparta");
 Is("invariant upper case", "istanbul".ToUpperInvariant(), "ISTANBUL");
 ```
 
-Making a culture current makes it the default for `ToString()`, `Parse` and `ToUpper()`, on that
-thread:
+Making a culture current makes it the default for `ToString()`, `Parse`, `ToUpper()` and
+`string.Compare`, on that thread:
 
 <!-- sample: samples/Locales.cs current -->
 ```csharp
@@ -529,6 +529,7 @@ CultureInfo.CurrentCulture = turkish;
 Is("ToUpper() follows the current culture", "i".ToUpper(), "İ");
 Is("so does char.ToUpper", char.ToUpper('i').ToString(), "İ");
 Is("and number text", 1.5.ToString(), "1,5");
+Check("and string.Compare", string.Compare("ılık", "ilaç") < 0);
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 ```
 
@@ -545,14 +546,93 @@ CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
                                       table (.NET with ICU knows it)
   x.ToString(provider)                the provider's formats
   "i".ToUpper(turkish)                "İ"
-  string.Compare(a, b, culture)       by character code, for every culture
+  string.Compare(a, b, turkish)       Turkish order: ı before i
+  string.Compare(a, b, invariant)     by character code (.NET's invariant
+                                      mode)
 ```
 
-What zero mode doesn't have is collation: comparing and sorting are ordinal for every culture, as in
-.NET's invariant mode, so `string.Compare("a", "B", german)` puts `"B"` first. Only the Gregorian
-calendar exists, so cultures whose default calendar is another one (Saudi Arabia, Thailand, Iran)
-aren't in the table. `scripts/cultures-check/check-cultures.sh` compares every culture in the table
-with .NET's, and `scripts/gen-cultures` regenerates it.
+Only the Gregorian calendar exists, so cultures whose default calendar is another one (Saudi Arabia,
+Thailand, Iran) aren't in the table. `scripts/cultures-check/check-cultures.sh` compares every
+culture in the table with .NET's, and `scripts/gen-cultures` regenerates it.
+
+### Sorting in a language's order
+
+Sorting by character code puts every capital before every small letter (`"Zebra"` before
+`"apple"`), and every accented letter after `z`. Each language also has its own alphabet: Turkish
+has a dotless `ı` before `i`, Swedish puts `ö` after `z` where German sorts it with `o`, Czech puts
+`ch` after `h`, and Chinese sorts by pinyin. A list sorted by code looks wrong to all of them.
+
+A culture from the table compares in its own order: `string.Compare(a, b, culture)`, its
+`CompareInfo`, and, once you make it current, `string.Compare(a, b)`, `CompareTo`, `StartsWith` and
+`IndexOf`:
+
+<!-- sample: samples/Sorting.cs sorting -->
+```csharp
+string[] words = { "ılık", "ilaç", "çay", "cami", "ısı", "İzmir" };
+Is("Turkish", Sorted("tr-TR", words), "cami çay ılık ısı ilaç İzmir");
+Is("English", Sorted("en-US", words), "cami çay ilaç İzmir ılık ısı");
+Is("Swedish", Sorted("sv-SE", "öl", "zon", "ost"), "ost zon öl");
+Is("German", Sorted("de-DE", "öl", "zon", "ost"), "öl ost zon");
+Is("pinyin", Sorted("zh-CN", "中国", "北京", "上海"), "北京 上海 中国");
+```
+
+The order comes in levels, as in Unicode's collation algorithm, which .NET uses through ICU. Texts
+are compared by their letters first; only if those are the same do the accents decide, and only
+if those are the same too, the case:
+
+```text
+  French:  cote < Cote < coté < côte < Côte
+
+           letters    accents    case
+  cote     c o t e    . . . .    small
+  Cote     c o t e    . . . .    capital    same letters and accents:
+  coté     c o t e    . . . ´               the case decides
+  côte     c o t e    . ^ . .    small      an accent nearer the start
+  Côte     c o t e    . ^ . .    capital    weighs more: côte > coté
+
+  French (Canada) reads the accents from the end: coté > côte
+```
+
+The options leave levels out: `IgnoreNonSpace` the accents, `IgnoreCase` the case, and
+`IgnoreSymbols` the spaces, punctuation and symbols. Ignoring case follows the language too:
+
+<!-- sample: samples/Sorting.cs ignorecase -->
+```csharp
+var ignoreCase = CompareOptions.IgnoreCase;
+Check("Turkish İ is i, ignoring case",
+    string.Compare("İSTANBUL", "istanbul", turkish, ignoreCase) == 0);
+Check("but not in English",
+    string.Compare("İSTANBUL", "istanbul", american, ignoreCase) != 0);
+var loose = CompareOptions.IgnoreNonSpace | CompareOptions.IgnoreCase;
+Check("accents ignored",
+    french.CompareInfo.IndexOf("Un résumé", "RESUME", loose) == 3);
+```
+
+The order is .NET's with ICU, for every character Unicode assigns: each culture's own letters
+(contractions such as Czech `ch` and Danish `aa`), accents compared from the end in French
+(Canada), upper case first in Danish, ideographs by pinyin in Chinese, by strokes in Chinese
+(Taiwan and Hong Kong), in Japan's order in Japanese, and with the Hangul syllable of their reading
+in Korean. The tables come from `scripts/gen-cultures`, which reads them from .NET's own comparisons,
+and `scripts/collation-check/check-collation.sh` compares millions of random texts in every culture
+with .NET's: comparing, `IsPrefix`, `IsSuffix`, `IndexOf` and `LastIndexOf`.
+
+```text
+  what costs what
+  ------------------------------------  ----------------------------------
+  a program that never compares with    nothing: the tables aren't linked
+  a culture from the table
+  one that does                         about 740 KB of tables, read in
+                                        place; the ideograph orders are
+                                        unpacked (up to 0.5 MB) the first
+                                        time ideographs are compared
+```
+
+What differs from .NET: the invariant culture still compares by character code, as in .NET's
+invariant mode (with ICU, .NET sorts it in the root order), so programs that don't use cultures
+stay small. `NumericOrdering` and the kana and width options are ignored. Unassigned and private-use
+characters sort after all the others. And a few rare runs of combining marks in unusual orders, and
+a few Japanese compatibility characters under `IgnoreCase`, compare differently (the check finds
+about one text in 300,000).
 
 ### Formats of your own
 

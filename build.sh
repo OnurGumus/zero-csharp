@@ -141,6 +141,7 @@ ALL_SAMPLES=(
     Casing
     CustomFormats
     Locales
+    Sorting
     Keys
     Tensors
     TensorsAvx
@@ -203,6 +204,7 @@ DOS_SAMPLES=(
     Casing
     CustomFormats
     Locales
+    Sorting
     Keys
     Tensors
     TensorTypes

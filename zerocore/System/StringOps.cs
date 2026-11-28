@@ -4,11 +4,27 @@ namespace System
 {
     // What string's casing and StringComparison methods do, with .NET's
     // checks, results and messages; String.Comparison.cs forwards to these.
-    // The culture comparisons are the invariant culture's, which here is
-    // .NET's invariant mode: ordinal, and ignoring case compares upper cases.
+    // The invariant culture's comparisons are .NET's invariant mode: ordinal,
+    // and ignoring case compares upper cases. The current culture's are the
+    // invariant culture's too until a program sets CurrentCulture; then the
+    // culture's (its collation, for a named one).
     internal static class StringOps
     {
-        private static CompareInfo Culture => CompareInfo.Invariant;
+        // Set by CultureInfo when a program sets CurrentCulture: null until
+        // then, so a program that doesn't links no culture.
+        internal abstract class CultureComparisons
+        {
+            internal abstract CompareInfo Current { get; }
+        }
+
+        internal static CultureComparisons s_current;
+
+        private static CompareInfo Culture(StringComparison comparisonType)
+            => comparisonType <= StringComparison.CurrentCultureIgnoreCase && s_current != null ? s_current.Current : CompareInfo.Invariant;
+
+        // The current culture's, when set and the comparison is one of its.
+        private static CompareInfo CurrentCulture(StringComparison comparisonType)
+            => comparisonType <= StringComparison.CurrentCultureIgnoreCase && s_current != null ? s_current.Current : null;
 
         internal static void CheckComparison(StringComparison comparisonType)
         {
@@ -33,6 +49,8 @@ namespace System
             bool ignoreCase = IgnoreCase(comparisonType);
             if (ReferenceEquals(a, b))
                 return true;
+            if (CurrentCulture(comparisonType) is CompareInfo culture)
+                return a != null && b != null && culture.Compare(a, b, ignoreCase ? CompareOptions.IgnoreCase : CompareOptions.None) == 0;
             if (a == null || b == null || a.Length != b.Length)
                 return false;
             return ignoreCase ? TextCasing.EqualsIgnoreCase(Number.AsSpan(a), Number.AsSpan(b)) : TextCasing.CompareOrdinal(Number.AsSpan(a), Number.AsSpan(b)) == 0;
@@ -47,6 +65,8 @@ namespace System
                 return -1;
             if (b == null)
                 return 1;
+            if (CurrentCulture(comparisonType) is CompareInfo culture)
+                return culture.Compare(a, b, ignoreCase ? CompareOptions.IgnoreCase : CompareOptions.None);
             if (ignoreCase)
                 return TextCasing.CompareIgnoreCase(Number.AsSpan(a), Number.AsSpan(b));
             return comparisonType == StringComparison.Ordinal ? CompareOrdinal(a, b) : TextCasing.CompareOrdinal(Number.AsSpan(a), Number.AsSpan(b));
@@ -105,6 +125,8 @@ namespace System
             int lengthA = Math.Min(length, a.Length - indexA);
             int lengthB = Math.Min(length, b.Length - indexB);
             ReadOnlySpan<char> x = Number.AsSpan(a).Slice(indexA, lengthA), y = Number.AsSpan(b).Slice(indexB, lengthB);
+            if (CurrentCulture(comparisonType) is CompareInfo culture)
+                return culture.Compare(x, y, ignoreCase ? CompareOptions.IgnoreCase : CompareOptions.None);
             return ignoreCase ? TextCasing.CompareIgnoreCase(x, y) : TextCasing.CompareOrdinal(x, y);
         }
 
@@ -129,6 +151,8 @@ namespace System
             bool ignoreCase = IgnoreCase(comparisonType);
             if (ReferenceEquals(s, value) || value.Length == 0)
                 return true;
+            if (CurrentCulture(comparisonType) is CompareInfo culture)
+                return culture.IsPrefix(s, value, ignoreCase ? CompareOptions.IgnoreCase : CompareOptions.None);
             return TextCasing.StartsWith(Number.AsSpan(s), Number.AsSpan(value), ignoreCase);
         }
 
@@ -139,6 +163,8 @@ namespace System
             bool ignoreCase = IgnoreCase(comparisonType);
             if (ReferenceEquals(s, value) || value.Length == 0)
                 return true;
+            if (CurrentCulture(comparisonType) is CompareInfo culture)
+                return culture.IsSuffix(s, value, ignoreCase ? CompareOptions.IgnoreCase : CompareOptions.None);
             return TextCasing.EndsWith(Number.AsSpan(s), Number.AsSpan(value), ignoreCase);
         }
 
@@ -155,16 +181,21 @@ namespace System
         }
 
         internal static int IndexOf(string s, char value, StringComparison comparisonType)
-            => Culture.IndexOf(s, value, Options(comparisonType));
+            => Culture(comparisonType).IndexOf(s, value, Options(comparisonType));
 
         internal static int IndexOf(string s, string value, int startIndex, int count, StringComparison comparisonType)
-            => Culture.IndexOf(s, value, startIndex, count, Options(comparisonType));
+            => Culture(comparisonType).IndexOf(s, value, startIndex, count, Options(comparisonType));
 
         internal static int LastIndexOf(string s, string value, int startIndex, int count, StringComparison comparisonType)
-            => Culture.LastIndexOf(s, value, startIndex, count, Options(comparisonType));
+            => Culture(comparisonType).LastIndexOf(s, value, startIndex, count, Options(comparisonType));
 
         // Ordinal is string's own hash, as in .NET.
         internal static int GetHashCode(string s, StringComparison comparisonType)
-            => IgnoreCase(comparisonType) ? TextCasing.GetHashCode(Number.AsSpan(s), true) : s.GetHashCode();
+        {
+            bool ignoreCase = IgnoreCase(comparisonType);
+            if (CurrentCulture(comparisonType) is CompareInfo culture)
+                return culture.GetHashCode(s, ignoreCase ? CompareOptions.IgnoreCase : CompareOptions.None);
+            return ignoreCase ? TextCasing.GetHashCode(Number.AsSpan(s), true) : s.GetHashCode();
+        }
     }
 }
