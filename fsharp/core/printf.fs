@@ -214,15 +214,43 @@ namespace Microsoft.FSharp.Core
                     b.Append(kept.[j]) |> ignore
                 b.ToString()
 
+        /// The text of a value printf didn't make: its ToString, through
+        /// `text` (FSharp.Printf runs a program's ToString outside its scratch
+        /// scope, so what it keeps isn't freed).
+        type ValueText = obj -> string
+
+        /// A {x:format} hole: the value's ToString(format), with .NET's format
+        /// strings, for numbers (zerocore's numbers have it without
+        /// IFormattable); other values without IFormattable ignore it, as in
+        /// .NET. "" for null.
+        let formatted (text: ValueText) (format: string) (value: obj) =
+            match value with
+            | null -> ""
+            | :? int as v -> v.ToString(format)
+            | :? int64 as v -> v.ToString(format)
+            | :? float as v -> v.ToString(format)
+            | :? decimal as v -> v.ToString(format)
+            | :? uint32 as v -> v.ToString(format)
+            | :? uint64 as v -> v.ToString(format)
+            | :? int16 as v -> v.ToString(format)
+            | :? uint16 as v -> v.ToString(format)
+            | :? sbyte as v -> v.ToString(format)
+            | :? byte as v -> v.ToString(format)
+            | :? float32 as v -> v.ToString(format)
+            | :? nativeint as v -> v.ToString(format)
+            | :? unativeint as v -> v.ToString(format)
+            | :? IFormattable as v -> v.ToString(format, null)
+            | v -> text v
+
         /// %O and {x}: the value's ToString, "<null>" for null.
-        let display (value: obj) =
+        let display (text: ValueText) (value: obj) =
             match value with
             | null -> "<null>"
-            | v -> v.ToString()
+            | v -> text v
 
         /// %A, without reflection: strings and characters quoted, floats with
         /// a decimal point; other values as %O.
-        let structured (value: obj) =
+        let structured (text: ValueText) (value: obj) =
             match value with
             | null -> "<null>"
             | :? string as s -> "\"" + s + "\""
@@ -231,10 +259,10 @@ namespace Microsoft.FSharp.Core
             | :? float as f ->
                 let s = f.ToString()
                 if isSpecial f || indexOf s '.' >= 0 || indexOf s 'E' >= 0 || indexOf s 'e' >= 0 then s else s + ".0"
-            | v -> v.ToString()
+            | v -> text v
 
         /// The text for one specifier.
-        let formatOne (kind: char) (flags: string) (precision: int) (value: obj) =
+        let formatOne (text: ValueText) (kind: char) (flags: string) (precision: int) (value: obj) =
             let sign (negative: bool) =
                 if negative then "-" elif indexOf flags '+' >= 0 then "+" elif indexOf flags ' ' >= 0 then " " else ""
             match kind with
@@ -255,13 +283,13 @@ namespace Microsoft.FSharp.Core
                 struct ("", digits bits 2UL false)
             | 'M' ->
                 // The decimal's own digits, as .NET's "G" (precision ignored).
-                let text = display value
-                if text.Length > 0 && text.[0] = '-' then struct ("-", text.Substring(1))
-                else struct (sign false, text)
+                let digits = display text value
+                if digits.Length > 0 && digits.[0] = '-' then struct ("-", digits.Substring(1))
+                else struct (sign false, digits)
             | 'f' | 'F' when (match value with :? decimal -> true | _ -> false) ->
-                let text = display value
-                let negative = text.Length > 0 && text.[0] = '-'
-                let digits = if negative then text.Substring(1) else text
+                let shown = display text value
+                let negative = shown.Length > 0 && shown.[0] = '-'
+                let digits = if negative then shown.Substring(1) else shown
                 struct (sign negative, fixedDecimal digits (if precision < 0 then 6 else precision))
             | 'f' | 'F' | 'e' | 'E' | 'g' | 'G' ->
                 let v = toFloat value
@@ -279,7 +307,7 @@ namespace Microsoft.FSharp.Core
                 match value with
                 | null -> struct ("", "")
                 | :? string as s -> struct ("", if precision >= 0 && precision < s.Length then s.Substring(0, precision) else s)
-                | v -> struct ("", v.ToString())
+                | v -> struct ("", text v)
             | 'c' ->
                 match value with
                 | :? char as c -> struct ("", ofChar c)
@@ -288,8 +316,8 @@ namespace Microsoft.FSharp.Core
                 match value with
                 | :? bool as b -> struct ("", if b then "true" else "false")
                 | _ -> raise (ArgumentException("%b takes a bool"))
-            | 'O' -> struct ("", display value)
-            | 'A' -> struct ("", structured value)
+            | 'O' -> struct ("", display text value)
+            | 'A' -> struct ("", structured text value)
             | _ -> raise (NotSupportedException("%" + ofChar kind + " isn't supported in zero mode (no reflection)"))
 
         let private pad (b: System.Text.StringBuilder) (flags: string) (width: int) (struct (sign: string, body: string)) =
@@ -310,7 +338,7 @@ namespace Microsoft.FSharp.Core
 
         /// The format with its values: args in order (a curried printf's), and
         /// captures for the %P() holes of an interpolated string.
-        let render (format: string) (captures: obj array) (args: obj array) =
+        let render (text: ValueText) (format: string) (captures: obj array) (args: obj array) =
             let b = System.Text.StringBuilder()
             let mutable i = 0
             let mutable nextArg = 0
@@ -341,10 +369,13 @@ namespace Microsoft.FSharp.Core
                 else
                     let h = hole i
                     if h > 0 then
-                        // {x}: its ToString, "" for null.
+                        // {x}: its ToString, "" for null; {x:format}: with
+                        // the .NET format in the parentheses.
+                        let dotnet = format.Substring(i + 3, h - 4)
                         match takeCapture () with
                         | null -> ()
-                        | v -> b.Append(v.ToString()) |> ignore
+                        | v when dotnet.Length > 0 -> b.Append(formatted text dotnet v) |> ignore
+                        | v -> b.Append(text v) |> ignore
                         i <- i + h
                     else
                         i <- i + 1
@@ -372,33 +403,33 @@ namespace Microsoft.FSharp.Core
                                     i <- i + 1
                         let kind = format.Chars(i)
                         i <- i + 1
-                        // In an interpolated string the value follows as a hole.
-                        let h = hole i
-                        let value =
-                            if h > 0 then
-                                i <- i + h
-                                takeCapture ()
-                            else takeArg ()
-                        pad b flags width (formatOne kind flags precision value)
+                        if kind = 'P' && i < format.Length && format.Chars(i) = '(' then
+                            // {x,width} and {x:format} in an interpolated
+                            // string: %-5P() and %P(F2), the .NET format in
+                            // the parentheses.
+                            let start = i + 1
+                            while i < format.Length && format.Chars(i) <> ')' do i <- i + 1
+                            let dotnet = format.Substring(start, i - start)
+                            i <- i + 1
+                            let value = takeCapture ()
+                            let body =
+                                if dotnet.Length > 0 then formatted text dotnet value
+                                else match value with null -> "" | v -> text v
+                            pad b flags width (struct ("", body))
+                        else
+                            // In an interpolated string the value follows as a hole.
+                            let h = hole i
+                            let value =
+                                if h > 0 then
+                                    i <- i + h
+                                    takeCapture ()
+                                else takeArg ()
+                            pad b flags width (formatOne text kind flags precision value)
             b.ToString()
 
-        let private toArray (values: obj list) =
-            let n = List.length values
-            let result = (Array.zeroCreate n : obj array)
-            let mutable rest = values
-            let mutable k = n - 1
-            while k >= 0 do
-                match rest with
-                | v :: tail -> result.[k] <- v; rest <- tail
-                | [] -> ()
-                k <- k - 1
-            result
-
-        /// The values given so far (newest first), and what to do with the text.
-        [<Sealed>]
-        type State<'Result>(format: string, captures: obj array, finish: string -> 'Result, args: obj list) =
-            member _.Add(value: obj) = State<'Result>(format, captures, finish, value :: args)
-            member _.Finish() : 'Result = finish (render format captures (toArray args))
+        /// A value's ToString, where no scratch scope is open (interpolated
+        /// strings outside printf).
+        let plainText : ValueText = fun v -> v.ToString()
 
     open PrintfImpl
 
@@ -409,7 +440,7 @@ namespace Microsoft.FSharp.Core
         /// whose AutoOpen comes after this one.
         [<CompiledName("PrintFormatToStringThen")>]
         let sprintf (format: PrintfFormat<'T, unit, string, string>) : 'T =
-            (unbox (box (PrintfImpl.render format.Value format.Captures (Array.zeroCreate 0))) : 'T)
+            (unbox (box (PrintfImpl.render PrintfImpl.plainText format.Value format.Captures (Array.zeroCreate 0))) : 'T)
 
         [<CompiledName("CreateSet")>]
         let set (elements: seq<'T>) = Microsoft.FSharp.Collections.Set<'T>(elements)

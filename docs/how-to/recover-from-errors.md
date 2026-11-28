@@ -27,6 +27,18 @@ static Exception Copy(string from, string to) => Catch.Run(() =>
 });
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Catches.fs copy -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Copies a file. A failure is one to report and go on from.
+let copy (from: string) (``to``: string) =
+    Catch.result (fun () ->
+        use source = new FileStream(from, FileMode.Open, FileAccess.Read)
+        use target = new FileStream(``to``, FileMode.Create)
+        source.CopyTo(target))
+```
+
 The caller decides what to do with it. An exception it doesn't expect, it can throw again: that goes
 to the next `Catch.Run` out, or, with none, ends the program with the message as before.
 
@@ -37,6 +49,17 @@ if (error is IOException)
     failedCopies++;  // count it, report it, and go on
 else if (error != null)
     throw error;     // not an I/O failure: pass it on
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Catches.fs report -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+match copy "no-such-file" "copy.tmp" with
+| Ok () -> ()
+| Error (:? IOException) ->
+    failedCopies <- failedCopies + 1  // count it, report it, and go on
+| Error e -> raise e                  // not an I/O failure: pass it on
 ```
 
 `Catch.Run` calls nest. There's also a version for a function,
@@ -74,6 +97,28 @@ static bool ServeGuarded(TcpClient client)
     client.Dispose(); // runs either way: Catch.Run always returns
     return error == null;
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Catches.fs serve-catch -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Every fiber that should survive a throw needs a Catch of its own: a throw
+// while serving (here, for a message that starts with '!') ends this
+// connection, not the program.
+let serveGuarded (client: TcpClient) =
+    let served =
+        Catch.result (fun () ->
+            use stream = client.GetStream()
+            let buffer: byte[] = Array.zeroCreate 512
+            let mutable n = stream.Read(Span<byte>(buffer))
+            while n > 0 do
+                if buffer[0] = byte '!' then
+                    raise (IOException("a bad request"))
+                stream.Write(ReadOnlySpan<byte>(buffer, 0, n))
+                n <- stream.Read(Span<byte>(buffer)))
+    client.Dispose() // runs either way: Catch.result always returns
+    Result.isOk served
 ```
 
 For what the callback acquires deep inside, where the code around can't reach, `Catch.Run` does three
@@ -123,6 +168,24 @@ log.WriteByte((byte)'2'); // still open
 log.Dispose();
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Catches.fs keep -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A log opened at its first line, wherever that is written from: kept, it
+// stays open when the work around it fails. A ref cell, since a closure
+// can't change a let mutable from outside.
+let log = ref (null: FileStream)
+let kept: Result<unit, exn> =
+    Catch.result (fun () ->
+        log.Value <- new FileStream("catches.log", FileMode.Create)
+        Catch.Keep(log.Value) // stored above: closing it is ours now
+        log.Value.WriteByte(byte '1')
+        raise (IOException("the work failed")))
+log.Value.WriteByte(byte '2') // still open
+log.Value.Dispose()
+```
+
 Call it once the object is stored where the program will find it: a throw between opening and
 `Catch.Keep` still closes it, and one after `Catch.Keep` never does. It takes a `FileStream`, a
 `File` handle or a `Socket`; for a `TcpClient`, a `TcpListener` or a `UdpClient`, keep its socket
@@ -154,6 +217,30 @@ for (int attempt = 0; attempt < 3; attempt++)
         failures++; // look at the exception here, before the Reset
     unsafe { work.Reset(); } // SAFETY: nothing from the arena is kept
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Catches.fs arena -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The Reset comes after Catch.result, so it runs whether the work returned
+// or threw, and frees what either left in the arena.
+let work = Arena.Create()
+
+[<Safety "nothing from the arena is used after the Reset">]
+let attempt () =
+    let failure: Result<unit, exn> =
+        Catch.result (fun () ->
+            let numbers = work.AllocSpan<int>(1000)
+            numbers.Fill(1)
+            raise (IOException("the disk is full")))
+    let failed = Result.isError failure // look at it here, before the Reset
+    work.Reset()
+    failed
+
+let mutable attemptsFailed = 0
+for _ in 1 .. 3 do
+    if attempt () then attemptsFailed <- attemptsFailed + 1
 ```
 
 An arena created inside the callback and not destroyed is lost, and so is `NativeMemory` not freed:
@@ -198,6 +285,33 @@ static int Retry(Arena attempts, int limit)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Catches.fs retry -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let connect (host: string) : unit =
+    raise (IOException(String.Concat("no answer from ", host)))
+
+// Tries up to limit times. What a failed attempt makes, the exception and
+// its message included, goes to the arena, and the Reset after the attempt
+// frees it: nothing else ever would.
+[<Safety "nothing made in the scope is used after the Reset">]
+let retry (attempts: Arena) limit =
+    let mutable failed = 0
+    let mutable connected = false
+    while not connected && failed < limit do
+        let result =
+            Catch.result (fun () ->
+                use _ = attempts.AllocateObjectsHere()
+                connect "example.org")
+        match result with
+        | Ok () -> connected <- true
+        | Error _ ->
+            failed <- failed + 1 // the error is the arena's: use it here
+            attempts.Reset()
+    failed
+```
+
 The sample runs it a thousand times and checks that not a byte stays. Open the scope inside the
 callback, as here, not around `Catch.Run`: a lambda's delegate is made the first time it's used, and
 one first used while objects go to the arena would be freed with it (see
@@ -219,6 +333,28 @@ e = Catch.Run(ref counter, static (ref Counter c) =>
 });
 // counter.Calls is 1 and counter.Result 7: they stay as they were
 ```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Catches.fs state -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// What the code changed before it threw stays changed: here, a ref cell's
+// value, as C#'s state passed by ref.
+let calls = ref 0
+let changed: Result<unit, exn> =
+    Catch.result (fun () ->
+        calls.Value <- calls.Value + 1
+        raise (InvalidOperationException("after the changes")))
+// calls.Value is 1: it stays as it was
+```
+
+<div class="lang-text" data-lang="fsharp">
+
+F#'s lambdas can't take a byref, so there is no `ref` state: the F# version captures a ref cell. Each
+call then makes a closure, and the cell, never freed; in a loop that runs often, open an object scope
+around it, as the retry above does.
+
+</div>
 
 ## Each fiber and each thread has its own
 
@@ -245,6 +381,14 @@ async method, where an `await` can't sit in a `Catch.Run` callback, use `Catch.R
 ```csharp
 Exception error = await Catch.RunAsync(() => FailLate("late"));
 // error is the IOException the method threw after its await
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs run-async -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let! (error: exn) = Catch.RunAsync(fun () -> failLate "late")
+// error is the IOException the task threw after its wait
 ```
 
 An `OperationCanceledException` cancels the task rather than faulting it, and `Catch.RunAsync`

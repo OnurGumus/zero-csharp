@@ -13,13 +13,23 @@ nothing is ever freed. This guide reads answers the way `samples/Quiz.cs` does, 
 ## Give the line somewhere to go
 
 A buffer on the stack is enough for short answers. `stackalloc` is safe code under the updated memory
-safety rules; only dereferencing a pointer needs `unsafe`.
+safety rules; only dereferencing a pointer needs `unsafe`. In F#, make an array once and pass
+`Span<char>(buffer)`: a span can't be a module-level value, and F#'s `stackalloc` gives a pointer.
 
 <!-- sample: samples/QuizStep2.cs buffer -->
 ```csharp
 // Each answer is read into this; nothing is allocated per question.
 Span<char> buffer = stackalloc char[32];
 int right = 0, asked = 0;
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/QuizStep2.fs buffer -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Each answer is read into this, made once: nothing is allocated per
+// question. A span can't be a module-level value, so the array is.
+let buffer: char[] = Array.zeroCreate 32
 ```
 
 The buffer's size is the longest line you accept, in UTF-16 characters. Pick it for your input: the
@@ -40,6 +50,23 @@ if (length < 0)
     break;
 }
 asked++;
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/QuizStep2.fs ask -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The answer to one question, or None at the end of the input.
+let ask i a b =
+    // printf shows the prompt at once, before the program waits.
+    printf "Q%d: %d + %d = " i a b
+    let length = In.ReadLine(Span<char>(buffer))
+    if length < 0 then
+        printfn ""
+        printfn "(end of input)"
+        None
+    else
+        Some(min length buffer.Length)
 ```
 
 `Console.Write` shows the prompt at once, as in .NET. `Out.Write`, the faster one for output in bulk,
@@ -108,9 +135,50 @@ while (true)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/QuizStep3.fs loop -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+type Outcome =
+    | Right
+    | Wrong
+    | Skipped
+    | EndOfInput
+
+// Asks until the answer is a number, empty, or the input ends.
+let rec ask i a b =
+    printf "Q%d: %d + %d = " i a b
+    let length = In.ReadLine(Span<char>(buffer))
+    if length < 0 then
+        printfn ""
+        printfn "(end of input)"
+        EndOfInput
+    // A line longer than the buffer returns its full length; the buffer
+    // holds only its start, so ask again.
+    elif length > buffer.Length then
+        printf "that's %d characters; " length
+        printfn "answers are at most %d" buffer.Length
+        ask i a b
+    else
+        let answer = ReadOnlySpan<char>(buffer, 0, length).Trim()
+        let mutable value = 0L
+        if answer.Length = 0 then
+            printfn "skipped"
+            Skipped
+        elif not (Str.TryParse(answer, &value)) then
+            printfn "\"%s\" isn't a number" (answer.ToString())
+            ask i a b
+        elif value = int64 (a + b) then
+            printfn "right"
+            Right
+        else
+            printfn "no, it's %d" (a + b)
+            Wrong
+```
+
 - **Too long:** `In` has already read and dropped the rest of the line, so the next call starts on a
   fresh line. The return value is the full length, so you can say how long the line was.
-- **The line itself** is `buffer.Slice(0, length)`. Only slice after checking both `length < 0` and
+- **The line itself** is `buffer.Slice(0, length)` (`ReadOnlySpan<char>(buffer, 0, length)` in F#). Only slice after checking both `length < 0` and
   `length > buffer.Length`; the tutorial's step 2 takes `Math.Min(length, buffer.Length)` instead, which
   accepts the start of a long line.
 - **Whitespace:** `Trim()` on a span returns a span; nothing is copied.
@@ -121,7 +189,8 @@ while (true)
 and `Half`, with every overload: a `string` or a `ReadOnlySpan<char>` (so the slice goes straight in),
 a `NumberStyles`, and an `IFormatProvider` such as `CultureInfo.InvariantCulture`. The culture is
 always the invariant one, the only one there is (see [Cultures](../concepts/strings.html#cultures)):
-the decimal point is `.` and the group separator `,`.
+the decimal point is `.` and the group separator `,`. In F#,
+`Int32.TryParse("12a")` returns the result and the value as a pair, `(false, 0)`, as it does in .NET.
 
 <!-- sample: samples/Parsing.cs integers -->
 ```csharp
@@ -136,6 +205,27 @@ Check("TryParse", int.TryParse("12345", out int parsed) && parsed == 12345);
 Check("not a number", !int.TryParse("12a", out parsed) && parsed == 0);
 Check("too large", !int.TryParse("2147483648", out parsed));
 Check("null", !int.TryParse((string)null, out parsed));
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Parsing.fs integers -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let answer = Int32.Parse("42")
+check "Int32.Parse" (answer = 42)
+check "whitespace and a sign" (Int32.Parse(" -17 ") = -17)
+check "thousands" (Int32.Parse("1,234,567", NumberStyles.Number) = 1234567)
+check "hex" (Int32.Parse("ff", NumberStyles.HexNumber) = 255)
+check "hex is the bits" (SByte.Parse("FF", NumberStyles.HexNumber) = -1y)
+
+// TryParse's out value comes back with the result, as a pair.
+check "TryParse"
+    (match Int32.TryParse("12345") with
+     | true, parsed -> parsed = 12345
+     | false, _ -> false)
+check "not a number" (Int32.TryParse("12a") = (false, 0))
+check "too large" (not (fst (Int32.TryParse("2147483648"))))
+check "null" (not (fst (Int32.TryParse(null: string))))
 ```
 
 `double`, `float` and `Half` are correctly rounded from every digit given, as in .NET, so the text
@@ -154,6 +244,23 @@ Check("symbols", double.IsNaN(double.Parse("NaN"))
     && double.Parse("-Infinity") == double.NegativeInfinity);
 Check("TryParse", double.TryParse("2.5", out double half) && half == 2.5);
 Check("not a number", !double.TryParse("2.5.1", out half));
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Parsing.fs doubles -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let pi = Double.Parse("3.14159")
+check "Double.Parse" (pi = 3.14159)
+check "exponent" (Double.Parse("6.02e23") = 6.02e23)
+check "thousands by default" (Double.Parse("1,000.5") = 1000.5)
+check "too large is Infinity" (Double.Parse("1e400") = infinity)
+check "too small is 0" (Double.Parse("1e-400") = 0.0)
+check "symbols"
+    (Double.IsNaN(Double.Parse("NaN"))
+     && Double.Parse("-Infinity") = -infinity)
+check "TryParse" (Double.TryParse("2.5") = (true, 2.5))
+check "not a number" (not (fst (Double.TryParse("2.5.1"))))
 ```
 
 Text that isn't a number makes `Parse` throw `FormatException`, and a number too large for the type
@@ -223,6 +330,18 @@ while ((count = In.Read(chunk)) > 0)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Pipe.fs read -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let chunk: byte[] = Array.zeroCreate 7
+let mutable count = In.Read(Span<byte>(chunk))
+while count > 0 do
+    for i in 0 .. count - 1 do
+        take chunk[i]
+    count <- In.Read(Span<byte>(chunk))
+```
+
 `Out.WriteUtf8` writes bytes out the same way, without encoding them as `Console` does, so a program can sit in a pipe:
 `./run.sh Pipe < tests/input/Pipe.txt`. Nothing is decoded or translated, on any target: a `\r` or a
 NUL byte arrives as it was sent. The one exception is typing into a Windows console, which hands over
@@ -250,6 +369,21 @@ while (true)
         + $"alt {Has(key, ConsoleModifiers.Alt)} "
         + $"ctrl {Has(key, ConsoleModifiers.Control)}");
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Keys.fs readkey -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let rec readKeys () =
+    let key = Console.ReadKey(true)
+    if key.KeyChar <> 'q' then
+        printfn "key %3d char %4d shift %d alt %d ctrl %d"
+            (int key.Key) (int key.KeyChar)
+            (has key ConsoleModifiers.Shift) (has key ConsoleModifiers.Alt)
+            (has key ConsoleModifiers.Control)
+        readKeys ()
+readKeys ()
 ```
 
 It works on every target. In a terminal on Linux and macOS it puts the terminal in raw mode for the one

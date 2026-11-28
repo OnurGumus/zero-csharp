@@ -304,6 +304,10 @@ namespace Internal.Runtime.CompilerHelpers
         private static void ThrowDivideByZeroException() => Environment.FailFast("DivideByZeroException");
         private static void ThrowArrayTypeMismatchException() => Environment.FailFast("ArrayTypeMismatchException");
         private static void ThrowInvalidProgramException() => Environment.FailFast("InvalidProgramException");
+        // No ThrowInvalidProgramExceptionWithArgument, on purpose: for a method
+        // whose IL it can't compile, ILC would compile a call of it in its place,
+        // and the program would fail only when the method runs. Without it the
+        // build stops, and the SDK explains ILC's message (ZERO015).
         private static void ThrowPlatformNotSupportedException() => Environment.FailFast("PlatformNotSupportedException");
         private static void ThrowArgumentException() => Environment.FailFast("ArgumentException");
         private static void ThrowArgumentOutOfRangeException() => Environment.FailFast("ArgumentOutOfRangeException");

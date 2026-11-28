@@ -1,0 +1,4 @@
+item    |  qty|    price
+apple   |    3|     1.25
+melon   |   12|     0.50
+All checks passed.

@@ -61,6 +61,27 @@ namespace System
 
         public int Length => _length;
 
+        // A span of chars is its text, as in .NET (a new string, never freed);
+        // any other is "System.Span[n]" (.NET names T too: zero mode has no type names). F# calls
+        // this for span.ToString(), and without it boxed the span: invalid.
+        public override string ToString()
+        {
+            if (typeof(T) == typeof(char))
+                return string.FromChars(new ReadOnlySpan<char>(ref Unsafe.As<T, char>(ref _reference), _length));
+            return string.Concat("System.Span[", _length.ToString(), "]");
+        }
+
+        // As in .NET, a span has no value equality or hash: these throw. Here
+        // so that F#'s span.Equals(x) and span.GetHashCode() are calls, not a
+        // boxed span (invalid code the compiler can't compile).
+        [Obsolete("Equals() on Span will always throw an exception.")]
+        public override bool Equals(object obj) =>
+            throw new NotSupportedException("Equals() on Span isn't supported.");
+
+        [Obsolete("GetHashCode() on Span will always throw an exception.")]
+        public override int GetHashCode() =>
+            throw new NotSupportedException("GetHashCode() on Span isn't supported.");
+
         public bool IsEmpty => _length == 0;
 
         public static Span<T> Empty => default;
@@ -172,6 +193,27 @@ namespace System
         }
 
         public int Length => _length;
+
+        // A span of chars is its text, as in .NET (a new string, never freed);
+        // any other is "System.ReadOnlySpan[n]" (.NET names T too: zero mode has no type names). F# calls
+        // this for span.ToString(), and without it boxed the span: invalid.
+        public override string ToString()
+        {
+            if (typeof(T) == typeof(char))
+                return string.FromChars(new ReadOnlySpan<char>(ref Unsafe.As<T, char>(ref _reference), _length));
+            return string.Concat("System.ReadOnlySpan[", _length.ToString(), "]");
+        }
+
+        // As in .NET, a span has no value equality or hash: these throw. Here
+        // so that F#'s span.Equals(x) and span.GetHashCode() are calls, not a
+        // boxed span (invalid code the compiler can't compile).
+        [Obsolete("Equals() on ReadOnlySpan will always throw an exception.")]
+        public override bool Equals(object obj) =>
+            throw new NotSupportedException("Equals() on ReadOnlySpan isn't supported.");
+
+        [Obsolete("GetHashCode() on ReadOnlySpan will always throw an exception.")]
+        public override int GetHashCode() =>
+            throw new NotSupportedException("GetHashCode() on ReadOnlySpan isn't supported.");
 
         public bool IsEmpty => _length == 0;
 

@@ -74,6 +74,13 @@ public struct Big // returned through a hidden pointer, not in registers
     public int D;
 }
 
+// A delegate to this, closed over its string, is a static method with its
+// first argument bound (Delegate.InitializeClosedStaticThunk).
+public static class Extensions
+{
+    public static int LengthPlus(this string text, int n) => text.Length + n;
+}
+
 public static class Program
 {
     static int s_failures;
@@ -170,6 +177,12 @@ public static class Program
         Check("a call that changes the object", ((IShape)square).Area() == 100);
         Check("virtual property, overridden", ((Rect)square).Name == "square" && ((IShape)square).Name == "square");
         Check("interface back to class", ((Rect)(IShape)rect).W == 3);
+        object numbers = Opaque(new int[3]);
+        Check("an array is an Array", numbers is Array array && array.Length == 3
+            && !(Opaque(circle) is Array) && !(numbers is ValueType));
+        object words = Opaque(new string[] { "a", "b" });
+        Check("array covariance", words is object[] all && all.Length == 2
+            && words is IComparable[] && !(words is IShape[]) && !(numbers is object[]));
         End("interfaces and casts");
 
         Counter one = (Counter)Opaque(new ByOne());
@@ -224,6 +237,8 @@ public static class Program
         Check("captured local is shared", addOffset(5) == 25);
         Func<int> area = ((Circle)circle).Area;
         Check("delegate to an instance method", area() == 12);
+        Func<int, int> lengthPlus = ((string)Opaque("abc")).LengthPlus;
+        Check("delegate to an extension method", lengthPlus(1) == 4);
         End("delegates");
 
         Console.WriteLine();

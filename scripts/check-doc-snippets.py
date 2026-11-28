@@ -17,6 +17,8 @@ and a page quotes it by putting a marker on the line before a fence:
 The region `file` is the whole file without its region markers. Every `csharp` and `fsharp` fence
 needs a marker, except one opened as ```csharp no-sample (a signature or fragment no sample can hold).
 F# sources mark regions with the same `// docs:` comments.
+
+Usage:  scripts/check-doc-snippets.py [--update] [page.md ...]   (every page if none given)
 """
 import re
 import sys
@@ -80,16 +82,21 @@ def fences(lines):
         i = j + 1
 
 
-def pages():
+def pages(only=()):
+    """Every page, or only the given ones (paths, as docs/how-to/x.md)."""
+    if only:
+        yield from (Path(page).resolve() for page in only)
+        return
     for section in SECTIONS:
         yield from sorted((DOCS / section).glob('*.md'))
 
 
 def main():
     update = '--update' in sys.argv[1:]
+    only = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
     errors, updated, checked = [], 0, 0
     cache = {}
-    for page in pages():
+    for page in pages(only):
         lines = page.read_text(encoding='utf-8').split('\n')
         name = page.relative_to(ROOT)
         replacements = []

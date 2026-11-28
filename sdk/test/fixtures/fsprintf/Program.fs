@@ -13,6 +13,10 @@ printfn "%s" s
 printfn $"interpolated {n} and %d{n * 2} and {name}"
 // docs:end
 printfn "%s" $"{1.5} {true}"
+// .NET's alignment and format strings in the holes: %5P() and %P(F2) to fsc.
+printfn $"[{42,5}] [{3.14159:F2}] [{-7,-4}] [{255:X4}] [{1234567:N0}]"
+printfn "%s" $"{2.5m:F3}|{2.71828,8:F2}|{(Some 3),9}"
+printfn "%f %f %b %b %f" infinity -infinity (System.Double.IsNaN nan) (System.Single.IsNaN nanf) (float infinityf)
 printf "no newline "
 printfn ""
 let add = sprintf "%d+%d"

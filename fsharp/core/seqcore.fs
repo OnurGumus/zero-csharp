@@ -127,6 +127,21 @@ namespace Microsoft.FSharp.Core.CompilerServices
 
     module RuntimeHelpers =
 
+        /// What fsc calls for an event read as a value: its add and remove
+        /// methods, and how to make a handler of its delegate type from a
+        /// function.
+        [<CompiledName("CreateEvent")>]
+        let CreateEvent (addHandler: 'Delegate -> unit) (removeHandler: 'Delegate -> unit) (createHandler: (obj -> 'Args -> unit) -> 'Delegate) : Microsoft.FSharp.Control.IEvent<'Delegate, 'Args> =
+            { new Microsoft.FSharp.Control.IEvent<'Delegate, 'Args> with
+                member _.AddHandler handler = addHandler handler
+                member _.RemoveHandler handler = removeHandler handler
+              interface IObservable<'Args> with
+                member _.Subscribe(observer: IObserver<'Args>) =
+                    let handler = createHandler (fun _ args -> observer.OnNext args)
+                    addHandler handler
+                    { new IDisposable with
+                        member _.Dispose() = removeHandler handler } }
+
         let Generate openf compute closef =
             mkSeq (fun () -> new GeneratedEnumerable<_, _>(openf, compute, closef) :> IEnumerator<'T>)
 

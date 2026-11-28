@@ -6,7 +6,8 @@
 # which has all of them (libc, libm and pthreads are one library on macOS).
 #
 # What's here: every C function zerocore/ and lib/ import ([DllImport]s with
-# "*", "libc" and "libm.so.6"), what mac/*.c call, and C functions
+# "*", "libc" and "libm.so.6"), what mac/*.c call (and __tlv_bootstrap, for
+# runtime.c's __thread variable), and C functions
 # programs commonly import (stdio, stdlib, string, time, unistd, dlfcn, math).
 # A program that imports one that isn't listed fails to link with
 # "undefined symbol: _name". In this repository, add it below, with its
@@ -20,7 +21,7 @@ current-version: 1351
 exports:
   - targets:     [ arm64-macos, arm64-ios-simulator ]
     symbols:     [ ___error, ___stack_chk_fail, ___stack_chk_guard, ___stderrp,
-                   ___stdinp, ___stdoutp, _abort, _abs, _accept, _access, _acos,
+                   ___stdinp, ___stdoutp, __tlv_bootstrap, _abort, _abs, _accept, _access, _acos,
                    _acosf, _aligned_alloc, _arc4random, _arc4random_buf,
                    _arc4random_uniform, _asin, _asinf, _atan, _atan2, _atan2f,
                    _atanf, _atexit, _atof, _atoi, _atol, _atoll, _bind,
