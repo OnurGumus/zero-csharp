@@ -65,10 +65,19 @@ namespace System.Globalization
         // English cultures: .NET searches text of plain ASCII ordinally.
         private readonly bool _asciiOrdinal;
 
+        // What Load and HanRank make is kept by this collator, which a cached
+        // culture keeps for the rest of the program, and by statics: it is made
+        // outside any object scope (Runtime/ObjectAllocator.cs, Lasting).
         private void Load()
         {
             if (_loaded)
                 return;
+            using (System.Runtime.ObjectAllocator.Lasting())
+                LoadTables();
+        }
+
+        private void LoadTables()
+        {
             ReadOnlySpan<byte> cultures = CollationData.Cultures;
             int t = cultures[_culture * 2], h = cultures[_culture * 2 + 1];
             _backwards = (t & 0x80) != 0;
@@ -600,15 +609,23 @@ namespace System.Globalization
         {
             if (_hanOrder != 0 && !rootPosition)
             {
-                _ranks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder));
+                if (_ranks == null)
+                    using (System.Runtime.ObjectAllocator.Lasting())
+                        _ranks = new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder));
                 int r = _ranks.Rank(cp);
                 if (r >= 0)
                     return r;
             }
-            if (_hanOrder != 0)
-                _ranks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder));
+            if ((_hanOrder != 0 && _ranks == null) || _rootRanks == null)
+            {
+                using (System.Runtime.ObjectAllocator.Lasting())
+                {
+                    if (_hanOrder != 0)
+                        _ranks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder));
+                    _rootRanks ??= s_rootRanks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, 0));
+                }
+            }
             int skip = _hanOrder != 0 ? _ranks.Count : 0;
-            _rootRanks ??= s_rootRanks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, 0));
             int root = _rootRanks.Rank(cp);
             return skip + (root >= 0 ? root : _rootRanks.Count + cp);
         }

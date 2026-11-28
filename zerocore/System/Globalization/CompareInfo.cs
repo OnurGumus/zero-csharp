@@ -63,7 +63,16 @@ namespace System.Globalization
         private bool Linguistic(CompareOptions options)
             => _linguistic != null && (options & (CompareOptions.Ordinal | CompareOptions.OrdinalIgnoreCase)) == 0;
 
-        internal static CompareInfo Invariant => s_invariant ??= new CompareInfo();
+        internal static CompareInfo Invariant
+        {
+            get
+            {
+                if (s_invariant == null)
+                    using (System.Runtime.ObjectAllocator.Lasting())
+                        s_invariant = new CompareInfo();
+                return s_invariant;
+            }
+        }
 
         public static CompareInfo GetCompareInfo(string name) => CultureInfo.GetCultureInfo(name ?? throw new ArgumentNullException("name")).CompareInfo;
         public static CompareInfo GetCompareInfo(int culture) => CultureInfo.GetCultureInfo(culture).CompareInfo;

@@ -86,7 +86,12 @@ namespace System
 
         private static DateCulture s_culture;
 
-        internal static void UseCultures() => s_culture ??= new CultureDates();
+        internal static void UseCultures()
+        {
+            if (s_culture == null)
+                using (System.Runtime.ObjectAllocator.Lasting())
+                    s_culture = new CultureDates();
+        }
 
         // The names and patterns for a provider: null for the invariant ones.
         internal static DateTimeFormatInfo InfoFor(IFormatProvider provider) => s_culture == null ? null : s_culture.InfoFor(provider);

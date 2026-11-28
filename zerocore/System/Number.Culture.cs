@@ -21,7 +21,12 @@ namespace System
         private static void CultureEmit(ref Digits n, char format, int precision, int maxDigits, bool noScientific, ref Sink s)
             => s_culture.Emit(ref n, format, precision, maxDigits, noScientific, ref s);
 
-        internal static void UseCultures() => s_culture ??= new CultureNumbers();
+        internal static void UseCultures()
+        {
+            if (s_culture == null)
+                using (System.Runtime.ObjectAllocator.Lasting())
+                    s_culture = new CultureNumbers();
+        }
 
         // The symbols for a provider: null for the invariant culture's. Not
         // inlined, so each call site stays one call.

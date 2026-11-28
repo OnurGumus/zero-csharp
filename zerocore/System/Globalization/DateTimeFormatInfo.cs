@@ -75,7 +75,16 @@ namespace System.Globalization
             return names;
         }
 
-        public static DateTimeFormatInfo InvariantInfo => s_invariant ??= new DateTimeFormatInfo(true);
+        public static DateTimeFormatInfo InvariantInfo
+        {
+            get
+            {
+                if (s_invariant == null)
+                    using (System.Runtime.ObjectAllocator.Lasting())
+                        s_invariant = new DateTimeFormatInfo(true);
+                return s_invariant;
+            }
+        }
         public static DateTimeFormatInfo CurrentInfo => CultureInfo.CurrentCulture.DateTimeFormat;
 
         public static DateTimeFormatInfo GetInstance(IFormatProvider provider)
@@ -202,7 +211,17 @@ namespace System.Globalization
 
         public string FullDateTimePattern { get => FullPattern; set => _fullDateTimePattern = Text(value); }
 
-        internal string FullPattern => _fullDateTimePattern ??= _longDatePattern + " " + _longTimePattern;
+        // Kept by this object, which may be a cached culture's for good.
+        internal string FullPattern
+        {
+            get
+            {
+                if (_fullDateTimePattern == null)
+                    using (System.Runtime.ObjectAllocator.Lasting())
+                        _fullDateTimePattern = _longDatePattern + " " + _longTimePattern;
+                return _fullDateTimePattern;
+            }
+        }
 
         // A DateTimeOffset's text without a format: the short date and long
         // time, and " zzz" unless the time pattern shows the offset already.

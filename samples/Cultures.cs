@@ -50,8 +50,65 @@ public static class Program
         public object GetFormat(Type formatType) => null;
     }
 
+    // There is no garbage collector, and an object scope (lib/Arena.cs) frees
+    // what is made inside it. zerocore's culture caches (the invariant
+    // culture, GetCultureInfo's cultures, collation tables, time zones) are
+    // kept for the rest of the program, so they must not land in one, even when
+    // they are first made inside it. With Arena.DebugChecks on, a static left
+    // pointing into the scope would stop the program; the cultures are then used
+    // again after the scope, where freed memory would show as wrong answers.
+    static void Memory()
+    {
+        Arena.DebugChecks = true;
+        Arena scope = Arena.Create(64 * 1024, "culture scope");
+        Arena.DebugChecks = false;
+        long inside; // a hash: the text itself is made in the scope and freed with it
+        Arena.ObjectScope objects;
+        unsafe { objects = scope.OpenObjectScope(); } // SAFETY: nothing made inside is kept, but zerocore's caches
+        using (objects)
+            inside = Hash(CultureWork());
+        unsafe { scope.Destroy(); } // SAFETY: as above
+        string after = CultureWork();
+        Check("the same answers after the scope", inside == Hash(after));
+        Check("and the right ones", after.StartsWith("1.234,5|", StringComparison.Ordinal));
+        Section("culture caches made inside an object scope");
+    }
+
+    static long Hash(string text)
+    {
+        long h = unchecked((long)14695981039346656037);
+        foreach (char c in text)
+            h = unchecked((h ^ c) * 1099511628211);
+        return h;
+    }
+
+    // Touches every lazily made culture cache; returns what it found, as text.
+    static string CultureWork()
+    {
+        CultureInfo german = CultureInfo.GetCultureInfo("de-DE");
+        CultureInfo turkish = CultureInfo.GetCultureInfo("tr-TR");
+        CultureInfo japanese = CultureInfo.GetCultureInfo("ja-JP");
+        DateTime moment = new DateTime(2026, 11, 28, 14, 30, 0, DateTimeKind.Utc);
+        CultureInfo before = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = turkish;
+        string upper = "istanbul".ToUpper();
+        CultureInfo.CurrentCulture = before;
+        return string.Concat(
+            1234.5.ToString("N1", german), "|",
+            moment.ToString("F", german), "|",
+            moment.ToString("D", japanese), "|",
+            upper, "|",
+            japanese.CompareInfo.Compare("\u4e00", "\u4e8c").ToString(), "|",
+            CultureInfo.InvariantCulture.TextInfo.ToUpper("a"), "|",
+            NumberFormatInfo.InvariantInfo.NumberDecimalSeparator,
+            DateTimeFormatInfo.InvariantInfo.FullDateTimePattern, "|",
+            TimeZoneInfo.Utc.DisplayName, TimeZoneInfo.Utc.DaylightName, "|",
+            TimeZoneInfo.Local.StandardName.Length > 0 ? "named" : "unnamed");
+    }
+
     public static int Main()
     {
+        Memory(); // first: zerocore's caches are made for the first time in it
         // docs:invariant
         CultureInfo invariant = CultureInfo.InvariantCulture;
         Check("format", 1234.5.ToString("N1", invariant) == "1,234.5");

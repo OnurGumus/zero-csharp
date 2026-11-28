@@ -1,3 +1,4 @@
+PASS culture caches made inside an object scope (2 checks)
 PASS formatting and parsing (9 checks)
 PASS the invariant culture (10 checks)
 PASS making cultures (10 checks)
