@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../NetTypes.props" />
   <!-- lib/ for real .NET: the parts that aren't .NET types already.
        Files that only re-declare BCL types (System.Console, Task, Stream,
        Socket, SHA256, ...) are left out: real .NET's own serve. CS0436 is an
@@ -17,13 +18,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../lib/*.cs" />
-    <!-- Only .NET types: real .NET has them. -->
-    <Compile Remove="../../lib/Cancellation.cs;../../lib/Console.cs;../../lib/Monitor.cs;../../lib/Net.cs;../../lib/SemaphoreSlim.cs;../../lib/Sockets.cs;../../lib/SocketsAsync.cs;../../lib/Streams.cs;../../lib/ThreadTasks.cs;../../lib/TimeProvider.cs;../../lib/Timers.cs;../../lib/ValueTasks.cs;../../lib/Tasks.cs" />
+    <!-- Only .NET types, or built on lib/'s tasks: real .NET has them (../NetTypes.props). -->
+    <Compile Remove="@(ZeroLibOwnTypes->'../../lib/%(Identity).cs')" />
     <!-- lib/'s own cryptography and TLS: .NET's are used (X25519 stays, .NET has no type by that name). -->
     <Compile Remove="../../lib/Crypto*.cs;../../lib/SslStream.cs;../../lib/Tls*.cs" />
     <Compile Include="../../lib/CryptoX25519.cs" />
-    <!-- Built on lib/Tasks.cs's continuations. -->
-    <Compile Remove="../../lib/ChannelAsync.cs;../../lib/ThreadCompletion.cs;../../lib/FileAsync.cs" />
     <Compile Include="*.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -10,6 +10,10 @@
   Cryptography and TLS are .NET's own, which are the platform's (SslStream
   is .NET's, running over lib/'s sockets: the payload's TlsBridge.cs).
 
+  With ZeroDotnetTypes=Net the program gets .NET's own Task, streams and
+  sockets instead, to hand to other .NET code: lib/'s files that have those
+  names are left out, and the rest of lib/ is compiled in as before.
+
   What differs from zero mode is in the repository's dotnet/ folder
   (README.md, known-differences.txt): objects are the garbage collector's,
   not an arena's; a throw runs catch and finally blocks on its way to
@@ -25,15 +29,29 @@
   which shows most of it (dotnet/README.md).
 -->
 <Project>
+  <!-- The files of lib/ a program leaves out to use .NET's own types (ZeroLibOwnTypes). -->
+  <Import Project="$(ZeroSdkRoot)payload/dotnet/NetTypes.props" />
+
   <PropertyGroup>
     <!-- Nothing native is built: .NET runs the IL. -->
     <ZeroBuildsNative>false</ZeroBuildsNative>
+    <!-- Zero (the default): lib/'s own Task, timers, streams, sockets and
+         Console, so the program behaves as in zero mode. Net: .NET's own,
+         for a program that hands them to other .NET code (a NuGet library
+         that takes a Task or a Stream). Net is further from zero mode:
+         Task.Run is .NET's thread pool, in parallel with the program, and a
+         fiber that blocks in a .NET socket blocks the others. An await's
+         continuation still comes back to the program's own thread. -->
+    <ZeroDotnetTypes Condition="'$(ZeroDotnetTypes)' == ''">Zero</ZeroDotnetTypes>
     <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
+    <DefineConstants Condition="'$(ZeroDotnetTypes)' == 'Net'">$(DefineConstants);ZERO_DOTNET_BCL</DefineConstants>
     <!-- CS0436: lib/'s types in place of .NET's, at every use. (Not CS8500,
          a pointer to something with references in it: lib/'s own are
          answered for in zero.editorconfig, and in the project's code the
-         warning is worth having here, see below.) -->
-    <NoWarn>$(NoWarn);CS0436</NoWarn>
+         warning is worth having here, see below.) With .NET's own types
+         nothing of lib/'s has a .NET type's name: there CS0436 is an error. -->
+    <NoWarn Condition="'$(ZeroDotnetTypes)' != 'Net'">$(NoWarn);CS0436</NoWarn>
+    <WarningsAsErrors Condition="'$(ZeroDotnetTypes)' == 'Net'">$(WarningsAsErrors);CS0436</WarningsAsErrors>
     <!-- zerocore's cultures: the invariant one only, as this mode of .NET's. -->
     <InvariantGlobalization Condition="'$(InvariantGlobalization)' == ''">true</InvariantGlobalization>
     <ZeroDotnetDir>$(ZeroSdkRoot)payload/dotnet/</ZeroDotnetDir>
@@ -42,6 +60,11 @@
   <ItemGroup>
     <Compile Include="$(ZeroDotnetDir)lib/*.cs" Link="Zero/lib/%(Filename)%(Extension)" Visible="false" />
     <Compile Include="$(ZeroDotnetDir)compat/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false" />
+    <Compile Include="$(ZeroDotnetDir)compat-zero/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false"
+             Condition="'$(ZeroDotnetTypes)' != 'Net'" />
+    <Compile Include="$(ZeroDotnetDir)compat-net/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false"
+             Condition="'$(ZeroDotnetTypes)' == 'Net'" />
+    <Compile Remove="@(ZeroLibOwnTypes->'$(ZeroDotnetDir)lib/%(Identity).cs')" Condition="'$(ZeroDotnetTypes)' == 'Net'" />
     <!-- lib/Gpu.cs and the tensor samples use it; zerocore has its own. -->
     <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" IsImplicitlyDefined="true" />
     <!-- macOS: glibc's names and layouts, which lib/ calls (dotnet/native). Linux has glibc. -->
@@ -63,7 +86,8 @@
   <!-- .NET's own assemblies under the alias `bcl` as well: the payload's
        TlsBridge.cs reaches the .NET types lib/'s take the place of (Stream,
        SslStream) through it, to run .NET's TLS over lib/'s sockets. -->
-  <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences">
+  <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences"
+          Condition="'$(ZeroDotnetTypes)' != 'Net'">
     <ItemGroup>
       <_ZeroBclReference Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
       <ReferencePath Remove="@(_ZeroBclReference)" />
@@ -74,6 +98,8 @@
   <Target Name="ZeroCheckDotnetTarget" BeforeTargets="Restore;_CheckForInvalidConfigurationAndPlatform;CoreCompile">
     <Error Code="ZERO016" Condition="'$(NETCoreSdkVersion)' != '' and $([MSBuild]::VersionLessThan($([System.Text.RegularExpressions.Regex]::Replace('$(NETCoreSdkVersion)', '-.*', '')), '11.0.100'))"
            Text="ZeroTarget=dotnet needs the .NET SDK 11.0.100 or newer (the program targets $(ZeroDotnetFramework)); this build uses $(NETCoreSdkVersion)." />
+    <Error Code="ZERO016" Condition="'$(ZeroDotnetTypes)' != 'Zero' and '$(ZeroDotnetTypes)' != 'Net'"
+           Text="ZeroDotnetTypes is '$(ZeroDotnetTypes)': use Zero (lib/'s own Task, streams and sockets, the default) or Net (.NET's own)." />
     <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'FSharp'"
            Text="ZeroTarget=dotnet builds C# projects for now: F# projects compile against the SDK's own FSharp.Core, which isn't built for .NET's runtime yet." />
     <Error Code="ZERO016" Condition="'$(OutputType)' == 'Library'"

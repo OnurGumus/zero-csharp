@@ -285,12 +285,21 @@ namespace System.Runtime.Intrinsics.Mos
 //   macOS program links), which passes the rest on to the system's library.
 public static class NativeResolver
 {
+    static readonly System.Collections.Generic.HashSet<System.Reflection.Assembly> s_registered = new();
+
     [System.Runtime.CompilerServices.ModuleInitializer]
     internal static void Register() => Register(typeof(NativeResolver).Assembly);
 
     /// <summary>The same for a program's own DllImports (dotnet/Sample/ZeroStartup.cs).</summary>
     public static void Register(System.Reflection.Assembly assembly)
     {
+        // Once for an assembly: .NET refuses a second resolver, and a program
+        // that has all of this in its own assembly (the SDK's) asks twice.
+        lock (s_registered)
+        {
+            if (!s_registered.Add(assembly))
+                return;
+        }
         NativeLibrary.SetDllImportResolver(assembly, static (name, assembly, path) =>
         {
             if (name is not ("*" or "libc" or "libm.so.6"))

@@ -38,3 +38,8 @@ Certificates|@macos 1025: PSS|the PSS signature made with the 1025-bit key doesn
 Certificates|@macos 2047: key read|as 1025: macOS reports 2048 for a key of 2047 bits
 Certificates|@macos revocation unknown|macOS reports RevocationStatusUnknown without OfflineRevocation (Linux reports both, as lib/ does)
 Certificates|@macos only the leaf overlooked|macOS builds the chain with only the leaf's revocation overlooked (Linux refuses it, as lib/ does)
+Timers|?took at least 3 periods|.NET's PeriodicTimer can tick a little early by the clock the sample measures with: three 20 ms ticks took under 60 ms on Linux
+Timers|?one tick|.NET's timers call back on thread-pool threads, beside the program's own; with the machine busy the sample read its counts before a callback had finished (seen on macOS under load)
+Timers|?stopped before the handler|as "one tick"
+Timers|?restarted from its handler|as "one tick"
+Timers|?timers|as "one tick"

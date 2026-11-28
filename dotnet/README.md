@@ -10,7 +10,8 @@ runtime. This folder builds the same source as an ordinary .NET program instead,
 - **.NET's tools.** The debugger, profilers and test runners work on the .NET build as on any
   .NET program.
 
-In the SDK it is `dotnet build -p:ZeroTarget=dotnet` (`sdk/ZeroCSharp.Sdk/Sdk/ZeroDotnet.targets`).
+In the SDK it is `dotnet build -p:ZeroTarget=dotnet` (`sdk/ZeroCSharp.Sdk/Sdk/ZeroDotnet.targets`),
+with `-p:ZeroDotnetTypes=Net` for the second of the two builds below.
 
 ## The two builds
 
@@ -43,9 +44,15 @@ are the platform's, and a program on .NET gets those. `X25519` and `EncryptedStr
   with SHA-1, and on Linux with RSA-PSS, which `lib/` refuses; a chain's elements are copies
   of the certificates in .NET.
 
-**`--bcl-types`** leaves out every file of `lib/` that re-declares a .NET type, so `Task`,
-`Stream` and `Socket` are .NET's. That is for a program that passes them to other .NET code. It
-is further from zero mode: `Task.Run` runs on the thread pool, in parallel with the program.
+**`--bcl-types`** (in the SDK, `ZeroDotnetTypes=Net`) leaves out every file of `lib/` that
+re-declares a .NET type (`NetTypes.props` lists them), so `Task`, `Stream` and `Socket` are
+.NET's. That is for a program that passes them to other .NET code. It is further from zero mode:
+
+- `Task.Run` runs on the thread pool, in parallel with the program, and so do the callbacks of
+  .NET's timers.
+- An `await`'s continuation comes back to the program's own thread, but not onto a fiber: a call
+  that waits as a fiber does (`Channel.Receive`) stops the program there. Do it from a fiber.
+- `lib/`'s members that .NET's sockets lack (`NetworkStream.Error`, `TryConnect`) aren't there.
 
 ## How lib/ runs on .NET
 

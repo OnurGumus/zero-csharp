@@ -270,7 +270,8 @@ test_payload_complete() {
              tools/zero-bitcode/zero-bitcode.dll tools/zero-bitcode/zero-bitcode.runtimeconfig.json \
              tools/zero-bitcode/SharpCompress.dll tools/zero-bitcode/THIRD-PARTY-NOTICES.txt \
              analyzers/ZeroCSharp.LibraryImport.dll \
-             dotnet/lib/Fibers.cs dotnet/lib/Tasks.cs dotnet/compat/{Shims,Fibers,Additions,CryptoBridge,TlsBridge,ZeroStartup}.cs \
+             dotnet/lib/Fibers.cs dotnet/lib/Tasks.cs dotnet/compat/{Shims,Fibers,Additions}.cs dotnet/compat-zero/{CryptoBridge,TlsBridge,ZeroStartup}.cs \
+             dotnet/compat-net/{Async,ZeroStartup}.cs dotnet/NetTypes.props \
              dotnet/zero.editorconfig; do
         if [ ! -s "$payload/$f" ]; then fail "payload complete" "missing $f"; return; fi
     done
@@ -598,6 +599,41 @@ test_dotnet_target() {
     if ! same_output "$WORK/dotnettarget-dotnet.rest" "$WORK/dotnettarget-zero.rest" "$WORK/dotnettarget.diff"; then
         fail "$name" "on .NET it prints something else: $(cat "$WORK/dotnettarget.diff")"; return
     fi
+    pass "$name"
+}
+
+# ZeroDotnetTypes=Net: .NET's own Task and streams in place of lib/'s, for a
+# program that hands them to other .NET code.
+test_dotnet_net_types() {
+    local name="dotnet net types" dir
+    can_build "$name" || return
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    if ! has_dotnet_11; then skip "$name" "needs the .NET SDK 11"; return; fi
+    if [ "$HOST_OS" = Darwin ] && [ ! -f "$ROOT/sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib" ]; then
+        skip "$name" "this payload has no libzerocompat.dylib (it was built off a Mac)"; return
+    fi
+    dir=$(fixture dotnetnet)
+    if ! run_in "$dir" dotnetnet build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "the build failed"; return; fi
+    if grep -q 'warning' "$LOG" && ! grep -q ' 0 Warning(s)' "$LOG"; then fail "$name" "the build has warnings"; return; fi
+    LOG=$WORK/dotnetnet.txt
+    if ! (cd "$dir" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/dotnetnet.dll); then fail "$name" "the program failed"; return; fi
+    cat > "$WORK/dotnetnet.expected" <<'EXPECTED'
+Task is .NET's: True
+Stream is .NET's: True
+1000 characters, compressed to fewer than 100 bytes: True
+after await, on the same thread: True
+sum of squares 55
+arena: 300
+EXPECTED
+    if ! same_output "$LOG" "$WORK/dotnetnet.expected" "$WORK/dotnetnet.diff"; then
+        fail "$name" "it prints something else: $(cat "$WORK/dotnetnet.diff")"; return
+    fi
+    # The default is lib/'s own: the same program doesn't build with it (no StreamWriter there).
+    dir=$(fixture dotnetnet dotnetnet-zero)
+    if run_in "$dir" dotnetnet-zero build -p:ZeroTarget=dotnet; then fail "$name" "it built with lib/'s own types too"; return; fi
+    dir=$(fixture dotnetnet dotnetnet-bad)
+    if run_in "$dir" dotnetnet-bad build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Bcl; then fail "$name" "ZeroDotnetTypes=Bcl built"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "Zero .* or Net" "$LOG"; then fail "$name" "no ZERO016 for ZeroDotnetTypes=Bcl"; return; fi
     pass "$name"
 }
 
@@ -2352,7 +2388,7 @@ test_fsharp_native_library_errors() {
 }
 
 ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old_dotnet_sdk_refused unions_compile plain_packages_refused
-    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target dotnet_target dotnet_target_errors path_with_spaces compile_items incremental
+    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target dotnet_target dotnet_net_types dotnet_target_errors path_with_spaces compile_items incremental
     bflat_failure_fails_the_build size strip_symbols ideograph_orders debug_unoptimized mac_debug_object_kept windows_debugger macos_error
     project_reference library_change_rebuilds pack_and_package_reference version_mismatch templates
     custom_packages_folder dotnet_run publish extra_dll_imports library_import inherited_settings clean_and_rebuild

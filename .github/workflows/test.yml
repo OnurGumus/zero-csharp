@@ -453,7 +453,8 @@ jobs:
 
   # The samples on .NET's own runtime (dotnet/README.md): built for net11.0
   # with lib/ compiled in, run, and checked against tests/expected as
-  # ./test.sh checks them, but for what dotnet/known-differences.txt names.
+  # ./test.sh checks them, but for what dotnet/known-differences.txt names;
+  # and once more with .NET's own Task, streams and sockets in place of lib/'s.
   # Then the samples that wait, switch fibers and do input and output once
   # more with the garbage collector moving every object every few
   # milliseconds: lib/ was written for objects that stay put, and code of its
@@ -469,6 +470,8 @@ jobs:
           dotnet-version: '11.0.x'
       - name: Test
         run: dotnet/test.sh
+      - name: Test with .NET's own Task, streams and sockets
+        run: dotnet/test.sh --bcl-types
       - name: Test with the GC moving objects
         env:
           ZERO_TEST_TIMEOUT: 600
