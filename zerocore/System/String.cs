@@ -202,6 +202,46 @@ namespace System
             return result;
         }
 
+        // new string(...), as in .NET. The constructors have no body: the
+        // compiler turns `new string(args)` into a call of the static Ctor with
+        // the same parameters, which makes the string. Each is a new string on
+        // the heap, never freed, as + and Concat make.
+#pragma warning disable CS0824 // marked external: Ctor is its body
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public extern String(ReadOnlySpan<char> value);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public extern String(char[] value);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public extern String(char[] value, int startIndex, int length);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        public extern String(char c, int count);
+#pragma warning restore CS0824
+
+        private static string Ctor(ReadOnlySpan<char> value) => FromChars(value);
+
+        // A null array makes "", as in .NET.
+        private static string Ctor(char[] value) => FromChars(new ReadOnlySpan<char>(value));
+
+        private static string Ctor(char[] value, int startIndex, int length)
+        {
+            if (value == null || (uint)startIndex > (uint)value.Length || (uint)length > (uint)(value.Length - startIndex))
+                Environment.FailFast("new string: range out of bounds");
+            return FromChars(new ReadOnlySpan<char>(value, startIndex, length));
+        }
+
+        private static string Ctor(char c, int count)
+        {
+            if (count < 0)
+                Environment.FailFast("new string: count is negative");
+            string result = Allocate(count);
+            for (int i = 0; i < count; i++)
+                Unsafe.Add(ref result._firstChar, i) = c;
+            return result;
+        }
+
         IEnumerator<char> IEnumerable<char>.GetEnumerator() => new StringEnumerator(this);
 
         IEnumerator IEnumerable.GetEnumerator() => new StringEnumerator(this);
