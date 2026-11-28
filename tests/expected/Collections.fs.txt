@@ -1,0 +1,8 @@
+By bytes: 2 keys; by value: 1
+Modulo 10: 1 key, [3] = 2
+7 distinct, 4 duplicates
+By priority: a1 b2 c3 d4
+Sort():     3 7 19 25 42 
+Descending: 42 25 19 7 3 
+BinarySearch(19): 2, (20) would go at 3
+All checks passed.
