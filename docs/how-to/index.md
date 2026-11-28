@@ -30,8 +30,11 @@ the [tutorial](../tutorial/index.html) builds a quiz step by step.
   buffers of a size you choose, from an arena.
 - [Use the network](use-the-network.html): TCP and UDP sockets, `TcpListener`, `TcpClient` and
   `Dns`, as in .NET, with a fiber per connection.
-- [Use cryptography](use-cryptography.html): SHA-2, HMAC, HKDF, ChaCha20-Poly1305 and X25519 with
-  .NET's names, random bytes from the system, and an encrypted stream over a connection.
+- [Use cryptography](use-cryptography.html): SHA-2, HMAC, HKDF, ChaCha20-Poly1305, AES-GCM and
+  X25519 with .NET's names, random bytes from the system, an encrypted stream over a connection, and
+  checking signatures and certificate chains.
+- [Connect with TLS (HTTPS)](use-https.html): `SslStream` over a connection, as in .NET: a TLS 1.3
+  handshake that checks the server's certificate, then encrypted reads and writes.
 - [Recover from errors](recover-from-errors.html): `Catch.Run` gets back what a `throw` threw, and
   closes the files and sockets left open, instead of the program ending.
 - [Work with dates and times](work-with-dates-and-times.html): `DateTime`, `DateTimeOffset`,

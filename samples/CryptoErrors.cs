@@ -1,15 +1,17 @@
 // Example: what the cryptography refuses (lib/CryptoChaCha.cs,
-// lib/EncryptedStream.cs): a changed ciphertext, tag, nonce or associated
-// data; records changed, cut short, reordered or under a wrong key; wrong
-// argument sizes. Each throw comes back through Catch.Run, which WebAssembly
-// doesn't have, so this runs everywhere else. Crypto checks the results
-// that should come out.
+// lib/CryptoAes.cs, lib/EncryptedStream.cs): a changed ciphertext, tag,
+// nonce or associated data; records changed, cut short, reordered or under
+// a wrong key; wrong argument sizes; certificates and keys that aren't
+// (lib/CryptoX509.cs, lib/CryptoRsa.cs, lib/CryptoEcdsa.cs). Each throw comes back through
+// Catch.Run, which WebAssembly doesn't have, so this runs everywhere else.
+// Crypto checks the results that should come out.
 // Exit code = number of failed checks.
 // Build: ./build.sh CryptoErrors
 
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 namespace CryptoErrorsSample;
 
@@ -58,6 +60,7 @@ public static class Program
         Aead();
         Records();
         Arguments();
+        Certificates();
         return s_failures;
     }
 
@@ -99,6 +102,26 @@ public static class Program
         Check("unchanged opens", error == null && back[0] == 7 && back[99] == 106);
         Check("a mismatch is a CryptographicException", new AuthenticationTagMismatchException() is CryptographicException);
         Section("ChaCha20-Poly1305 refusals");
+
+        // The same for AES-GCM, with a 12-byte tag too.
+        foreach (int tagSize in new[] { 16, 12 })
+        {
+            using var gcm = new AesGcm(Numbered(16, 9), tagSize);
+            byte[] gcmTag = new byte[tagSize];
+            gcm.Encrypt(nonce, plaintext, ciphertext, gcmTag, aad);
+            ciphertext[99] ^= 0x40;
+            error = Catch.Run(() => gcm.Decrypt(nonce, ciphertext, gcmTag, back, aad));
+            Check($"AES-GCM changed ciphertext ({tagSize})", error is AuthenticationTagMismatchException);
+            Check($"AES-GCM zeros after failure ({tagSize})", AllZero(back));
+            ciphertext[99] ^= 0x40;
+            gcmTag[0] ^= 1;
+            error = Catch.Run(() => gcm.Decrypt(nonce, ciphertext, gcmTag, back, aad));
+            Check($"AES-GCM changed tag ({tagSize})", error is AuthenticationTagMismatchException);
+            gcmTag[0] ^= 1;
+            error = Catch.Run(() => gcm.Decrypt(nonce, ciphertext, gcmTag, back, aad));
+            Check($"AES-GCM unchanged opens ({tagSize})", error == null && back[0] == 7);
+        }
+        Section("AES-GCM refusals");
     }
 
     static void Records()
@@ -167,6 +190,13 @@ public static class Program
     {
         byte[] key = Numbered(32, 1);
         Check("short key", Catch.Run(() => new ChaCha20Poly1305(new byte[16])) is ArgumentException);
+        Check("AES key size", Catch.Run(() => new AesGcm(new byte[20], 16)) is ArgumentException);
+        Check("AES-GCM tag size", Catch.Run(() => new AesGcm(new byte[16], 8)) is ArgumentException);
+        Check("AES-GCM tag not as given", Catch.Run(() =>
+        {
+            using var gcm = new AesGcm(new byte[16], 16);
+            gcm.Encrypt(new byte[12], new byte[4], new byte[4], new byte[12]);
+        }) is ArgumentException);
         using var aead = new ChaCha20Poly1305(key);
         Check("short nonce", Catch.Run(() => aead.Encrypt(new byte[8], new byte[4], new byte[4], new byte[16])) is ArgumentException);
         Check("short tag", Catch.Run(() => aead.Encrypt(new byte[12], new byte[4], new byte[4], new byte[12])) is ArgumentException);
@@ -186,5 +216,41 @@ public static class Program
         Check("short secret", Catch.Run(() =>
             EncryptedStream.FromSharedSecret(new MemoryStream(), new byte[8], true)) is ArgumentException);
         Section("Arguments");
+    }
+
+    static void Certificates()
+    {
+        // docs:bad-certificate
+        // Bytes that aren't a certificate throw CryptographicException.
+        byte[] garbage = { 0x30, 0x82, 0x01, 0x00, 0x02, 0x01 };
+        Exception error = Catch.Run(() => new X509Certificate2(garbage));
+        // docs:end
+        Check("not a certificate", error is CryptographicException);
+        Check("no PEM", Catch.Run(() => X509Certificate2.CreateFromPem("hello")) is CryptographicException);
+        Check("bad base64", Catch.Run(() => X509Certificate2.CreateFromPem(
+            "-----BEGIN CERTIFICATE-----\n@@@@\n-----END CERTIFICATE-----")) is CryptographicException);
+        Check("loader", Catch.Run(() => X509CertificateLoader.LoadCertificate(new byte[] { 1, 2, 3 })) is CryptographicException);
+        Check("no file", Catch.Run(() => X509CertificateLoader.LoadCertificateFromFile("no-such-file.pem")) is CryptographicException);
+        Check("RSA without a key", Catch.Run(() =>
+            RSA.Create().VerifyData(new byte[1], new byte[256], HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)) is CryptographicException);
+        Check("RSA private part", Catch.Run(() => RSA.Create().ExportParameters(true)) is CryptographicException);
+        Check("RSA even modulus", Catch.Run(() => RSA.Create(new RSAParameters
+        {
+            Modulus = new byte[128],
+            Exponent = new byte[] { 1, 0, 1 },
+        })) is CryptographicException);
+        Check("RSA bad key bytes", Catch.Run(() => RSA.Create().ImportSubjectPublicKeyInfo(garbage, out _)) is CryptographicException);
+        Check("ECDSA off the curve", Catch.Run(() => ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP256,
+            Q = new ECPoint { X = new byte[32], Y = new byte[32] },
+        })) is CryptographicException);
+        Check("ECDSA other curve", Catch.Run(() => ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.CreateFromFriendlyName("brainpoolP256r1"),
+            Q = new ECPoint { X = new byte[32], Y = new byte[32] },
+        })) is CryptographicException);
+        Check("chain of null", Catch.Run(() => new X509Chain().Build(null)) is ArgumentNullException);
+        Section("Certificate refusals");
     }
 }

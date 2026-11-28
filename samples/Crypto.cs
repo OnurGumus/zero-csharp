@@ -1,9 +1,10 @@
 // Example: cryptography (lib/CryptoHashes.cs, lib/CryptoChaCha.cs,
-// lib/CryptoX25519.cs, lib/EncryptedStream.cs): SHA-2, HMAC, HKDF,
-// ChaCha20-Poly1305, X25519 and the encrypted record stream, checked against
-// the standards' own test vectors (FIPS 180-4, RFC 4231, 5869, 8439, 7748
-// and 8448). Nothing here needs random bytes, so it runs on every target;
-// CryptoRandom checks the system's random source, and CryptoErrors that
+// lib/CryptoAes.cs, lib/CryptoX25519.cs, lib/EncryptedStream.cs): SHA-2,
+// HMAC, HKDF, ChaCha20-Poly1305, AES-GCM, X25519 and the encrypted record
+// stream, checked against the standards' own test vectors (FIPS 180-4,
+// RFC 4231, 5869, 8439, 7748, the GCM specification's, and RFC 8448's TLS
+// 1.3 handshake, whose client Finished record it decrypts). Nothing here
+// needs random bytes, so it runs on every target; CryptoRandom checks the system's random source, and CryptoErrors that
 // changed data is refused (it needs Catch.Run, which WebAssembly lacks).
 // Exit code = number of failed checks.
 // Build: ./build.sh Crypto
@@ -105,6 +106,7 @@ public static class Program
         Hmacs();
         Hkdf();
         Aead();
+        AesGcmVectors();
         KeyAgreement();
         Tls13KeySchedule();
         Records();
@@ -319,6 +321,50 @@ public static class Program
         Section("ChaCha20-Poly1305");
     }
 
+    // The GCM specification's test cases (McGrew and Viega): 1-4 for
+    // AES-128, 13 and 14 for AES-256.
+    static void AesGcmVectors()
+    {
+        byte[] zeroNonce = new byte[12];
+        CheckGcm("1", new byte[16], zeroNonce, new byte[0], new byte[0], "", "58e2fccefa7e3061367f1d57a4e7455a");
+        CheckGcm("2", new byte[16], zeroNonce, new byte[16], new byte[0],
+            "0388dace60b6a392f328c2b971b2fe78", "ab6e47d42cec13bdf53a67b21257bddf");
+        CheckGcm("13", new byte[32], zeroNonce, new byte[0], new byte[0], "", "530f8afbc74536b9a963b4f1c4cb738b");
+        CheckGcm("14", new byte[32], zeroNonce, new byte[16], new byte[0],
+            "cea7403d4d606b6e074ec5d3baf39d18", "d0d1c8a799996bf0265b98b5d48ab919");
+
+        byte[] key = FromHex("feffe9928665731c6d6a8f9467308308");
+        byte[] nonce = FromHex("cafebabefacedbaddecaf888");
+        byte[] plaintext = FromHex(
+            "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72" +
+            "1c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255");
+        string ciphertext =
+            "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e" +
+            "21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f5985";
+        CheckGcm("3", key, nonce, plaintext, new byte[0], ciphertext, "4d5c2af327cd64a62cf35abd2ba6fab4");
+        CheckGcm("4", key, nonce, plaintext.AsSpan(0, 60).ToArray(), FromHex("feedfacedeadbeeffeedfacedeadbeefabaddad2"),
+            ciphertext.Substring(0, 120), "5bc94fbc3221a5db94fae95ae7121a47");
+
+        // A shorter tag is the full one's first bytes.
+        using var short12 = new AesGcm(key, 12);
+        byte[] tag12 = new byte[12], out12 = new byte[plaintext.Length];
+        short12.Encrypt(nonce, plaintext, out12, tag12);
+        CheckHex("12-byte tag", tag12, "4d5c2af327cd64a62cf35abd");
+        Section("AES-GCM");
+    }
+
+    static void CheckGcm(string name, byte[] key, byte[] nonce, byte[] plaintext, byte[] aad, string ciphertext, string tag)
+    {
+        using var aes = new AesGcm(key, 16);
+        byte[] c = new byte[plaintext.Length], t = new byte[16];
+        aes.Encrypt(nonce, plaintext, c, t, aad);
+        CheckHex($"test case {name} ciphertext", c, ciphertext);
+        CheckHex($"test case {name} tag", t, tag);
+        byte[] back = new byte[c.Length];
+        aes.Decrypt(nonce, c, t, back, aad);
+        Check($"test case {name} decrypts", Same(back, plaintext));
+    }
+
     static void KeyAgreement()
     {
         // RFC 7748 5.2.
@@ -406,6 +452,20 @@ public static class Program
         // The record keys (16 bytes: this handshake used AES-128-GCM) and IV.
         CheckHex("server handshake key", ExpandLabel(serverHandshake, "key", new byte[0], 16), "3fce516009c21727d0f2e4e86ee403bc");
         CheckHex("server handshake iv", ExpandLabel(serverHandshake, "iv", new byte[0], 12), "5d313eb2671276ee13000b30");
+
+        // The client's Finished message, as it went over the wire: a TLS 1.3
+        // record under the client handshake key, AES-128-GCM. Its nonce is
+        // the IV (sequence number 0), its associated data the 5-byte header.
+        byte[] record = FromHex(
+            "170303003575ec4dc238cce60b298044a71e219c56cc77b0517fe9b93c7a4bfc" +
+            "44d87f38f80338ac98fc46deb384bd1caeacab6867d726c40546");
+        using var client = new AesGcm(ExpandLabel(clientHandshake, "key", new byte[0], 16), 16);
+        byte[] inner = new byte[record.Length - 5 - 16];
+        client.Decrypt(ExpandLabel(clientHandshake, "iv", new byte[0], 12), record.AsSpan(5, inner.Length),
+                       record.AsSpan(record.Length - 16), inner, record.AsSpan(0, 5));
+        // Finished (type 20, 32 bytes of verify data), then the content type 22: handshake.
+        CheckHex("client Finished record", inner,
+            "14000020a8ec436d677634ae525ac1fcebe11a039ec17694fac6e98527b642f2edd5ce6116");
         Section("TLS 1.3 key schedule");
     }
 

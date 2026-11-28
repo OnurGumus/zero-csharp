@@ -10,19 +10,25 @@ index: 31
 
 - **Hashes:** `SHA256`, `SHA384` and `SHA512`, `HMACSHA256` and its siblings, `HKDF`, and
   `IncrementalHash` for data that comes in pieces.
-- **Encryption:** `ChaCha20Poly1305`, which encrypts and authenticates in one step.
+- **Encryption:** `ChaCha20Poly1305` and `AesGcm`, which encrypt and authenticate in one step.
 - **Key agreement:** `X25519`, our own class (.NET has no X25519).
+- **Signatures and certificates:** `RSA` and `ECDsa` (P-256, P-384) to check signatures,
+  `X509Certificate2` to read certificates and `X509Chain` to check one up to a root you trust.
 - **Random bytes:** `RandomNumberGenerator`, from the operating system.
 - **A stream:** `EncryptedStream`, also ours, which encrypts what goes through another stream in TLS
   1.3's record format.
 
 It's plain C#, the same code on every target, and it runs in the same time whatever the keys and
 data are: no branches or table lookups on secrets. `samples/Crypto.cs` checks it against the
-standards' own test vectors (FIPS 180-4, RFC 4231, 5869, 7748, 8439 and 8448's TLS 1.3 handshake).
+standards' own test vectors (FIPS 180-4, RFC 4231, 5869, 7748, 8439, the GCM specification's, and
+RFC 8448's TLS 1.3 handshake, whose client Finished record it decrypts).
 `samples/CryptoErrors.cs` checks that changed data is refused, and `scripts/crypto-fuzz` compares
 it with .NET's own on random input.
 
-There is no TLS handshake yet, so no HTTPS. These are the pieces it will be built from.
+`SslStream` builds TLS, and so HTTPS, from these pieces: see [Connect with TLS (HTTPS)](use-https.html).
+
+The public-key side checks signatures but doesn't make them: it is what a TLS client needs to
+trust a server, not what a server needs to prove itself.
 
 ## Hash and authenticate
 
@@ -81,6 +87,14 @@ Exception error = Catch.Run(
 
 A repeated nonce under one key gives away the XOR of the two plaintexts and lets anyone forge tags,
 so that is the one rule never to break.
+
+`AesGcm` works the same way, with a 16-, 24- or 32-byte key and a tag size (12 to 16 bytes) given to
+its constructor, as in .NET. It's the cipher every TLS server offers. AES is normally a table lookup
+per byte, and which entries a program reads shows in the processor's cache, where other code on the
+machine can time it. This one has no tables: it works on the bits of four blocks at once
+("bitsliced"), with the S-box as a circuit of ANDs and XORs. That costs some speed (about 85 MB/s on
+one Apple M2 Max core, against ChaCha20-Poly1305's 106 MB/s), far more than a connection needs. There are
+no AES instructions here: zero mode has no run-time CPU detection to choose them with.
 
 ## Random bytes
 
@@ -158,5 +172,82 @@ constructor that takes keys and IVs directly doesn't, so give it keys that are n
 connection, as a TLS handshake's are.
 
 What this doesn't do yet is tell you who is at the other end. Anyone can send a public key, so
-someone in the middle could run one exchange with each side. TLS solves that with certificates,
-which are the next step.
+someone in the middle could run one exchange with each side. TLS solves that with certificates.
+
+## Check a certificate
+
+A certificate says "this public key belongs to www.example.com", signed by a certificate authority.
+The authority's own certificate is signed by another, up to a root that your system (or you) has
+decided to trust. A server sends its certificate and the ones between it and the root; checking it
+means following those signatures up and checking each certificate on the way:
+
+```
+  www.example.com  ── signed by ──▶  intermediate CA  ── signed by ──▶  root CA
+  (sent by the server)              (sent by the server)               (in your trust store)
+   key, names, dates                 is a CA? may sign?                trusted as it is
+```
+
+Load certificates from PEM text (the `-----BEGIN CERTIFICATE-----` form) or DER bytes:
+
+<!-- sample: samples/Certificates.cs read -->
+```csharp
+X509Certificate2 leaf = X509Certificate2.CreateFromPem(LeafPem);
+string subject = leaf.Subject;   // "CN=www.example.test, O=..."
+string issuer = leaf.Issuer;
+CalendarTime notAfter = leaf.NotAfter;
+```
+
+`MatchesHostname("www.example.com")` tells whether the certificate is for that host: it checks the
+names in the certificate, wildcards (`*.example.com`, one label only) and IP addresses.
+
+`X509Chain` does the rest. Give it the certificates the server sent as `ExtraStore`, and it builds
+the chain and checks it:
+
+<!-- sample: samples/Certificates.cs chain -->
+```csharp
+using X509Chain chain = new X509Chain();
+chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+chain.ChainPolicy.CustomTrustStore.Add(X509Certificate2.CreateFromPem(RootPem));
+chain.ChainPolicy.ExtraStore.Add(inter);   // what the server sent
+// Only for TLS servers:
+chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
+chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+bool trusted = chain.Build(leaf);
+```
+
+`Build` checks that each signature verifies, each certificate is within its dates, each issuer is a
+CA allowed to sign certificates, and each certificate is meant for the purpose asked (a TLS server
+here). When it returns false, `chain.ChainStatus` says why, with .NET's flags: `NotTimeValid`,
+`UntrustedRoot`, `PartialChain` (an intermediate is missing), `NotSignatureValid` and so on.
+`VerificationFlags` can overlook some of them, such as `IgnoreNotTimeValid` for a test machine
+whose clock is wrong.
+
+Leave `TrustMode` alone to trust the system's roots instead. They come from the PEM bundle Linux
+distributions and macOS keep (`/etc/ssl/certs/ca-certificates.crt`, `/etc/ssl/cert.pem`, or the file
+in `SSL_CERT_FILE`), and Android's `/system/etc/security/cacerts`. Windows, WebAssembly, DOS, UEFI
+and microcontrollers have no such file, so there give the roots yourself.
+
+| What | Supported |
+|---|---|
+| Signatures | RSA PKCS #1 v1.5 (2048 to 8192 bits in practice) and ECDSA P-256, P-384, with SHA-256, 384 or 512 |
+| Not accepted | SHA-1 (refused, as browsers do), RSA-PSS inside certificates, P-521, Ed25519 |
+| Revocation | not checked: set `RevocationMode` to `NoCheck`. Left at .NET's default (`Online`), `Build` reports `RevocationStatusUnknown` and refuses the chain |
+| Name constraints | not checked: a CA certificate with them is refused (`HasNotSupportedNameConstraint`) |
+
+A certificate that is malformed throws `CryptographicException` when you load it:
+
+<!-- sample: samples/CryptoErrors.cs bad-certificate -->
+```csharp
+// Bytes that aren't a certificate throw CryptographicException.
+byte[] garbage = { 0x30, 0x82, 0x01, 0x00, 0x02, 0x01 };
+Exception error = Catch.Run(() => new X509Certificate2(garbage));
+```
+
+`Build` itself never throws over what is in the certificates it is given, so checking what a server
+sent can't end the program.
+
+`RSA` and `ECDsa` also work on their own, for signatures that aren't in certificates. Import a public
+key (`ImportSubjectPublicKeyInfo`, `ImportParameters`, or `GetRSAPublicKey()` and
+`GetECDsaPublicKey()` on a certificate) and call `VerifyData`. ECDSA signatures come in two formats:
+.NET's default puts r and s side by side, while certificates and TLS use
+`DSASignatureFormat.Rfc3279DerSequence`.
