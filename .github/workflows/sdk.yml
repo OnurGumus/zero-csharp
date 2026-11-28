@@ -266,7 +266,7 @@ jobs:
       - name: Check the release tag
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         run: sdk/check-tag.sh "$GITHUB_REF_NAME"
-      # ZeroCSharp.Dotnet targets net11.0, so the packing is done with the
+      # ZeroCSharp.Dotnet(.Net) target net11.0, so the packing is done with the
       # .NET SDK 11 (the newest installed is the one dotnet runs).
       - uses: actions/setup-dotnet@v4
         with:
@@ -290,7 +290,7 @@ jobs:
           for d in sdk/trimmed/trimmed-*; do mv "$d" "sdk/trimmed/${d#sdk/trimmed/trimmed-}"; done
           ZERO_PAYLOAD_PREBUILT=1 sdk/pack.sh
           # F# projects on ZeroTarget=dotnet need it (pack.sh leaves it out without the .NET SDK 11).
-          ls sdk/feed/ZeroCSharp.Dotnet.0*.nupkg sdk/feed/ZeroCSharp.Dotnet.Net.*.nupkg
+          ls sdk/feed/ZeroCSharp.Dotnet.[0-9]*.nupkg sdk/feed/ZeroCSharp.Dotnet.Net.[0-9]*.nupkg
       - uses: actions/upload-artifact@v4
         with:
           name: feed
