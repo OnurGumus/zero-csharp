@@ -101,6 +101,12 @@ public partial struct Arena
         public nint Name;          // address of the name string, or 0
 #if ZERO_DOTNET
         public nint Pinned;        // FromBuffer(byte[]): the GC handle that keeps the array where it is, or 0
+        // The GC handles taken for references stored in this arena's memory
+        // (RefList, RefDict: KeepObject), oldest first: freed with the memory
+        // that holds them (Restore, Reset, Destroy).
+        public nint* Handles;
+        public int HandleCount;
+        public int HandleCapacity;
 #endif
         // Set once an object scope has sent objects here: runs before memory
         // is freed (a mark: Restore; null: everything, for Reset or Destroy).
@@ -118,6 +124,9 @@ public partial struct Arena
         internal nuint LastNormal;
         internal nuint PrevNormal;
         internal uint Generation;
+#if ZERO_DOTNET
+        internal int HandleCount;
+#endif
     }
 
     /// <summary>
@@ -660,6 +669,9 @@ public partial struct Arena
                 LastNormal = state->LastNormal,
                 PrevNormal = state->PrevNormal,
                 Generation = state->Generation,
+#if ZERO_DOTNET
+                HandleCount = state->HandleCount,
+#endif
             };
         }
     }
@@ -701,6 +713,9 @@ public partial struct Arena
             if (keep == null || mark.Used > state->Used || (keep == state->Current && mark.Ptr > state->Ptr))
                 Fail(state, "Arena.Restore: the mark was already freed by restoring an older one (restore marks newest first)");
 
+#if ZERO_DOTNET
+            FreeHandles(state, mark.HandleCount);
+#endif
             if (state->BeforeFree != null)
                 state->BeforeFree(state, &mark, false);
 
@@ -1161,6 +1176,9 @@ public partial struct Arena
 
         unsafe
         {
+#if ZERO_DOTNET
+            FreeHandles(state, 0);
+#endif
             if (state->BeforeFree != null)
                 state->BeforeFree(state, null, false);
             state->Used = 0;
@@ -1218,7 +1236,12 @@ public partial struct Arena
             if (state->BeforeFree != null)
                 state->BeforeFree(state, null, true);
 #if ZERO_DOTNET
-            // The GC handles this arena holds: its name, and the array under it.
+            // The GC handles this arena holds: its name, the array under it,
+            // and those for references in its memory.
+            FreeHandles(state, 0);
+            if (state->Handles != null)
+                unsafe { NativeMemory.Free(state->Handles); } // SAFETY: from NativeMemory.Realloc in KeepObject, freed once
+            state->Handles = null;
             Kept.Free(state->Name);
             state->Name = 0;
             nint pinned = state->Pinned;
@@ -1243,6 +1266,63 @@ public partial struct Arena
         }
         _state = null;
     }
+
+#if ZERO_DOTNET
+    /// <summary>
+    /// On .NET, where the GC moves objects and frees what it sees nothing refer
+    /// to: a GC handle for <paramref name="value"/>, as a number to store in this
+    /// arena's memory (RefList, RefDict). It lasts as long as that memory: Restore
+    /// past this point, Reset and Destroy free it. 0 for null, or if the arena
+    /// isn't created.
+    /// </summary>
+    internal nint KeepObject(object value)
+    {
+        State* state = _state;
+        if (value is null || state == null)
+            return 0;
+        unsafe
+        {
+            if (state->HandleCount == state->HandleCapacity)
+            {
+                int capacity = state->HandleCapacity == 0 ? 16 : state->HandleCapacity * 2;
+                // SAFETY: Handles is null or from an earlier Realloc of HandleCapacity entries.
+                state->Handles = (nint*)NativeMemory.Realloc(state->Handles, (nuint)capacity * (nuint)sizeof(nint));
+                state->HandleCapacity = capacity;
+            }
+            nint handle = GCHandle.ToIntPtr(GCHandle.Alloc(value));
+            state->Handles[state->HandleCount++] = handle;
+            return handle;
+        }
+    }
+
+    /// <summary>
+    /// Lets go of the object behind a handle from KeepObject (an item removed or
+    /// overwritten): the GC may free it now. The handle itself is freed with
+    /// the arena's memory.
+    /// </summary>
+    internal static void LetGo(nint handle)
+    {
+        if (handle != 0)
+        {
+            GCHandle kept;
+            unsafe { kept = GCHandle.FromIntPtr(handle); } // SAFETY: from KeepObject, not yet freed
+            kept.Target = null;
+        }
+    }
+
+    // Frees the handles taken since there were `keep` of them.
+    static unsafe void FreeHandles(State* state, int keep)
+    {
+        unsafe
+        {
+            while (state->HandleCount > keep)
+            {
+                // SAFETY: each entry is a handle from KeepObject, freed once as it leaves the stack.
+                GCHandle.FromIntPtr(state->Handles[--state->HandleCount]).Free();
+            }
+        }
+    }
+#endif
 
     // For Save() with guard pages: ends the current block where the arena
     // stands, so the next allocation gets a new block. The whole pages

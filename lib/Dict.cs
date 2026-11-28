@@ -44,6 +44,11 @@ public struct Dict<TKey, TValue, TComparer>
 
     Header* _header;
 
+#if ZERO_DOTNET
+    // The arena the map lives in (RefDict's GC handles last as long as it holds them).
+    internal Arena HomeArena { get { unsafe { return _header == null ? default : _header->Arena; } } } // SAFETY: a created map's header
+#endif
+
     /// <summary>Returns a new map in <paramref name="arena"/>, or a not-created map if it is out of memory.</summary>
     public static Dict<TKey, TValue, TComparer> Create(Arena arena, int capacity = 32, TComparer comparer = default)
     {
@@ -519,6 +524,10 @@ public struct Dict<TKey, TValue>
     /// it led.
     /// </remarks>
     public Dict<TKey, TValue> Clone(Arena target) => new Dict<TKey, TValue> { _map = _map.Clone(target) };
+
+#if ZERO_DOTNET
+    internal Arena HomeArena => _map.HomeArena;
+#endif
 }
 
 // Compares keys by their raw bytes, and hashes them with FNV-1a. Exact for

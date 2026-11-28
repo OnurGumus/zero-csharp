@@ -24,6 +24,11 @@ public struct List<T> where T : unmanaged
 
     Header* _header;
 
+#if ZERO_DOTNET
+    // The arena the list lives in (RefList's GC handles last as long as it holds them).
+    internal Arena HomeArena { get { unsafe { return _header == null ? default : _header->Arena; } } } // SAFETY: a created list's header
+#endif
+
     /// <summary>Returns a new list in <paramref name="arena"/>, or a not-created list if it is out of memory.</summary>
     public static List<T> Create(Arena arena, int initialCapacity = 16)
     {

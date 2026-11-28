@@ -103,7 +103,9 @@ usually runs; it fails rarely, and far from the cause.
 
 `lib/` was read through for this and changed where it kept an address (records and lock state
 now live in native memory, references kept in native memory are GC handles, buffers are pinned
-for as long as native code uses them). A program's own code is its own to check. On .NET, don't:
+for as long as native code uses them). The handles for `RefList` and `RefDict` items come from
+their arena, which frees them with the memory that holds them (`Restore`, `Reset`, `Destroy`);
+a removed or overwritten item's object is let go at once. A program's own code is its own to check. On .NET, don't:
 
 - keep what `Unsafe.AsPointer` gives for a field of an object, or an array's element, past the
   statement that uses it;

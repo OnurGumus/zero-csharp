@@ -34,6 +34,36 @@ public struct RefList<T> where T : class
     public int Capacity => _items.Capacity;
 
     /// <summary>Appends an item (null is allowed). Returns false if the list isn't created or the arena is full.</summary>
+#if ZERO_DOTNET
+    public bool Add(T item) => _items.IsCreated && _items.Add(_items.HomeArena.KeepObject(item));
+
+    public T Get(int index) => FromAddress(_items.Get(index));
+
+    public void Set(int index, T value)
+    {
+        if ((uint)index >= (uint)Count)
+        {
+            _items.Set(index, 0); // as List.Set: out of range ends the program
+            return;
+        }
+        Arena.LetGo(_items.Get(index));
+        _items.Set(index, _items.HomeArena.KeepObject(value));
+    }
+
+    public bool RemoveAt(int index)
+    {
+        if ((uint)index < (uint)Count)
+            Arena.LetGo(_items.Get(index));
+        return _items.RemoveAt(index);
+    }
+
+    public void Clear()
+    {
+        for (int i = 0; i < Count; i++)
+            Arena.LetGo(_items.Get(i));
+        _items.Clear();
+    }
+#else
     public bool Add(T item) => _items.Add(ToAddress(item));
 
     public T Get(int index) => FromAddress(_items.Get(index));
@@ -43,6 +73,7 @@ public struct RefList<T> where T : class
     public bool RemoveAt(int index) => _items.RemoveAt(index);
 
     public void Clear() => _items.Clear();
+#endif
 
     /// <summary>
     /// Sorts the items in place, like List.Sort: <paramref name="compare"/> returns
@@ -90,7 +121,18 @@ public struct RefList<T> where T : class
     /// Only the references are copied: both lists point at the same objects, so
     /// the copy outlives the original's arena but not the objects' arenas.
     /// </remarks>
+#if ZERO_DOTNET
+    // Handles of the target's own: it may outlive this list's arena.
+    public RefList<T> Clone(Arena target)
+    {
+        var copy = new RefList<T> { _items = _items.Clone(target) };
+        for (int i = 0; i < copy.Count; i++)
+            copy._items.Set(i, target.KeepObject(FromAddress(copy._items.Get(i))));
+        return copy;
+    }
+#else
     public RefList<T> Clone(Arena target) => new RefList<T> { _items = _items.Clone(target) };
+#endif
 
     /// <summary>For foreach: every item, in order.</summary>
     /// <remarks>Don't Add or RemoveAt during the loop.</remarks>
@@ -114,10 +156,9 @@ public struct RefList<T> where T : class
 
 #if ZERO_DOTNET
     // Real .NET's GC moves objects and frees what nothing it can see refers
-    // to, so an address won't do: a GC handle keeps the object and finds it.
-    // (Never freed: a spike.)
-    static nint ToAddress(T item) => item is null ? 0 : GCHandle.ToIntPtr(GCHandle.Alloc(item));
-
+    // to, so an address won't do: each item is a GC handle from the list's
+    // arena (Arena.KeepObject), freed with the arena's memory; a removed or
+    // overwritten item's object is let go at once.
     static T FromAddress(nint address)
     {
         if (address == 0)
