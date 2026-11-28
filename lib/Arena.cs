@@ -57,6 +57,9 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
+// F#'s arena { } builder (fsharp/control/Arena.fs) uses OpenedObjects.
+[assembly: InternalsVisibleTo("FSharp.Control")]
+
 public partial struct Arena
 {
     public const nuint DefaultAlign = 16;
@@ -756,6 +759,140 @@ public partial struct Arena
         return scope;
     }
 
+    // OpenObjectScope for F#'s arena { } (fsharp/control/Arena.fs). A builder
+    // can't hold a ref struct (fsc refuses byref-like builders), and the
+    // scope has to open when `arena frame` is evaluated, before the body's
+    // closure is made (unoptimized fsc makes one: made first, it would be
+    // outside the arena on every call). So the state goes from the builder to
+    // Run as this plain struct, which Run turns back into the ObjectScope.
+    internal struct OpenedObjects
+    {
+        internal delegate*<void*, nuint, void*> PreviousAllocate;
+        internal void* PreviousContext;
+        internal void* State;
+        internal Mark Mark;
+    }
+
+    internal OpenedObjects OpenObjectsForBuilder()
+    {
+        ObjectScope scope;
+        // SAFETY: the builder's Run closes it (ObjectsOpenedForBuilder), and
+        // lets out only values that hold nothing from the arena.
+        unsafe { scope = OpenObjectScope(); }
+        return new OpenedObjects
+        {
+            PreviousAllocate = scope.PreviousAllocate,
+            PreviousContext = scope.PreviousContext,
+            State = scope.State,
+            Mark = scope.Mark,
+        };
+    }
+
+    // The scope OpenObjectsForBuilder opened, to close. Stops the program if
+    // it isn't the innermost one open (a builder kept and used again, or
+    // after its scope closed).
+    internal static ObjectScope ObjectsOpenedForBuilder(OpenedObjects opened)
+    {
+        bool current;
+        unsafe
+        {
+            // SAFETY: only compares the allocator in effect with this scope's.
+            System.Runtime.ObjectAllocator.Get(out var allocate, out var context);
+            current = allocate == (delegate*<void*, nuint, void*>)&AllocateObject && context == opened.State;
+        }
+        if (!current)
+            Environment.FailFast("arena { }: its scope isn't the one open; write `arena frame { ... }` in one piece, without keeping `arena frame` in a value");
+        ObjectScope scope = default;
+        scope.PreviousAllocate = opened.PreviousAllocate;
+        scope.PreviousContext = opened.PreviousContext;
+        scope.State = opened.State;
+        scope.Mark = opened.Mark;
+        scope.FreeOnDispose = true;
+        scope.Open = true;
+        return scope;
+    }
+
+    // Whether value, a reference, is an object allocated in the scope
+    // OpenObjectsForBuilder opened: one closing that scope frees. For
+    // Arena.DebugChecks in F#'s agents (fsharp/control): a message made in a
+    // scope and still queued when it ends. A struct: false (it was copied;
+    // references inside it aren't looked at).
+    internal static bool IsInScope<T>(OpenedObjects scope, T value)
+    {
+        if (default(T) != null)
+            return false; // a value type
+        object obj = value;
+        if (obj == null)
+            return false;
+        unsafe
+        {
+            // SAFETY: compares addresses only. The scope's mark is the newest
+            // still open (the caller is closing it), so its block is in the
+            // chain, and the blocks after it were added since.
+            byte* p = *(byte**)Unsafe.AsPointer(ref obj);
+            State* state = (State*)scope.State;
+            Block* block = (Block*)scope.Mark.Block;
+            byte* start = scope.Mark.Ptr;
+            while (block != null)
+            {
+                byte* end = block == state->Current ? state->Ptr : block->End;
+                if (p >= start && p < end)
+                    return true;
+                block = block->Next;
+                if (block != null)
+                    start = block->Start;
+            }
+        }
+        return false;
+    }
+
+    // After a throw inside F#'s Async.InArena: puts back the allocator from
+    // before the scope but frees nothing, so the exception and what it points
+    // at stay until the arena is reset (as with Catch.Run).
+    internal static void LeaveObjectsForBuilder(OpenedObjects opened)
+    {
+        // SAFETY: the allocator in effect before the scope.
+        unsafe { System.Runtime.ObjectAllocator.Set(opened.PreviousAllocate, opened.PreviousContext); }
+    }
+
+    // The object allocator in effect, as a value F#'s async code keeps across
+    // waits (fsharp/control/Control.fs): a computation in Async.InArena
+    // allocates in the arena in each of its pieces, and the objects for its
+    // waits come from where it started.
+    internal struct AllocatorSetting
+    {
+        internal delegate*<void*, nuint, void*> Allocate;
+        internal void* Context;
+    }
+
+    internal static AllocatorSetting CurrentAllocator()
+    {
+        AllocatorSetting setting = default;
+        // SAFETY: only reads the setting.
+        unsafe { System.Runtime.ObjectAllocator.Get(out setting.Allocate, out setting.Context); }
+        return setting;
+    }
+
+    // Puts a setting from CurrentAllocator back.
+    internal static void SetAllocator(AllocatorSetting setting)
+    {
+        // SAFETY: a setting CurrentAllocator read, whose arena (if any) the
+        // caller keeps alive while it's in effect.
+        unsafe { System.Runtime.ObjectAllocator.Set(setting.Allocate, setting.Context); }
+    }
+
+    // A copy of text made by that allocator.
+    internal static string CopyStringWith(AllocatorSetting setting, string text)
+    {
+        if (text == null)
+            return null;
+        AllocatorSetting current = CurrentAllocator();
+        SetAllocator(setting);
+        string copy = string.Concat(text, null); // a new string, always
+        SetAllocator(current);
+        return copy;
+    }
+
     // ObjectAllocator's function: objects are zeroed and 8-byte aligned (a
     // long or double in an object needs it on 32-bit targets).
     static unsafe void* AllocateObject(void* context, nuint size)
@@ -774,6 +911,33 @@ public partial struct Arena
         internal Mark Mark;
         internal bool FreeOnDispose; // from OpenObjectScope
         internal bool Open;          // until the first Dispose
+
+        /// <summary>
+        /// A copy of <paramref name="text"/> made outside the scope, by the
+        /// allocator in effect before it, so it outlives the scope: how a
+        /// string made inside gets out. Null stays null.
+        /// <code>
+        /// string name;
+        /// using (objects) { name = objects.CopyOut(first + " " + last); }
+        /// </code>
+        /// </summary>
+        public readonly string CopyOut(string text)
+        {
+            if (!Open)
+                Environment.FailFast("Arena.ObjectScope.CopyOut: the scope is closed");
+            if (text == null)
+                return null;
+            unsafe
+            {
+                // SAFETY: the allocator before the scope, then this scope's
+                // again, as Dispose and AllocateObjectsHere set them.
+                System.Runtime.ObjectAllocator.Get(out var allocate, out var context);
+                System.Runtime.ObjectAllocator.Set(PreviousAllocate, PreviousContext);
+                string copy = string.Concat(text, null); // a new string, always
+                System.Runtime.ObjectAllocator.Set(allocate, context);
+                return copy;
+            }
+        }
 
         /// <summary>
         /// Puts back the previous allocator. From OpenObjectScope, then frees
