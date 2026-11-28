@@ -218,7 +218,7 @@ bool trusted = chain.Build(leaf);
 `Build` checks that each signature verifies, each certificate is within its dates, each issuer is a
 CA allowed to sign certificates, and each certificate is meant for the purpose asked (a TLS server
 here). When it returns false, `chain.ChainStatus` says why, with .NET's flags: `NotTimeValid`,
-`UntrustedRoot`, `PartialChain` (an intermediate is missing), `NotSignatureValid` and so on.
+`UntrustedRoot`, `PartialChain` (an intermediate is missing, or didn't sign the certificate) and so on.
 `VerificationFlags` can overlook some of them, such as `IgnoreNotTimeValid` for a test machine
 whose clock is wrong.
 

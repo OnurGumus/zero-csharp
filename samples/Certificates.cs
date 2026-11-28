@@ -298,15 +298,13 @@ public static class Program
         string[] inter = { InterPem };
         Refused("expired", ExpiredPem, inter, X509ChainStatusFlags.NotTimeValid, june);
         Refused("not yet valid", LeafPem, inter, X509ChainStatusFlags.NotTimeValid, Day(2025, 12, 31));
-        Refused("signed by another key", ForgedPem, inter,
-            X509ChainStatusFlags.NotSignatureValid | X509ChainStatusFlags.PartialChain, june);
+        Refused("signed by another key", ForgedPem, inter, X509ChainStatusFlags.PartialChain, june);
         Refused("issuer isn't a CA", NotCaChildPem, new[] { InterPem, NotCaPem }, X509ChainStatusFlags.InvalidBasicConstraints, june);
         Refused("path too long", DeepChildPem, new[] { InterPem, SubCaPem }, X509ChainStatusFlags.InvalidBasicConstraints, june);
         Refused("not for servers", ClientPem, inter, X509ChainStatusFlags.NotValidForUsage, june, serverOnly: true);
         Refused("unknown critical extension", CriticalPem, inter, X509ChainStatusFlags.HasNotSupportedCriticalExtension, june);
-        Refused("SHA-1", Sha1Pem, inter, X509ChainStatusFlags.NotSignatureValid | X509ChainStatusFlags.PartialChain, june);
-        Refused("RSA-PSS in a certificate", PssPem, new string[0],
-            X509ChainStatusFlags.NotSignatureValid | X509ChainStatusFlags.PartialChain, june);
+        Refused("SHA-1", Sha1Pem, inter, X509ChainStatusFlags.PartialChain, june);
+        Refused("RSA-PSS in a certificate", PssPem, new string[0], X509ChainStatusFlags.PartialChain, june);
         Refused("missing intermediate", LeafPem, new string[0], X509ChainStatusFlags.PartialChain, june);
         Refused("untrusted root", LeafPem, new[] { InterPem, RootPem }, X509ChainStatusFlags.UntrustedRoot, june,
             rootPem: RootEPem);

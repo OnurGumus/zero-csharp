@@ -250,7 +250,7 @@ public static class Program
             Curve = ECCurve.CreateFromFriendlyName("brainpoolP256r1"),
             Q = new ECPoint { X = new byte[32], Y = new byte[32] },
         })) is CryptographicException);
-        Check("chain of null", Catch.Run(() => new X509Chain().Build(null)) is ArgumentNullException);
+        Check("chain of null", Catch.Run(() => new X509Chain().Build(null)) is ArgumentException and not ArgumentNullException);
         Section("Certificate refusals");
     }
 }
