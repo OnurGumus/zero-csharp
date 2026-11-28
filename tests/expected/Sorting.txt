@@ -1,5 +1,6 @@
 PASS orders (17 checks)
 PASS ignoring case, accents and symbols (7 checks)
+PASS numbers (7 checks)
 PASS current culture (4 checks)
 
 All checks passed.

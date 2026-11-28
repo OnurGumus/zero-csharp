@@ -872,6 +872,18 @@ static class Collation
                 decompositions.AddRange(Cp(k < cps.Length ? cps[k] : 0));
         }
 
+        // Each script's zero digit (NumericOrdering reads digits' values).
+        var zeros = new List<byte>();
+        for (int cp = 0; cp <= 0x10FFFF; cp++)
+        {
+            if (cp >= 0xD800 && cp <= 0xDFFF || CharUnicodeInfo.GetUnicodeCategory(cp) != UnicodeCategory.DecimalDigitNumber)
+                continue;
+            if (CharUnicodeInfo.GetDecimalDigitValue(S(cp), 0) == 0)
+                zeros.AddRange(Cp(cp));
+            else if (CharUnicodeInfo.GetDecimalDigitValue(S(cp), 0) != CharUnicodeInfo.GetDecimalDigitValue(S(cp - 1), 0) + 1)
+                throw new Exception($"U+{cp:X4}: digits not in a row");
+        }
+
         var combining = new List<byte>();
         foreach (var (cp, rank) in CombiningRanks())
         {
@@ -914,6 +926,7 @@ static class Collation
         var tailorings = new List<byte[]>();
         var tailoringOf = new List<int>();
         var flags = new List<int>();
+        var fullWidthDigits = new List<bool>();
         var orderBlobs = new List<byte[]> { EncodeOrder(hanOrders[0].Explicit) };
         var koreanBlobs = new List<byte[]>();
         var hanOf = new List<int>();
@@ -944,7 +957,19 @@ static class Collation
                 tailorings.Add(bytes);
             }
             tailoringOf.Add(index + 1);
-            flags.Add((table.Backwards ? 0x80 : 0) | (upperFirst ? 0x40 : 0));
+            // NumericOrdering: ICU's strcoll skips the common prefix, backing
+            // up over digits, but a tailored collator knows only ASCII digits
+            // for that (0x20). The rules-built one .NET makes for IgnoreCase
+            // and IgnoreNonSpace always does.
+            var numeric = CompareOptions.NumericOrdering;
+            bool digitsQuirk = ci.Compare("8\u0662", "8m", numeric) < 0;
+            // (And whether its collator knows full-width digits as digits.)
+            fullWidthDigits.Add(ci.Compare("8\uFF12", "8m", numeric) > 0);
+            if (ci.Compare("8\u0662", "8m", numeric | CompareOptions.IgnoreCase) >= 0 || ci.Compare("8\u0662", "8m", numeric | CompareOptions.IgnoreNonSpace) >= 0)
+                throw new Exception($"{name}: the rules-built collator knows other digits");
+            if (index + 1 > 0x1F)
+                throw new Exception("too many tailorings");
+            flags.Add((table.Backwards ? 0x80 : 0) | (upperFirst ? 0x40 : 0) | (digitsQuirk ? 0x20 : 0));
 
             var o = hanOrders[i];
             byte[] order = EncodeOrder(o.Explicit);
@@ -954,7 +979,7 @@ static class Collation
                 h = orderBlobs.Count;
                 orderBlobs.Add(order);
             }
-            if (h > 15)
+            if (h > 7)
                 throw new Exception("too many Han orders");
             hanOf.Add(h);
             var korean = new List<byte>();
@@ -994,6 +1019,7 @@ namespace System.Globalization
         Emit(sb, "RootRuns", rootRuns, "The root order's single code points, in runs: the first code point (3 bytes), how many (2),\n        // and the first's element: primary weight (4), secondary (2), tertiary (1), flags (1: symbol, 2: upper\n        // case, bits 4-7: kana and width variant); each next code point's primary is a group (1 << 15) more.");
         Emit(sb, "RootSequences", Sequences(rootSequences).ToList(), "The root order's contractions and expansions: entries as in Tailorings.");
         Emit(sb, "Decompositions", decompositions, "NFD: a code point and the up to 4 it decomposes to (0 after the last), 3 bytes each, sorted.");
+        Emit(sb, "DecimalZeros", zeros, "Each script's digit zero (3 bytes), sorted: its 1 to 9 follow it.");
         Emit(sb, "CombiningClasses", combining, "Marks NFD reorders: the code point (3 bytes) and its class as a rank (1), sorted.");
         EmitBlobs(sb, "Tailorings", tailorings, "Each culture's differences from the root: entries sorted by their code points, each the number of\n        // code points (1 byte), they (3 each), the number of elements (1) and they (8 bytes each, as in RootRuns).");
         Emit(sb, "HanRootOrder", orderBlobs[0].ToList(), "The root order of Han ideographs (by radical and strokes): runs of consecutive code points, a\n        // zigzag varint step from the last run's end and a varint length.");
@@ -1003,9 +1029,11 @@ namespace System.Globalization
         for (int i = 0; i < names.Count; i++)
         {
             perCulture.Add((byte)(tailoringOf[i] | flags[i]));
-            perCulture.Add((byte)(hanOf[i] | (koreanOf[i] << 4)));
+            if (koreanOf[i] > 7)
+                throw new Exception("too many hanja tables");
+            perCulture.Add((byte)(hanOf[i] | (koreanOf[i] << 3) | (fullWidthDigits[i] ? 0x80 : 0)));
         }
-        Emit(sb, "Cultures", perCulture, "Each culture's two bytes: its tailoring (1 + its index; 0: the root order) with 0x80 if it compares\n        // accents from the end and 0x40 if it puts upper case first; then its Han order (1 + its index; 0: the root's) and,\n        // shifted 4, its hanja (1 + index).");
+        Emit(sb, "Cultures", perCulture, "Each culture's two bytes: its tailoring (1 + its index; 0: the root order) with 0x80 if it compares\n        // accents from the end, 0x40 if it puts upper case first and 0x20 if numbers' digits are only ASCII\n        // ones when strcoll skips the common prefix (see Collator.NumericPrefix); then its Han order (1 + its index; 0: the root's),\n        // shifted 3 its hanja (1 + index), and 0x80 if its own collator knows full-width digits as digits.");
         sb.Append("    }\n}\n");
         File.WriteAllText(Path.Combine(root, "zerocore/System/Globalization/CollationData.cs"), sb.ToString());
         int total = rootRuns.Count + decompositions.Count + combining.Count + tailorings.Sum(t => t.Length) + orderBlobs.Sum(b => b.Length) + koreanBlobs.Sum(b => b.Length);

@@ -14,6 +14,8 @@ namespace System.Globalization
     // strokes; pinyin in Chinese, strokes in Traditional Chinese, Japan's
     // order; Korean puts many with the Hangul syllable of their reading).
     // Unassigned and private-use code points sort last, in code point order.
+    // NumericOrdering compares runs of digits by value (see Number), with
+    // ICU's common-prefix shortcut (see NumericPrefix).
     //
     // CompareInfo reaches this through Linguistic, an abstract class: only a
     // culture made from the table creates a Collator, so a program compares
@@ -59,7 +61,8 @@ namespace System.Globalization
         private int _tailoringStart, _tailoringLength; // the culture's entries in Tailorings
         private int[] _tailoringFirst; // each entry's first code point
         private int[] _tailoringAt; // and where it starts
-        private bool _backwards, _upperFirst, _loaded;
+        private bool _backwards, _upperFirst, _onlyAsciiDigits, _fullWidthDigits, _loaded;
+        private int[] _laterInContraction; // code points after the first in a contraction, sorted
         private int _hanOrder, _hanja; // index into HanOrders; 1 + index into KoreanHanja, or 0
         private HanRanks _ranks, _rootRanks;
 
@@ -94,12 +97,14 @@ namespace System.Globalization
             int t = cultures[_culture * 2], h = cultures[_culture * 2 + 1];
             _backwards = (t & 0x80) != 0;
             _upperFirst = (t & 0x40) != 0;
-            t &= 0x3F;
+            _onlyAsciiDigits = (t & 0x20) != 0;
+            _fullWidthDigits = (h & 0x80) != 0;
+            t &= 0x1F;
             // (Without the ideograph orders, every culture has the root's.)
             if (Switches.IdeographOrders)
             {
-                _hanOrder = h & 0xF;
-                _hanja = h >> 4;
+                _hanOrder = h & 0x7;
+                _hanja = (h >> 3) & 0x7;
             }
             if (t != 0)
             {
@@ -282,25 +287,6 @@ namespace System.Globalization
                     }
                 }
             }
-            // Canonical order: marks after a starter, sorted by class (stable).
-            for (int i = 1; i < into.Count; i++)
-            {
-                int c = Combining(into.Items[i]);
-                if (c == 0)
-                    continue;
-                for (int k = i; k > 0; k--)
-                {
-                    int before = Combining(into.Items[k - 1]);
-                    if (before <= c || before == 0)
-                        break;
-                    Swap(into.Items, k);
-                    if (track)
-                    {
-                        Swap(starts.Items, k);
-                        Swap(ends.Items, k);
-                    }
-                }
-            }
         }
 
         private static void Swap(Span<int> items, int k)
@@ -479,17 +465,19 @@ namespace System.Globalization
             return e;
         }
 
-        private void Collate(ReadOnlySpan<char> text, ref Elements into)
+        private void Collate(ReadOnlySpan<char> text, ref Elements into, bool numeric = false)
         {
             Buffer none = default;
-            Collate(text, ref into, ref none, ref none, false);
+            Collate(text, ref into, ref none, ref none, false, numeric);
         }
 
         // With track, where each element is in the text, as ICU's collation
         // element iterator tells: low, where its char starts (where the char
         // ends for the second and later elements of a char's, as with an
         // expansion) and high, where it ends.
-        private void Collate(ReadOnlySpan<char> text, ref Elements into, ref Buffer lows, ref Buffer highs, bool track)
+        // With numeric (NumericOrdering), a run of decimal digits, in any
+        // script, is a number: see Number.
+        private void Collate(ReadOnlySpan<char> text, ref Elements into, ref Buffer lows, ref Buffer highs, bool track, bool numeric = false)
         {
             Buffer cps = default, starts = default, ends = default;
             cps.Items = stackalloc int[64];
@@ -502,6 +490,15 @@ namespace System.Globalization
             Span<int> key = stackalloc int[16];
             for (int i = 0; i < cps.Count; )
             {
+                if (numeric && Digit(cps.Items[i]) >= 0)
+                {
+                    int end = i;
+                    while (end < cps.Count && Digit(cps.Items[end]) >= 0)
+                        end++;
+                    Number(cps.Items.Slice(i, end - i), ref into);
+                    i = end;
+                    continue;
+                }
                 int first = into.Count;
                 int which = 0;
                 int n = Longest(Table(0), _tailoringFirst, _tailoringAt, cps.Items, i, cps.Count, out int where);
@@ -585,6 +582,153 @@ namespace System.Globalization
                 }
                 i += n;
             }
+        }
+
+        // ---- numbers (NumericOrdering) ----
+
+        // A decimal digit's value, in any script, or -1.
+        private static int Digit(int cp)
+        {
+            if (cp >= '0' && cp <= '9')
+                return cp - '0';
+            if (cp < 0x660 || CharUnicodeInfo.GetUnicodeCategory(cp) != UnicodeCategory.DecimalDigitNumber)
+                return -1;
+            ReadOnlySpan<byte> zeros = CollationData.DecimalZeros;
+            int low = 0, high = zeros.Length / 3 - 1, zero = -1;
+            while (low <= high)
+            {
+                int middle = (low + high) >> 1;
+                int z = Read3(zeros, middle * 3);
+                if (z <= cp)
+                {
+                    zero = z;
+                    low = middle + 1;
+                }
+                else
+                    high = middle - 1;
+            }
+            return zero >= 0 && cp - zero <= 9 ? cp - zero : -1;
+        }
+
+        // As ICU's strcoll, which skips the texts' common prefix, backing up
+        // over characters it can't start at (in a contraction, an accent, a
+        // digit with NumericOrdering). Starting after the prefix gives the
+        // whole texts' answer, but where ICU treats only ASCII digits as
+        // digits for that: a culture's own collator ("8٢" against "8m" in
+        // Turkish compares "٢" with "m", the number 2), and the one .NET
+        // builds from rules for IgnoreCase and IgnoreNonSpace.
+        private void NumericPrefix(ref ReadOnlySpan<char> a, ref ReadOnlySpan<char> b, CompareOptions options)
+        {
+            if (!_onlyAsciiDigits && (options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) == 0)
+                return;
+            // (The rules-built collator knows full-width digits too, and so
+            // does Japanese's.)
+            bool fullWidth = _fullWidthDigits || (options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) != 0;
+            int p = 0;
+            while (p < a.Length && p < b.Length && a[p] == b[p])
+                p++;
+            if (p == 0)
+                return;
+            if (p < a.Length && Unsafe(a[p], fullWidth) || p < b.Length && Unsafe(b[p], fullWidth))
+            {
+                do
+                    p--;
+                while (p > 0 && Unsafe(a[p], fullWidth));
+            }
+            a = a.Slice(p);
+            b = b.Slice(p);
+        }
+
+        // Whether ICU won't start comparing at this char: an ASCII digit
+        // (or full-width), a surrogate, an accent or a jamo, or a later char
+        // of a contraction.
+        private bool Unsafe(char c, bool fullWidth)
+        {
+            if (c >= '0' && c <= '9' || c >= 0xD800 && c <= 0xDFFF || c >= 0x1160 && c <= 0x11FF || fullWidth && c >= 0xFF10 && c <= 0xFF19)
+                return true;
+            if (c < 0x300)
+                return Later(c);
+            var category = CharUnicodeInfo.GetUnicodeCategory(c);
+            return category == UnicodeCategory.NonSpacingMark || category == UnicodeCategory.SpacingCombiningMark
+                || category == UnicodeCategory.EnclosingMark || Later(c);
+        }
+
+        private bool Later(int cp)
+        {
+            if (_laterInContraction == null)
+            {
+                Buffer later = default;
+                later.Items = new int[64];
+                AddLater(Table(1), ref later);
+                if (_tailoringFirst != null)
+                    AddLater(Table(0), ref later);
+                int[] sorted = later.Items.Slice(0, later.Count).ToArray();
+                for (int i = 1; i < sorted.Length; i++)
+                {
+                    int v = sorted[i], j = i;
+                    while (j > 0 && sorted[j - 1] > v)
+                    {
+                        sorted[j] = sorted[j - 1];
+                        j--;
+                    }
+                    sorted[j] = v;
+                }
+                _laterInContraction = sorted;
+            }
+            int low = 0, high = _laterInContraction.Length - 1;
+            while (low <= high)
+            {
+                int middle = (low + high) >> 1;
+                if (_laterInContraction[middle] == cp)
+                    return true;
+                if (_laterInContraction[middle] < cp)
+                    low = middle + 1;
+                else
+                    high = middle - 1;
+            }
+            return false;
+        }
+
+        private static void AddLater(ReadOnlySpan<byte> entries, ref Buffer into)
+        {
+            for (int i = 0; i < entries.Length; )
+            {
+                int length = entries[i];
+                for (int k = 1; k < length; k++)
+                    into.Add(Read3(entries, i + 1 + k * 3));
+                i += 1 + length * 3 + 1 + entries[i + 1 + length * 3] * 8;
+            }
+        }
+
+        // A number as ICU weighs it: in segments of up to 254 digits, each
+        // without its leading zeros (but a last one), and each an element
+        // just before the digits' (numbers sort before 0 and what sorts with
+        // it), then its number of digits, then the digits. So numbers
+        // compare by value, and digits of every script alike.
+        private void Number(Span<int> digits, ref Elements into)
+        {
+            ulong zero = Lead();
+            for (int at = 0; at < digits.Length; )
+            {
+                while (at < digits.Length - 1 && Digit(digits[at]) == 0)
+                    at++;
+                int length = digits.Length - at < 254 ? digits.Length - at : 254;
+                into.Add(zero);
+                into.Add((ulong)(uint)length << 32);
+                for (int k = 0; k < length; k++)
+                    into.Add((ulong)(uint)(Digit(digits[at + k]) + 1) << 32);
+                at += length;
+            }
+        }
+
+        // The first element of a number: one primary weight before the digit
+        // zero's, with the common secondary and tertiary.
+        private ulong Lead()
+        {
+            Elements zero = default;
+            zero.Items = stackalloc ulong[4];
+            Single('0', ref zero);
+            return ((ulong)(Primary(zero.Items[0]) - 1) << 32) | (4UL << 16) | (4UL << 8);
         }
 
         // ---- Han ideographs ----
@@ -769,8 +913,11 @@ namespace System.Globalization
             Elements x = default, y = default;
             x.Items = stackalloc ulong[64];
             y.Items = stackalloc ulong[64];
-            Collate(a, ref x);
-            Collate(b, ref y);
+            bool numeric = (options & CompareOptions.NumericOrdering) != 0;
+            if (numeric)
+                NumericPrefix(ref a, ref b, options);
+            Collate(a, ref x, numeric);
+            Collate(b, ref y, numeric);
             bool ignoreSymbols = (options & CompareOptions.IgnoreSymbols) != 0;
             Span<ulong> xs = x.Items.Slice(0, x.Count), ys = y.Items.Slice(0, y.Count);
             Filter(xs, ignoreSymbols);
@@ -863,7 +1010,7 @@ namespace System.Globalization
             Load();
             Elements x = default;
             x.Items = stackalloc ulong[64];
-            Collate(text, ref x);
+            Collate(text, ref x, (options & CompareOptions.NumericOrdering) != 0);
             Span<ulong> xs = x.Items.Slice(0, x.Count);
             Filter(xs, (options & CompareOptions.IgnoreSymbols) != 0);
             bool ignoreNonSpace = (options & CompareOptions.IgnoreNonSpace) != 0;

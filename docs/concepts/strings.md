@@ -616,15 +616,30 @@ in Korean. The tables come from `scripts/gen-cultures`, which reads them from .N
 and `scripts/collation-check/check-collation.sh` compares millions of random texts in every culture
 with .NET's: comparing, `IsPrefix`, `IsSuffix`, `IndexOf` and `LastIndexOf`.
 
+`NumericOrdering` compares runs of digits by their value, as ICU does: digits of any script,
+leading zeros not counted, a decimal point not part of a number:
+
+<!-- sample: samples/Sorting.cs numeric -->
+```csharp
+var numeric = CompareOptions.NumericOrdering;
+string[] files = { "file10", "file2", "File3", "file1" };
+Is("by value", Sorted("en-US", numeric, files), "file1 file2 File3 file10");
+Is("digit by digit", Sorted("en-US", CompareOptions.None, files),
+    "file1 file10 file2 File3");
+Check("leading zeros don't count",
+    american.CompareInfo.Compare("file02", "file2", numeric) == 0);
+```
+
 ```text
   what costs what
   ------------------------------------  ----------------------------------
   a program that never compares with    nothing: the tables aren't linked
   a culture from the table
-  one that does                         about 740 KB of tables, read in
+  one that does, or that sets           about 740 KB of tables, read in
+  CurrentCulture to one and calls
                                         place; the ideograph orders are
                                         unpacked (up to 0.5 MB) the first
-                                        time ideographs are compared
+  string.Compare or CompareTo           time ideographs are compared
   ZeroIdeographOrders false             about 300 KB less: Chinese,
                                         Japanese and Korean sort
                                         ideographs by radical and strokes,
@@ -640,9 +655,15 @@ orders out with a property in its project:
 
 (With `./build.sh`, it's bflat's `--feature Zero.Globalization.IdeographOrders=false`.)
 
+Setting `CurrentCulture` only to format numbers and dates still links the tables if the program
+calls `string.Compare`, `CompareTo`, `StartsWith(string)` or `IndexOf(string)`: those follow the
+current culture, as in .NET, so they have to be able to sort in it. Code that wants the order of
+character codes and none of that cost calls `string.CompareOrdinal`, or `==` for equality.
+
 What differs from .NET: the invariant culture still compares by character code, as in .NET's
 invariant mode (with ICU, .NET sorts it in the root order), so programs that don't use cultures
-stay small. `NumericOrdering` and the kana and width options are ignored. Unassigned and private-use
+stay small (and ignores `NumericOrdering`, as .NET's invariant mode does). The kana and width options
+are ignored. Unassigned and private-use
 characters sort after all the others. And a few rare runs of combining marks in unusual orders, and
 a few Japanese compatibility characters under `IgnoreCase`, compare differently (the check finds
 about one text in 300,000).
