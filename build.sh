@@ -130,6 +130,7 @@ ALL_SAMPLES=(
     Crypto
     CryptoErrors
     Certificates
+    Https
     CryptoRandom
     Formats
     Keys
@@ -141,7 +142,7 @@ ALL_SAMPLES=(
 )
 # Samples WebAssembly can't run: the fiber samples switch stacks, which a WebAssembly
 # program has no way to do.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors "
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Https "
 # Programs with kernels for the GPU (Metal): only --gpu builds them.
 GPU_SAMPLES=(Gpu)
 # Simd and Kernels benchmark SIMD instructions, which a 386 doesn't have.
@@ -288,7 +289,7 @@ R4_SAMPLES=(
 # UEFI gets every sample but these, and Vga too (lib/Uefi.cs has what it uses
 # of lib/Dos.cs). Directories needs directories, which lib/ has only on Linux,
 # macOS, Windows and WebAssembly.
-NOT_UEFI=" Directories Network "
+NOT_UEFI=" Directories Network Https "
 UEFI_SAMPLES=(Vga)
 for name in "${ALL_SAMPLES[@]}"; do
     [[ "$NOT_UEFI" == *" $name "* ]] || UEFI_SAMPLES+=("$name")

@@ -25,7 +25,7 @@ RFC 8448's TLS 1.3 handshake, whose client Finished record it decrypts).
 `samples/CryptoErrors.cs` checks that changed data is refused, and `scripts/crypto-fuzz` compares
 it with .NET's own on random input.
 
-There is no TLS handshake yet, so no HTTPS. These are the pieces it will be built from.
+`SslStream` builds TLS, and so HTTPS, from these pieces: see [Connect with TLS (HTTPS)](use-https.html).
 
 The public-key side checks signatures but doesn't make them: it is what a TLS client needs to
 trust a server, not what a server needs to prove itself.

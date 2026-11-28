@@ -54,6 +54,7 @@ PAGES = [
     ('CryptoX509.cs', ['X509Certificate2', 'X509CertificateLoader', 'X509Certificate2Collection', 'X509NameType'], 'x509certificate2', 'X.509 certificates: loading them, their names and dates, host names.'),
     ('CryptoX509Chain.cs', ['X509Chain', 'X509ChainPolicy', 'X509ChainElement', 'X509ChainElementCollection', 'X509ChainStatus', 'X509ChainStatusFlags', 'X509VerificationFlags', 'X509ChainTrustMode', 'X509RevocationMode', 'X509RevocationFlag'], 'x509chain', 'Checking a certificate chain up to a trusted root.'),
     ('CryptoAsn1.cs', ['Oid', 'OidCollection'], 'oid', 'Object identifiers, the numbers that name algorithms and purposes.'),
+    ('SslStream.cs', ['SslStream', 'SslClientAuthenticationOptions', 'SslPolicyErrors', 'SslApplicationProtocol', 'TlsCipherSuite', 'AuthenticationException', 'SslProtocols'], 'sslstream', 'TLS 1.3 client connections: SslStream, as in .NET.'),
     ('EncryptedStream.cs', ['EncryptedStream'], 'encrypted-stream', 'A stream that encrypts what goes through it, in TLS 1.3 records.'),
     ('Path.cs', ['Path'], 'path', 'The parts of a path, joining paths, and tidying them up.'),
     ('Directory.cs', ['Directory', 'DirectoryEntries', 'DirectoryEntry'], 'directory', 'Creating, listing, moving and deleting directories; the current directory.'),
