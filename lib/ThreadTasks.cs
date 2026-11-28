@@ -195,7 +195,11 @@ sealed class WorkerThreads : Fiber.IoWaiter
             }
             shared->DoneRead = fds[0];
             shared->DoneWrite = fds[1];
-            var pool = new WorkerThreads(shared, workers);
+            // Kept for the thread's life: made outside any object scope the
+            // program has open now (scripts/static-stores).
+            WorkerThreads pool;
+            using (System.Runtime.ObjectAllocator.Lasting())
+                pool = new WorkerThreads(shared, workers);
             if (pool.AddWorker() == null)
             {
                 t_none = true;

@@ -72,6 +72,9 @@ namespace System.Threading
         /// <summary>WaitAsync(timeout), canceled with <paramref name="cancellationToken"/>.</summary>
         public Task<bool> WaitAsync(TimeSpan timeout, CancellationToken cancellationToken) => WaitAsync(DelayTimer.Milliseconds(timeout), cancellationToken);
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly Action<object?> s_cancelWait = static w => ((Waiter)w!).Finish(false, true);
+
         /// <summary>
         /// Waits (without a fiber) to enter: true if it did, false after
         /// <paramref name="millisecondsTimeout"/> (-1: no limit, 0: only if
@@ -98,7 +101,7 @@ namespace System.Threading
             waiter.Previous = _last;
             _last = waiter;
             if (cancellationToken.CanBeCanceled)
-                waiter.Registration = cancellationToken.Register(static w => ((Waiter)w!).Finish(false, true), waiter);
+                waiter.Registration = cancellationToken.Register(s_cancelWait, waiter);
             if (millisecondsTimeout > 0)
             {
                 waiter.Timer = new TimeoutTimer(waiter);

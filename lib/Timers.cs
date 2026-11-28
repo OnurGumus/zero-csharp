@@ -73,6 +73,9 @@ internal abstract class TimerFiber
 
     protected abstract void Tick();
 
+    // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+    static readonly Action<TimerFiber> s_run = static timer => timer.Run();
+
     // Fires dueMs from now, then every periodMs (0: once), counting from now
     // even if the timer was already running.
     internal void Schedule(long dueMs, long periodMs)
@@ -84,7 +87,7 @@ internal abstract class TimerFiber
         if (!_hasFiber)
         {
             _hasFiber = true;
-            Fiber.Spawn(this, static timer => timer.Run(), StackSize);
+            Fiber.Spawn(this, s_run, StackSize);
         }
         else
         {
@@ -544,6 +547,9 @@ namespace System.Threading
             Period = period;
         }
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly TimerCallback s_providerTick = static t => ((PeriodicTimer)t!).ProviderTick();
+
         /// <summary>
         /// The time between ticks. Setting it starts the count again from now,
         /// as in .NET.
@@ -560,7 +566,7 @@ namespace System.Threading
                 if (_provider != null)
                 {
                     _ticked = false;
-                    _providerTimer ??= _provider.CreateTimer(static t => ((PeriodicTimer)t!).ProviderTick(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                    _providerTimer ??= _provider.CreateTimer(s_providerTick, this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
                     _providerTimer.Change(value, value);
                     return;
                 }
@@ -614,6 +620,9 @@ namespace System.Threading
             return ticked;
         }
 
+        // As above: made by the static constructor (scripts/static-stores).
+        static readonly Action<object?> s_cancelWait = static t => ((PeriodicTimer)t!).CancelWait();
+
         /// <summary>
         /// Waits for the next tick, as WaitForNextTick does, without blocking:
         /// true at the tick, false once the timer is disposed. Canceled with
@@ -639,7 +648,7 @@ namespace System.Threading
                 _tick.Reset();
             if (cancellationToken.CanBeCanceled)
             {
-                _onCancel ??= new Registration(null, null, static t => ((PeriodicTimer)t!).CancelWait(), this);
+                _onCancel ??= new Registration(null, null, s_cancelWait, this);
                 Arm();
                 _registration = cancellationToken.Attach(_onCancel); // may cancel at once
             }

@@ -221,6 +221,9 @@ sealed class ChannelWaiters<T> : Channel<T>.AsyncWaiters
     internal override bool HasSender => _senders != null;
     internal override bool HasReceiver => _receivers != null;
 
+    // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+    static readonly Action<object?> s_cancelReceiver = static o => { var r = (Receiver)o!; r.Owner!.Cancel(r); };
+
     internal Task<T> AddReceiver(CancellationToken token)
     {
         Receiver? r = _spareReceivers;
@@ -243,12 +246,15 @@ sealed class ChannelWaiters<T> : Channel<T>.AsyncWaiters
         _receiversTail = r;
         if (token.CanBeCanceled)
         {
-            r.OnCancel ??= new Registration(null, null, static o => { var r = (Receiver)o!; r.Owner!.Cancel(r); }, r);
+            r.OnCancel ??= new Registration(null, null, s_cancelReceiver, r);
             r.Owner = this;
             r.Registration = token.Attach(r.OnCancel);
         }
         return r;
     }
+
+    // As above: made by the static constructor (scripts/static-stores).
+    static readonly Action<object?> s_cancelSender = static o => { var s = (Sender)o!; s.Owner!.Cancel(s); };
 
     internal Task AddSender(T value, CancellationToken token)
     {
@@ -273,12 +279,15 @@ sealed class ChannelWaiters<T> : Channel<T>.AsyncWaiters
         _sendersTail = s;
         if (token.CanBeCanceled)
         {
-            s.OnCancel ??= new Registration(null, null, static o => { var s = (Sender)o!; s.Owner!.Cancel(s); }, s);
+            s.OnCancel ??= new Registration(null, null, s_cancelSender, s);
             s.Owner = this;
             s.Registration = token.Attach(s.OnCancel);
         }
         return s;
     }
+
+    // As above: made by the static constructor (scripts/static-stores).
+    static readonly Action<object?> s_cancelWaiter = static o => { var w = (Waiter)o!; w.Owner!.Cancel(w); };
 
     internal Task<bool> AddWaiter(CancellationToken token)
     {
@@ -298,7 +307,7 @@ sealed class ChannelWaiters<T> : Channel<T>.AsyncWaiters
         _waiters = w;
         if (token.CanBeCanceled)
         {
-            w.OnCancel ??= new Registration(null, null, static o => { var w = (Waiter)o!; w.Owner!.Cancel(w); }, w);
+            w.OnCancel ??= new Registration(null, null, s_cancelWaiter, w);
             w.Owner = this;
             w.Registration = token.Attach(w.OnCancel);
         }

@@ -79,6 +79,9 @@ internal abstract class SocketOperation<TResult> : Fiber.IoWaiter
     // Tries without waiting: true once done, with Result or Error set.
     protected abstract bool Attempt(int fd);
 
+    // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+    static readonly Action<object?> s_cancel = static o => ((SocketOperation<TResult>)o!).Cancel();
+
     protected ValueTask<TResult> Start(bool quiet, NetworkStream? stream, long deadline, CancellationToken cancellationToken)
     {
         if (_waiting)
@@ -107,7 +110,7 @@ internal abstract class SocketOperation<TResult> : Fiber.IoWaiter
         Wait(fd);
         if (cancellationToken.CanBeCanceled)
         {
-            _onCancel ??= new Registration(null, null, static o => ((SocketOperation<TResult>)o!).Cancel(), this);
+            _onCancel ??= new Registration(null, null, s_cancel, this);
             _registration = cancellationToken.Attach(_onCancel);
         }
         return new ValueTask<TResult>(_task);
@@ -508,9 +511,12 @@ public partial class TcpListener
     /// <summary>The next connection as a TcpClient, once one comes. Failing ends the program.</summary>
     public Task<TcpClient> AcceptTcpClientAsync() => AcceptTcpClientAsync(CancellationToken.None).AsTask();
 
+    // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+    static readonly Func<Socket, TcpClient> s_toClient = static socket => new TcpClient(socket);
+
     /// <summary>The next connection as a TcpClient, or canceled with the token.</summary>
     public ValueTask<TcpClient> AcceptTcpClientAsync(CancellationToken cancellationToken)
-        => Mapped<Socket, TcpClient>.Map(Started.AcceptAsync(cancellationToken), static socket => new TcpClient(socket));
+        => Mapped<Socket, TcpClient>.Map(Started.AcceptAsync(cancellationToken), s_toClient);
 
     /// <summary>The next connection as a socket, once one comes.</summary>
     public Task<Socket> AcceptSocketAsync() => Started.AcceptAsync();

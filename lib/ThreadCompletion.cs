@@ -250,7 +250,10 @@ sealed class ThreadInbox : Fiber.IoWaiter
             shared->WriteFd = fds[1];
             if (Fiber.Poll == null)
                 Fiber.Poll = &Poll;
-            return t_inbox = new ThreadInbox(shared);
+            // Kept for the thread's life: made outside any object scope the
+            // program has open now (scripts/static-stores).
+            using (System.Runtime.ObjectAllocator.Lasting())
+                return t_inbox = new ThreadInbox(shared);
         }
     }
 
