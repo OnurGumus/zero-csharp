@@ -161,7 +161,7 @@ static partial class Program
             chain.ChainPolicy.TrustMode = ZX.X509ChainTrustMode.CustomRootTrust;
             chain.ChainPolicy.CustomTrustStore.Add(ZX.X509Certificate2.CreateFromPem(pems[rootName]));
             chain.ChainPolicy.RevocationMode = ZX.X509RevocationMode.NoCheck;
-            chain.ChainPolicy.VerificationTime = new CalendarTime { Year = at.Year, Month = at.Month, Day = at.Day, Hour = at.Hour };
+            chain.ChainPolicy.VerificationTime = at;
             chain.ChainPolicy.VerificationTimeIgnored = false;
             if (server)
                 chain.ChainPolicy.ApplicationPolicy.Add(new Z.Oid("1.3.6.1.5.5.7.3.1"));
@@ -185,6 +185,70 @@ static partial class Program
         Report("X.509 chains vs .NET", scenarios.Length, failures, first);
     }
 
+    // A trusted root's own dates: a leaf that is still good under a root that
+    // has expired (or isn't valid yet) is refused by .NET, with NotTimeValid
+    // on the root's element, and must be by ours. No certificate of the
+    // sample is like that, so these are made here.
+    static void X509RootDates()
+    {
+        int failures = 0;
+        string first = "";
+        var cases = new (string Name, DateTime RootFrom, DateTime RootTo, DateTime At, bool Good)[]
+        {
+            ("root expired", Utc(2020, 1, 1), Utc(2022, 1, 1), Utc(2025, 6, 1), false),
+            ("root not yet valid", Utc(2026, 1, 1), Utc(2032, 1, 1), Utc(2025, 6, 1), false),
+            ("root in its dates", Utc(2020, 1, 1), Utc(2032, 1, 1), Utc(2025, 6, 1), true),
+        };
+        foreach (var (name, rootFrom, rootTo, at, good) in cases)
+        {
+            using var rootKey = S.ECDsa.Create(S.ECCurve.NamedCurves.nistP256);
+            var rootRequest = new SX.CertificateRequest("CN=Dates Root", rootKey, S.HashAlgorithmName.SHA256);
+            rootRequest.CertificateExtensions.Add(new SX.X509BasicConstraintsExtension(true, false, 0, true));
+            rootRequest.CertificateExtensions.Add(new SX.X509KeyUsageExtension(SX.X509KeyUsageFlags.KeyCertSign, true));
+            using SX.X509Certificate2 root = rootRequest.CreateSelfSigned(rootFrom, rootTo);
+            using var leafKey = S.ECDsa.Create(S.ECCurve.NamedCurves.nistP256);
+            var leafRequest = new SX.CertificateRequest("CN=dates.example.test", leafKey, S.HashAlgorithmName.SHA256);
+            leafRequest.CertificateExtensions.Add(new SX.X509BasicConstraintsExtension(false, false, 0, true));
+            // Signed with the root's key by name: .NET's Create(issuerCertificate, ...) won't
+            // make a leaf that outlives its issuer.
+            using SX.X509Certificate2 leaf = leafRequest.Create(root.SubjectName, SX.X509SignatureGenerator.CreateForECDsa(rootKey),
+                Utc(2024, 1, 1), Utc(2030, 1, 1), new byte[] { 1, 2, 3, 4 });
+
+            using var dotnet = new SX.X509Chain();
+            dotnet.ChainPolicy.TrustMode = SX.X509ChainTrustMode.CustomRootTrust;
+            dotnet.ChainPolicy.CustomTrustStore.Add(root);
+            dotnet.ChainPolicy.RevocationMode = SX.X509RevocationMode.NoCheck;
+            dotnet.ChainPolicy.VerificationTime = at.ToLocalTime();
+            dotnet.ChainPolicy.VerificationTimeIgnored = false;
+            dotnet.ChainPolicy.DisableCertificateDownloads = true;
+            bool theirs = dotnet.Build(leaf);
+            SX.X509ChainStatusFlags theirRoot = SX.X509ChainStatusFlags.NoError;
+            if (dotnet.ChainElements.Count == 2)
+                foreach (var s in dotnet.ChainElements[1].ChainElementStatus)
+                    theirRoot |= s.Status;
+
+            var chain = new ZX.X509Chain();
+            chain.ChainPolicy.TrustMode = ZX.X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.Add(new ZX.X509Certificate2(root.RawData));
+            chain.ChainPolicy.RevocationMode = ZX.X509RevocationMode.NoCheck;
+            chain.ChainPolicy.VerificationTime = at;
+            chain.ChainPolicy.VerificationTimeIgnored = false;
+            bool ours = chain.Build(new ZX.X509Certificate2(leaf.RawData));
+            ZX.X509ChainStatusFlags ourRoot = ZX.X509ChainStatusFlags.NoError;
+            if (chain.ChainElements.Count == 2)
+                foreach (var s in chain.ChainElements[1].ChainElementStatus)
+                    ourRoot |= s.Status;
+
+            bool same = ours == theirs && theirs == good && (int)ourRoot == (int)theirRoot
+                && chain.ChainElements.Count == dotnet.ChainElements.Count;
+            if (!same && failures++ == 0)
+                first = $"{name}: ours {ours} (root element {ourRoot}), .NET {theirs} (root element {theirRoot})";
+        }
+        Report("X.509 root dates vs .NET", cases.Length, failures, first);
+    }
+
+    static DateTime Utc(int year, int month, int day) => new DateTime(year, month, day, 12, 0, 0, DateTimeKind.Utc);
+
     // The system's roots (SSL_CERT_FILE, or the bundle's usual places): the real chains
     // must reach one. Skipped where there is no bundle.
     static void X509SystemRoots()
@@ -202,7 +266,7 @@ static partial class Program
             sent.ImportFromPem(Pems()[name]);
             var chain = new ZX.X509Chain();
             chain.ChainPolicy.RevocationMode = ZX.X509RevocationMode.NoCheck;
-            chain.ChainPolicy.VerificationTime = new CalendarTime { Year = 2026, Month = 11, Day = 28, Hour = 12 };
+            chain.ChainPolicy.VerificationTime = new DateTime(2026, 11, 28, 12, 0, 0, DateTimeKind.Utc);
             chain.ChainPolicy.VerificationTimeIgnored = false;
             for (int i = 1; i < sent.Count; i++)
                 chain.ChainPolicy.ExtraStore.Add(sent[i]);

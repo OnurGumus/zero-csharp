@@ -400,7 +400,7 @@ public sealed class ManualTime : TimeProvider
 
     public override long TimestampFrequency => TimeSpan.TicksPerSecond;
     public override long GetTimestamp() => _now;
-    public override CalendarTime GetUtcNow() => CalendarTime.FromUnixMilliseconds(_now / TimeSpan.TicksPerMillisecond);
+    public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeMilliseconds(_now / TimeSpan.TicksPerMillisecond);
 
     // Timers made and not disposed.
     public int Live

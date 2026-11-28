@@ -63,7 +63,7 @@ public static class Program
         return copy;
     }
 
-    static CalendarTime Day(int year, int month, int day) => new CalendarTime { Year = year, Month = month, Day = day, Hour = 12 };
+    static DateTime Day(int year, int month, int day) => new DateTime(year, month, day, 12, 0, 0, DateTimeKind.Utc);
 
     public static int Main()
     {
@@ -168,12 +168,14 @@ public static class Program
         X509Certificate2 leaf = X509Certificate2.CreateFromPem(LeafPem);
         string subject = leaf.Subject;   // "CN=www.example.test, O=..."
         string issuer = leaf.Issuer;
-        CalendarTime notAfter = leaf.NotAfter;
+        DateTime notAfter = leaf.NotAfter;   // local time; ToUniversalTime() for UTC
         // docs:end
         CheckText("Subject", subject, "CN=www.example.test, O=\"Example, Inc.\", C=US");
         CheckText("Issuer", issuer, "CN=Zero Test CA E1, O=Zero Test, C=US");
-        Check("NotBefore", leaf.NotBefore.Year == 2026 && leaf.NotBefore.Month == 1 && leaf.NotBefore.Day == 1 && leaf.NotBefore.Hour == 0);
-        Check("NotAfter", notAfter.Year == 2027 && notAfter.Month == 1 && notAfter.Day == 1);
+        DateTime from = leaf.NotBefore.ToUniversalTime(), until = notAfter.ToUniversalTime();
+        Check("NotBefore", from.Year == 2026 && from.Month == 1 && from.Day == 1 && from.Hour == 0);
+        Check("NotAfter", until.Year == 2027 && until.Month == 1 && until.Day == 1);
+        Check("local times", leaf.NotBefore.Kind == DateTimeKind.Local && notAfter.Kind == DateTimeKind.Local);
         Check("Version", leaf.Version == 3);
         CheckText("SignatureAlgorithm", leaf.SignatureAlgorithm.Value, "1.2.840.10045.4.3.3");
         CheckText("SignatureAlgorithm name", leaf.SignatureAlgorithm.FriendlyName, "sha384ECDSA");
@@ -218,7 +220,7 @@ public static class Program
         Section("Host names");
     }
 
-    static X509Chain NewChain(string rootPem, CalendarTime at)
+    static X509Chain NewChain(string rootPem, DateTime at)
     {
         X509Chain chain = new X509Chain();
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
@@ -239,7 +241,7 @@ public static class Program
 
     static void Chains()
     {
-        CalendarTime june = Day(2026, 6, 1);
+        DateTime june = Day(2026, 6, 1);
         X509Certificate2 leaf = X509Certificate2.CreateFromPem(LeafPem);
         X509Certificate2 inter = X509Certificate2.CreateFromPem(InterPem);
 
@@ -276,7 +278,7 @@ public static class Program
 
     // Builds leafPem's chain with these intermediates, and checks it fails with exactly these flags.
     static void Refused(string name, string leafPem, string[] extra, X509ChainStatusFlags expected,
-        CalendarTime at, bool serverOnly = false, string rootPem = null)
+        DateTime at, bool serverOnly = false, string rootPem = null)
     {
         using X509Chain chain = NewChain(rootPem ?? RootPem, at);
         foreach (string pem in extra)
@@ -292,19 +294,17 @@ public static class Program
 
     static void Refusals()
     {
-        CalendarTime june = Day(2026, 6, 1);
+        DateTime june = Day(2026, 6, 1);
         string[] inter = { InterPem };
         Refused("expired", ExpiredPem, inter, X509ChainStatusFlags.NotTimeValid, june);
         Refused("not yet valid", LeafPem, inter, X509ChainStatusFlags.NotTimeValid, Day(2025, 12, 31));
-        Refused("signed by another key", ForgedPem, inter,
-            X509ChainStatusFlags.NotSignatureValid | X509ChainStatusFlags.PartialChain, june);
+        Refused("signed by another key", ForgedPem, inter, X509ChainStatusFlags.PartialChain, june);
         Refused("issuer isn't a CA", NotCaChildPem, new[] { InterPem, NotCaPem }, X509ChainStatusFlags.InvalidBasicConstraints, june);
         Refused("path too long", DeepChildPem, new[] { InterPem, SubCaPem }, X509ChainStatusFlags.InvalidBasicConstraints, june);
         Refused("not for servers", ClientPem, inter, X509ChainStatusFlags.NotValidForUsage, june, serverOnly: true);
         Refused("unknown critical extension", CriticalPem, inter, X509ChainStatusFlags.HasNotSupportedCriticalExtension, june);
-        Refused("SHA-1", Sha1Pem, inter, X509ChainStatusFlags.NotSignatureValid | X509ChainStatusFlags.PartialChain, june);
-        Refused("RSA-PSS in a certificate", PssPem, new string[0],
-            X509ChainStatusFlags.NotSignatureValid | X509ChainStatusFlags.PartialChain, june);
+        Refused("SHA-1", Sha1Pem, inter, X509ChainStatusFlags.PartialChain, june);
+        Refused("RSA-PSS in a certificate", PssPem, new string[0], X509ChainStatusFlags.PartialChain, june);
         Refused("missing intermediate", LeafPem, new string[0], X509ChainStatusFlags.PartialChain, june);
         Refused("untrusted root", LeafPem, new[] { InterPem, RootPem }, X509ChainStatusFlags.UntrustedRoot, june,
             rootPem: RootEPem);
@@ -321,8 +321,11 @@ public static class Program
         late.ChainPolicy.ExtraStore.Add(X509Certificate2.CreateFromPem(InterPem));
         late.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreNotTimeValid;
         Check("IgnoreNotTimeValid", late.Build(X509Certificate2.CreateFromPem(LeafPem)) && Flags(late) == X509ChainStatusFlags.NotTimeValid);
+        // All three have expired by then, the trusted root too: each element says so.
         Check("element status", late.ChainElements[0].ChainElementStatus.Length == 1
-                                && late.ChainElements[2].ChainElementStatus.Length == 0);
+                                && late.ChainElements[1].ChainElementStatus.Length == 1
+                                && late.ChainElements[2].ChainElementStatus.Length == 1
+                                && late.ChainElements[2].ChainElementStatus[0].Status == X509ChainStatusFlags.NotTimeValid);
 
         // .NET's default asks for revocation checks, which aren't done here:
         // Build says so and refuses, without throwing.
@@ -344,7 +347,7 @@ public static class Program
 
     static void RealChains()
     {
-        CalendarTime now = Day(2026, 11, 28);
+        DateTime now = Day(2026, 11, 28);
 
         // letsencrypt.org: ECDSA leaf and CAs, then ISRG Root X2 cross-signed
         // by ISRG Root X1, an RSA 4096 root.

@@ -16,8 +16,7 @@
 // internal Try methods that don't throw, since what a server sends mustn't
 // end the program.
 //
-// Differences from .NET: NotBefore and NotAfter are CalendarTime in UTC,
-// not local DateTime; there is no Thumbprint (it is SHA-1, which lib/ doesn't
+// Differences from .NET: there is no Thumbprint (it is SHA-1, which lib/ doesn't
 // have) but GetCertHash(HashAlgorithmName.SHA256) is; no private keys; no
 // Extensions collection.
 
@@ -412,11 +411,11 @@ public sealed class X509Certificate2 : X509Certificate
     /// <summary>Who signed the certificate, in the same form as Subject.</summary>
     public override string Issuer => _issuer ??= DistinguishedName.Format(IssuerEncoded);
 
-    /// <summary>When the certificate starts being good, in UTC (.NET gives local time).</summary>
-    public CalendarTime NotBefore => CalendarTime.FromUnixMilliseconds(NotBeforeSeconds * 1000);
+    /// <summary>When the certificate starts being good, in local time, as in .NET (ToUniversalTime() for UTC).</summary>
+    public DateTime NotBefore => DateTimeOffset.FromUnixTimeSeconds(NotBeforeSeconds).LocalDateTime;
 
-    /// <summary>When the certificate stops being good, in UTC (.NET gives local time).</summary>
-    public CalendarTime NotAfter => CalendarTime.FromUnixMilliseconds(NotAfterSeconds * 1000);
+    /// <summary>When the certificate stops being good, in local time, as in .NET (ToUniversalTime() for UTC).</summary>
+    public DateTime NotAfter => DateTimeOffset.FromUnixTimeSeconds(NotAfterSeconds).LocalDateTime;
 
     /// <summary>The serial number in hexadecimal, big-endian, as .NET shows it.</summary>
     public string SerialNumber => Convert.ToHexString(_raw.AsSpan(_serialStart, _serialLength));

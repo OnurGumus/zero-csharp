@@ -63,6 +63,7 @@ static partial class Program
         KeysDamaged(iterations);
         X509Damaged(iterations);
         X509Chains();
+        X509RootDates();
         X509SystemRoots();
         TlsReplay(Math.Max(500, iterations / 10));
         TlsRetryReplay();

@@ -472,7 +472,7 @@ public sealed class AesGcm : IDisposable
     public AesGcm(ReadOnlySpan<byte> key, int tagSizeInBytes)
     {
         if (key.Length != 16 && key.Length != 24 && key.Length != 32)
-            throw new ArgumentException("The key must be 16, 24 or 32 bytes.", nameof(key));
+            throw new CryptographicException("The key must be 16, 24 or 32 bytes."); // .NET's exception for it
         if (tagSizeInBytes < 12 || tagSizeInBytes > 16)
             throw new ArgumentException("The tag must be 12 to 16 bytes.", nameof(tagSizeInBytes));
         _tagSize = tagSizeInBytes;

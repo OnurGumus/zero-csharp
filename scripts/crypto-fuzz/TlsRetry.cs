@@ -92,7 +92,7 @@ static partial class Program
         policy.TrustMode = ZX.X509ChainTrustMode.CustomRootTrust;
         policy.CustomTrustStore.Add(new ZX.X509Certificate2(H(ServerCertificate)));
         policy.RevocationMode = ZX.X509RevocationMode.NoCheck;
-        policy.VerificationTime = new CalendarTime { Year = 2020, Month = 1, Day = 1 };
+        policy.VerificationTime = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         policy.VerificationTimeIgnored = false;
         policy.ApplicationPolicy.Add(new ZeroTest.Oid("2.5.29.37.0"));
         bool ok = ssl.TryAuthenticateAsClient(new ZN.SslClientAuthenticationOptions

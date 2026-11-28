@@ -364,8 +364,7 @@ Where it differs from .NET:
   `Environment.Exit` doesn't check.
 - A handler that takes longer than the interval delays the next tick. The timer then fires once
   straight away and keeps its rhythm from there, rather than making up every tick it missed.
-- `SignalTime` is a `CalendarTime` in UTC, not a local `DateTime`. Each timer reuses one
-  `ElapsedEventArgs`, so a tick allocates nothing.
+- Each timer reuses one `ElapsedEventArgs`, so a tick allocates nothing.
 - `-=` removes the same delegate object that `+=` added: delegates here can't be combined, so the
   timer keeps a list.
 - `StackSize` sets the size of the timer's fiber's stack (0, the default, is
@@ -848,8 +847,7 @@ which fire inside `Fiber.Run`. Driving a fake clock from a test fires the timers
 tasks they complete are done when `Advance` returns. The async methods waiting on them carry on at the
 next `Fiber.Run`, or the next `await` outside a fiber.
 
-Three things differ from .NET. `GetUtcNow` returns a `CalendarTime`, since there is no `DateTimeOffset`.
-There's no `LocalTimeZone`, because there are no time zones. And there's no
+Two things differ from .NET. There's no `LocalTimeZone` or `GetLocalNow`. And there's no
 `Task.WaitAsync(timeout, timeProvider)`: a timed-out wait would fault its task, and tasks here can't
 fault. Use `Task.WhenAny` with `Task.Delay(timeout, timeProvider)` instead.
 

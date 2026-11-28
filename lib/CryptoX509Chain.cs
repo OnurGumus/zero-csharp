@@ -21,8 +21,9 @@
 //   it has one, includes those purposes;
 // - no extension marked critical that this doesn't understand.
 //
-// A root is trusted as it is: its own dates and extensions aren't checked,
-// as RFC 5280 says (.NET on Windows would also report an expired root).
+// A root is trusted as it is: its own extensions aren't checked, as RFC 5280
+// says. Its dates are, as .NET does: a chain under a root that has expired,
+// or isn't valid yet, is refused with NotTimeValid on the root's element.
 //
 // Trust comes from ChainPolicy.CustomTrustStore when TrustMode is
 // CustomRootTrust, else from the system's roots: the PEM bundle at
@@ -128,7 +129,7 @@ public struct X509ChainStatus
 /// <summary>What X509Chain.Build checks against.</summary>
 public sealed class X509ChainPolicy
 {
-    CalendarTime _verificationTime;
+    DateTime _verificationTime;
     bool _timeSet;
 
     /// <summary>Certificates Build may use on the way up: the intermediates a server sent.</summary>
@@ -153,10 +154,14 @@ public sealed class X509ChainPolicy
 
     public X509VerificationFlags VerificationFlags { get; set; }
 
-    /// <summary>The time to check the dates against, in UTC; the current time unless set.</summary>
-    public CalendarTime VerificationTime
+    /// <summary>
+    /// The time to check the dates against; the current time unless set. A
+    /// local time, as in .NET: a DateTime that says it is UTC is taken as
+    /// that, and one that doesn't say, as local.
+    /// </summary>
+    public DateTime VerificationTime
     {
-        get => _timeSet ? _verificationTime : Clock.UtcNow;
+        get => _timeSet ? _verificationTime : DateTime.Now;
         set
         {
             _verificationTime = value;
@@ -168,7 +173,9 @@ public sealed class X509ChainPolicy
     public bool VerificationTimeIgnored { get; set; } = true;
 
     internal long VerificationSeconds
-        => (_timeSet && !VerificationTimeIgnored ? _verificationTime.ToUnixMilliseconds() : Clock.UnixMilliseconds) / 1000;
+        => _timeSet && !VerificationTimeIgnored
+            ? new DateTimeOffset(_verificationTime.ToUniversalTime()).ToUnixTimeSeconds()
+            : Clock.UnixMilliseconds / 1000;
 
     public void Reset()
     {
@@ -283,7 +290,7 @@ public class X509Chain : IDisposable
     public bool Build(X509Certificate2 certificate)
     {
         if (certificate == null)
-            throw new ArgumentNullException(nameof(certificate));
+            throw new ArgumentException("There is no certificate to build a chain from.", nameof(certificate)); // .NET's exception for it
         X509Certificate2Collection anchors = _policy.TrustMode == X509ChainTrustMode.CustomRootTrust
             ? _policy.CustomTrustStore
             : SystemRoots.Get();
@@ -314,7 +321,7 @@ public class X509Chain : IDisposable
                 trusted = true; // the certificate is itself a trusted root
                 break;
             }
-            X509Certificate2 issuer = FindIssuer(anchors, current, path, count, out bool nameMatched);
+            X509Certificate2 issuer = FindIssuer(anchors, current, path, count);
             if (issuer != null)
             {
                 path[count++] = issuer;
@@ -327,8 +334,7 @@ public class X509Chain : IDisposable
                 flags[count - 1] |= X509ChainStatusFlags.UntrustedRoot;
                 break;
             }
-            issuer = FindIssuer(extra, current, path, count, out bool extraNameMatched);
-            nameMatched |= extraNameMatched;
+            issuer = FindIssuer(extra, current, path, count);
             if (issuer != null && count < MaxDepth)
             {
                 if (Contains(path, count, issuer))
@@ -340,9 +346,10 @@ public class X509Chain : IDisposable
                 current = issuer;
                 continue;
             }
-            // Nowhere to go: a gap.
-            if (nameMatched)
-                flags[count - 1] |= X509ChainStatusFlags.NotSignatureValid;
+            // Nowhere to go: a gap. Also when a certificate has the
+            // issuer's name and its key doesn't verify the signature (a
+            // forgery, or an algorithm this doesn't support): it isn't the
+            // issuer then, and .NET reports PartialChain alone for that too.
             flags[count - 1] |= X509ChainStatusFlags.PartialChain;
             break;
         }
@@ -365,6 +372,9 @@ public class X509Chain : IDisposable
             if (!AllowsPurposes(c))
                 flags[i] |= X509ChainStatusFlags.NotValidForUsage;
         }
+        // The trusted root: its dates only.
+        if (trusted && (now < path[count - 1].NotBeforeSeconds || now > path[count - 1].NotAfterSeconds))
+            flags[count - 1] |= X509ChainStatusFlags.NotTimeValid;
         // Every issuer, the trusted root included, must be a CA that may sign certificates.
         for (int i = 1; i < count; i++)
         {
@@ -475,16 +485,14 @@ public class X509Chain : IDisposable
 
     // A certificate in the store named as c's issuer whose key verifies c's signature.
     static X509Certificate2 FindIssuer(X509Certificate2Collection store, X509Certificate2 c,
-        X509Certificate2[] path, int count, out bool nameMatched)
+        X509Certificate2[] path, int count)
     {
-        nameMatched = false;
         X509Certificate2 cyclic = null;
         for (int i = 0; i < store.Count; i++)
         {
             X509Certificate2 candidate = store[i];
             if (!DerReader.Same(candidate.SubjectEncoded, c.IssuerEncoded))
                 continue;
-            nameMatched = true;
             if (!candidate.Signed(c))
                 continue;
             // Prefer one that isn't already in the path.
@@ -532,7 +540,7 @@ public class X509Chain : IDisposable
         X509ChainStatusFlags.Cyclic => "The chain goes in a circle.",
         X509ChainStatusFlags.InvalidBasicConstraints => "An issuer isn't a certificate authority, or is too far from the certificate.",
         X509ChainStatusFlags.HasNotSupportedNameConstraint => "An issuer has name constraints, which aren't checked here.",
-        X509ChainStatusFlags.PartialChain => "The chain doesn't reach a root certificate.",
+        X509ChainStatusFlags.PartialChain => "The chain doesn't reach a root certificate: an issuer is missing, or the certificate by its name didn't sign this one (or signed it with an algorithm this doesn't support).",
         X509ChainStatusFlags.RevocationStatusUnknown => "Whether a certificate was revoked wasn't checked: there is no revocation checking here (set RevocationMode to NoCheck).",
         X509ChainStatusFlags.OfflineRevocation => "Revocation wasn't checked: no revocation server was asked.",
         X509ChainStatusFlags.HasNotSupportedCriticalExtension => "A certificate has a critical extension this doesn't understand.",

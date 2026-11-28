@@ -146,6 +146,9 @@ as here: that writes out what's still in the buffer and closes the file. A strea
 disposed loses whatever is still in its buffer.
 
 Every `FileMode` works: `Open`, `Create`, `CreateNew`, `OpenOrCreate`, `Truncate` and `Append`.
+An `Append` stream starts at the end of the file and can seek from there, though not back over what
+the file already held. Its writes always go to the end, wherever `Seek` went; .NET's would overwrite
+what the stream itself had appended.
 Opening a file that isn't there, or a `CreateNew` file that is, throws an `IOException`, as in .NET.
 A throw ends the program unless a [`Catch.Run`](recover-from-errors.html) is waiting for it. Where
 failing is expected, `TryOpen` returns the reason as a `FileError` instead:

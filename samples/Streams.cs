@@ -197,7 +197,7 @@ public static class Program
         using (var kept = new FileStream(Log, FileMode.OpenOrCreate, FileAccess.Read))
             Check("OpenOrCreate kept it", kept.Length == 1);
         using (var appending = new FileStream(Log, FileMode.Append))
-            Check("append can't seek", !appending.CanSeek);
+            Check("append starts at the end, and can seek", appending.CanSeek && appending.Position == appending.Length && appending.Length == 1);
         Section("File modes");
 
         // docs:arena
