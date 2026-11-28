@@ -1,23 +1,89 @@
 // BCL types the F# compiler and FSharp.Core expect that zerocore doesn't define.
 namespace System
 {
-    public class Tuple<T1>
+    using System.Collections;
+
+    // The tuples' structural equality, hash and order, item by item through
+    // the comparer given, as .NET's tuples have: F#'s = on a list of tuples,
+    // and a Set or Map with tuple keys, compare boxed tuples this way.
+    internal static class TupleComparers
     {
+        internal static readonly IEqualityComparer Equality = new DefaultEquality();
+        internal static readonly IComparer Comparison = new DefaultComparison();
+
+        internal static int Combine(int h1, int h2) => ((h1 << 5) + h1) ^ h2;
+
+        private sealed class DefaultEquality : IEqualityComparer
+        {
+            public new bool Equals(object x, object y) => x == null ? y == null : x.Equals(y);
+            public int GetHashCode(object obj) => obj == null ? 0 : obj.GetHashCode();
+        }
+
+        private sealed class DefaultComparison : IComparer
+        {
+            public int Compare(object x, object y)
+                => x == null ? (y == null ? 0 : -1) : y == null ? 1 : ((IComparable)x).CompareTo(y);
+        }
+    }
+
+    public class Tuple<T1> : IStructuralEquatable, IStructuralComparable, IComparable
+    {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1> t && comparer.Equals(Item1, t.Item1);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => comparer.GetHashCode(Item1);
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1>)other;
+            return comparer.Compare(Item1, t.Item1);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1) { Item1 = item1; }
         public T1 Item1 { get; }
         public override string ToString() => "(" + Show(Item1) + ")";
         private static string Show(object value) => value == null ? "null" : value.ToString();
     }
-    public class Tuple<T1, T2>
+    public class Tuple<T1, T2> : IStructuralEquatable, IStructuralComparable, IComparable
     {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1, T2> t && comparer.Equals(Item1, t.Item1) && comparer.Equals(Item2, t.Item2);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => TupleComparers.Combine(comparer.GetHashCode(Item1), comparer.GetHashCode(Item2));
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1, T2>)other;
+            int c;
+            if ((c = comparer.Compare(Item1, t.Item1)) != 0) return c;
+            return comparer.Compare(Item2, t.Item2);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1, T2 item2) { Item1 = item1; Item2 = item2; }
         public T1 Item1 { get; }
         public T2 Item2 { get; }
         public override string ToString() => "(" + Show(Item1) + ", " + Show(Item2) + ")";
         private static string Show(object value) => value == null ? "null" : value.ToString();
     }
-    public class Tuple<T1, T2, T3>
+    public class Tuple<T1, T2, T3> : IStructuralEquatable, IStructuralComparable, IComparable
     {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1, T2, T3> t && comparer.Equals(Item1, t.Item1) && comparer.Equals(Item2, t.Item2) && comparer.Equals(Item3, t.Item3);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => TupleComparers.Combine(TupleComparers.Combine(comparer.GetHashCode(Item1), comparer.GetHashCode(Item2)), comparer.GetHashCode(Item3));
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1, T2, T3>)other;
+            int c;
+            if ((c = comparer.Compare(Item1, t.Item1)) != 0) return c;
+            if ((c = comparer.Compare(Item2, t.Item2)) != 0) return c;
+            return comparer.Compare(Item3, t.Item3);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1, T2 item2, T3 item3) { Item1 = item1; Item2 = item2; Item3 = item3; }
         public T1 Item1 { get; }
         public T2 Item2 { get; }
@@ -25,8 +91,24 @@ namespace System
         public override string ToString() => "(" + Show(Item1) + ", " + Show(Item2) + ", " + Show(Item3) + ")";
         private static string Show(object value) => value == null ? "null" : value.ToString();
     }
-    public class Tuple<T1, T2, T3, T4>
+    public class Tuple<T1, T2, T3, T4> : IStructuralEquatable, IStructuralComparable, IComparable
     {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1, T2, T3, T4> t && comparer.Equals(Item1, t.Item1) && comparer.Equals(Item2, t.Item2) && comparer.Equals(Item3, t.Item3) && comparer.Equals(Item4, t.Item4);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(comparer.GetHashCode(Item1), comparer.GetHashCode(Item2)), comparer.GetHashCode(Item3)), comparer.GetHashCode(Item4));
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1, T2, T3, T4>)other;
+            int c;
+            if ((c = comparer.Compare(Item1, t.Item1)) != 0) return c;
+            if ((c = comparer.Compare(Item2, t.Item2)) != 0) return c;
+            if ((c = comparer.Compare(Item3, t.Item3)) != 0) return c;
+            return comparer.Compare(Item4, t.Item4);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1, T2 item2, T3 item3, T4 item4) { Item1 = item1; Item2 = item2; Item3 = item3; Item4 = item4; }
         public T1 Item1 { get; }
         public T2 Item2 { get; }
@@ -35,8 +117,25 @@ namespace System
         public override string ToString() => "(" + Show(Item1) + ", " + Show(Item2) + ", " + Show(Item3) + ", " + Show(Item4) + ")";
         private static string Show(object value) => value == null ? "null" : value.ToString();
     }
-    public class Tuple<T1, T2, T3, T4, T5>
+    public class Tuple<T1, T2, T3, T4, T5> : IStructuralEquatable, IStructuralComparable, IComparable
     {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1, T2, T3, T4, T5> t && comparer.Equals(Item1, t.Item1) && comparer.Equals(Item2, t.Item2) && comparer.Equals(Item3, t.Item3) && comparer.Equals(Item4, t.Item4) && comparer.Equals(Item5, t.Item5);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(comparer.GetHashCode(Item1), comparer.GetHashCode(Item2)), comparer.GetHashCode(Item3)), comparer.GetHashCode(Item4)), comparer.GetHashCode(Item5));
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1, T2, T3, T4, T5>)other;
+            int c;
+            if ((c = comparer.Compare(Item1, t.Item1)) != 0) return c;
+            if ((c = comparer.Compare(Item2, t.Item2)) != 0) return c;
+            if ((c = comparer.Compare(Item3, t.Item3)) != 0) return c;
+            if ((c = comparer.Compare(Item4, t.Item4)) != 0) return c;
+            return comparer.Compare(Item5, t.Item5);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1, T2 item2, T3 item3, T4 item4, T5 item5) { Item1 = item1; Item2 = item2; Item3 = item3; Item4 = item4; Item5 = item5; }
         public T1 Item1 { get; }
         public T2 Item2 { get; }
@@ -46,8 +145,26 @@ namespace System
         public override string ToString() => "(" + Show(Item1) + ", " + Show(Item2) + ", " + Show(Item3) + ", " + Show(Item4) + ", " + Show(Item5) + ")";
         private static string Show(object value) => value == null ? "null" : value.ToString();
     }
-    public class Tuple<T1, T2, T3, T4, T5, T6>
+    public class Tuple<T1, T2, T3, T4, T5, T6> : IStructuralEquatable, IStructuralComparable, IComparable
     {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1, T2, T3, T4, T5, T6> t && comparer.Equals(Item1, t.Item1) && comparer.Equals(Item2, t.Item2) && comparer.Equals(Item3, t.Item3) && comparer.Equals(Item4, t.Item4) && comparer.Equals(Item5, t.Item5) && comparer.Equals(Item6, t.Item6);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(comparer.GetHashCode(Item1), comparer.GetHashCode(Item2)), comparer.GetHashCode(Item3)), comparer.GetHashCode(Item4)), comparer.GetHashCode(Item5)), comparer.GetHashCode(Item6));
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1, T2, T3, T4, T5, T6>)other;
+            int c;
+            if ((c = comparer.Compare(Item1, t.Item1)) != 0) return c;
+            if ((c = comparer.Compare(Item2, t.Item2)) != 0) return c;
+            if ((c = comparer.Compare(Item3, t.Item3)) != 0) return c;
+            if ((c = comparer.Compare(Item4, t.Item4)) != 0) return c;
+            if ((c = comparer.Compare(Item5, t.Item5)) != 0) return c;
+            return comparer.Compare(Item6, t.Item6);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1, T2 item2, T3 item3, T4 item4, T5 item5, T6 item6) { Item1 = item1; Item2 = item2; Item3 = item3; Item4 = item4; Item5 = item5; Item6 = item6; }
         public T1 Item1 { get; }
         public T2 Item2 { get; }
@@ -58,8 +175,27 @@ namespace System
         public override string ToString() => "(" + Show(Item1) + ", " + Show(Item2) + ", " + Show(Item3) + ", " + Show(Item4) + ", " + Show(Item5) + ", " + Show(Item6) + ")";
         private static string Show(object value) => value == null ? "null" : value.ToString();
     }
-    public class Tuple<T1, T2, T3, T4, T5, T6, T7>
+    public class Tuple<T1, T2, T3, T4, T5, T6, T7> : IStructuralEquatable, IStructuralComparable, IComparable
     {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1, T2, T3, T4, T5, T6, T7> t && comparer.Equals(Item1, t.Item1) && comparer.Equals(Item2, t.Item2) && comparer.Equals(Item3, t.Item3) && comparer.Equals(Item4, t.Item4) && comparer.Equals(Item5, t.Item5) && comparer.Equals(Item6, t.Item6) && comparer.Equals(Item7, t.Item7);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(comparer.GetHashCode(Item1), comparer.GetHashCode(Item2)), comparer.GetHashCode(Item3)), comparer.GetHashCode(Item4)), comparer.GetHashCode(Item5)), comparer.GetHashCode(Item6)), comparer.GetHashCode(Item7));
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1, T2, T3, T4, T5, T6, T7>)other;
+            int c;
+            if ((c = comparer.Compare(Item1, t.Item1)) != 0) return c;
+            if ((c = comparer.Compare(Item2, t.Item2)) != 0) return c;
+            if ((c = comparer.Compare(Item3, t.Item3)) != 0) return c;
+            if ((c = comparer.Compare(Item4, t.Item4)) != 0) return c;
+            if ((c = comparer.Compare(Item5, t.Item5)) != 0) return c;
+            if ((c = comparer.Compare(Item6, t.Item6)) != 0) return c;
+            return comparer.Compare(Item7, t.Item7);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1, T2 item2, T3 item3, T4 item4, T5 item5, T6 item6, T7 item7) { Item1 = item1; Item2 = item2; Item3 = item3; Item4 = item4; Item5 = item5; Item6 = item6; Item7 = item7; }
         public T1 Item1 { get; }
         public T2 Item2 { get; }
@@ -71,8 +207,28 @@ namespace System
         public override string ToString() => "(" + Show(Item1) + ", " + Show(Item2) + ", " + Show(Item3) + ", " + Show(Item4) + ", " + Show(Item5) + ", " + Show(Item6) + ", " + Show(Item7) + ")";
         private static string Show(object value) => value == null ? "null" : value.ToString();
     }
-    public class Tuple<T1, T2, T3, T4, T5, T6, T7, TRest>
+    public class Tuple<T1, T2, T3, T4, T5, T6, T7, TRest> : IStructuralEquatable, IStructuralComparable, IComparable
     {
+        public override bool Equals(object obj) => ((IStructuralEquatable)this).Equals(obj, TupleComparers.Equality);
+        public override int GetHashCode() => ((IStructuralEquatable)this).GetHashCode(TupleComparers.Equality);
+        bool IStructuralEquatable.Equals(object other, IEqualityComparer comparer)
+            => other is Tuple<T1, T2, T3, T4, T5, T6, T7, TRest> t && comparer.Equals(Item1, t.Item1) && comparer.Equals(Item2, t.Item2) && comparer.Equals(Item3, t.Item3) && comparer.Equals(Item4, t.Item4) && comparer.Equals(Item5, t.Item5) && comparer.Equals(Item6, t.Item6) && comparer.Equals(Item7, t.Item7) && comparer.Equals(Rest, t.Rest);
+        int IStructuralEquatable.GetHashCode(IEqualityComparer comparer) => TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(TupleComparers.Combine(comparer.GetHashCode(Item1), comparer.GetHashCode(Item2)), comparer.GetHashCode(Item3)), comparer.GetHashCode(Item4)), comparer.GetHashCode(Item5)), comparer.GetHashCode(Item6)), comparer.GetHashCode(Item7)), comparer.GetHashCode(Rest));
+        int IStructuralComparable.CompareTo(object other, IComparer comparer)
+        {
+            if (other == null) return 1;
+            var t = (Tuple<T1, T2, T3, T4, T5, T6, T7, TRest>)other;
+            int c;
+            if ((c = comparer.Compare(Item1, t.Item1)) != 0) return c;
+            if ((c = comparer.Compare(Item2, t.Item2)) != 0) return c;
+            if ((c = comparer.Compare(Item3, t.Item3)) != 0) return c;
+            if ((c = comparer.Compare(Item4, t.Item4)) != 0) return c;
+            if ((c = comparer.Compare(Item5, t.Item5)) != 0) return c;
+            if ((c = comparer.Compare(Item6, t.Item6)) != 0) return c;
+            if ((c = comparer.Compare(Item7, t.Item7)) != 0) return c;
+            return comparer.Compare(Rest, t.Rest);
+        }
+        int IComparable.CompareTo(object obj) => ((IStructuralComparable)this).CompareTo(obj, TupleComparers.Comparison);
         public Tuple(T1 item1, T2 item2, T3 item3, T4 item4, T5 item5, T6 item6, T7 item7, TRest rest) { Item1 = item1; Item2 = item2; Item3 = item3; Item4 = item4; Item5 = item5; Item6 = item6; Item7 = item7; Rest = rest; }
         public T1 Item1 { get; }
         public T2 Item2 { get; }

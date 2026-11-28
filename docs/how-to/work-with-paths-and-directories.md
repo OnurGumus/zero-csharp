@@ -26,6 +26,20 @@ ReadOnlySpan<char> extension = Path.GetExtension(path); // .txt
 ReadOnlySpan<char> folder = Path.GetDirectoryName(path); // logs/2026
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs parts -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The parts of a path are slices of it: nothing is allocated.
+let parts (path: string) =
+    let name = Path.GetFileName(path)                    // today.txt
+    let stem = Path.GetFileNameWithoutExtension(path)    // today
+    let extension = Path.GetExtension(path)              // .txt
+    let folder = Path.GetDirectoryName(path)             // logs/2026
+    name.SequenceEqual("today.txt") && stem.SequenceEqual("today")
+    && extension.SequenceEqual(".txt") && folder.SequenceEqual("logs/2026")
+```
+
 They follow .NET's `Path`: `GetExtension("archive.tar.gz")` is `.gz`, a name that starts with a dot
 (`.profile`) is all extension, and `GetDirectoryName` of a name on its own is empty. `IsRooted` says
 whether a path starts from a root rather than the current directory, and `GetRoot` returns that root.
@@ -47,6 +61,16 @@ string log = Path.Combine("logs", "today.txt"); // logs/today.txt
 string other = Path.Combine("logs", "/tmp/x");   // /tmp/x
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs combine -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Combine puts the system's separator between two paths, unless the first
+// ends with one; a rooted second path replaces the first.
+let log = Path.Combine("logs", "today.txt") // logs/today.txt
+let other = Path.Combine("logs", "/tmp/x")   // /tmp/x
+```
+
 `Combine` takes up to three paths. `TryCombine` writes into a span you give it instead, and returns
 false if the result doesn't fit. `ChangeExtension("a/b.txt", ".md")` swaps the extension, and an empty
 extension removes it.
@@ -58,6 +82,15 @@ extension removes it.
 // Normalize tidies a path from its text: "." goes, ".." takes the name
 // before it away, and separators become the system's.
 string tidy = Path.Normalize("logs/./old/../today.txt"); // logs/today.txt
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs normalize -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Normalize tidies a path from its text: "." goes, ".." takes the name
+// before it away, and separators become the system's.
+let tidy = Path.Normalize("logs/./old/../today.txt") // logs/today.txt
 ```
 
 A relative path keeps any `..` it can't take away (`../..`), a rooted one stops at its root, and a path
@@ -80,6 +113,17 @@ if (error != FileError.None)
     Out.Line($"couldn't create it: {(int)error}");
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs create -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Create makes the directories on the way too; one that's already there is
+// fine. Failures come back as a FileError.
+let created = Directory.Create("dirs.tmp/logs/2026")
+if created <> FileError.None then
+    printfn "couldn't create it: %d" (int created)
+```
+
 A directory that's already there is fine. If a file has the name, `Create` returns `AlreadyExists`,
 and if a file is in the way (`notes.txt/x`), `NotADirectory`. `Directory.Exists` is true only for a
 directory, and `File.Exists` only for something that isn't one.
@@ -90,6 +134,14 @@ directory, and `File.Exists` only for something that isn't one.
 ```csharp
 // Delete with recursive: true deletes everything inside first.
 error = Directory.Delete("dirs.tmp", recursive: true);
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs delete -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Delete with recursive = true deletes everything inside first.
+let deleted = Directory.Delete("dirs.tmp", recursive = true)
 ```
 
 With `recursive: true` it deletes everything inside first. It deletes symbolic links inside but doesn't
@@ -116,6 +168,21 @@ foreach (DirectoryEntry entry in entries)
         files++;
     sawSnow |= entry.Name.SequenceEqual("snö☃.txt".AsSpan());
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs enumerate -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Enumerate lists a directory for a for loop: each entry's name (a span,
+// good until the next entry) and kind, without "." and "..".
+let mutable files = 0
+let mutable folders = 0
+let mutable sawSnow = false
+for entry in Directory.Enumerate("dirs.tmp") do
+    if entry.IsDirectory then folders <- folders + 1
+    elif entry.IsFile then files <- files + 1
+    sawSnow <- sawSnow || entry.Name.SequenceEqual("snö☃.txt".AsSpan())
 ```
 
 Each entry's `Name` is a span over a buffer the listing reuses, so it's good until the next entry. Copy

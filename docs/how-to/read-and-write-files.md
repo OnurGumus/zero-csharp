@@ -26,6 +26,20 @@ if (File.TryReadAllText(arena, Path, out string text))
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs whole -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+File.WriteAllText(Name, "naïve café\n") |> ignore
+File.AppendAllText(Name, "snow ☃ and a clef 𝄞\n") |> ignore
+match File.TryReadAllText(arena, Name) with
+| true, text ->
+    for line in text.Split('\n') do
+        if line.Length > 0 then
+            Console.WriteLine(line)
+| false, _ -> printfn "couldn't read %s" Name
+```
+
 The string lives in the arena you pass, like any string from `Str.Format`, so it goes away when the
 arena is reset. `TryReadAllBytes` does the same for bytes; it is `unsafe`, as `Arena.AllocSpan` is,
 because the span it gives you points into the arena. `WriteAllBytes`, `Exists` and `Delete` complete
@@ -61,6 +75,36 @@ while ((count = input.Read(chunk)) > 0)
 unsafe { input.Close(); } // SAFETY: input isn't used after this.
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs open -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A file is a handle to close: [<Safety>] says why nothing uses it after.
+[<Safety "file isn't used after Close">]
+let writeDigits () =
+    let file = File.Create(Name)
+    if file.IsOpen then
+        file.Write("0123456789") |> ignore
+        file.Write(ReadOnlySpan<byte>("abcdef"B)) |> ignore
+        printfn "Wrote %d bytes" file.Length
+        file.Seek(4L) |> ignore
+        file.Write("--") |> ignore
+        file.Close()
+
+[<Safety "input isn't used after Close">]
+let readInChunks () =
+    let input = File.OpenRead(Name)
+    let chunk: byte[] = Array.zeroCreate 6
+    let mutable count = input.Read(Span<byte>(chunk))
+    while count > 0 do
+        printfn "%d bytes at %d" count (input.Position - int64 count)
+        count <- input.Read(Span<byte>(chunk))
+    input.Close()
+
+writeDigits ()
+readInChunks ()
+```
+
 That prints:
 
 ```text
@@ -74,8 +118,10 @@ Wrote 16 bytes
 happens, and `Length` is the file's size. `Write` takes bytes, or text, which it encodes as UTF-8.
 
 `Close` is `unsafe` for the same reason `Arena.Reset` is: every copy of the handle still points at the
-closed file. The `SAFETY` comment says why it can't be used afterwards. Close each file you open: it
-writes out what is buffered, and a program can only have so many open.
+closed file. The `SAFETY` comment says why it can't be used afterwards; in F#, the `[<Safety "...">]`
+attribute on the function does, or the build warns (ZERO007). Close each file you open: it writes out
+what is buffered, and a program can only have so many open. F# writes `"abcdef"B` for C#'s
+`"abcdef"u8`, and passes `&error` where C# writes `out error`.
 
 To make sense of a binary file's bytes, `BinaryPrimitives` reads numbers out of them in either byte
 order: `BinaryPrimitives.ReadUInt32LittleEndian(header[4..])` (see
@@ -95,6 +141,16 @@ and the fiber or async method that asked lets the others run until it's done:
 // method waits, and the others run meanwhile.
 await File.WriteAllBytesAsync(name, data);
 byte[] back = await File.ReadAllBytesAsync(name);
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs files -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The write and the read run on another thread; this task waits, and
+// the others run meanwhile.
+do! File.WriteAllBytesAsync("tasks.tmp", "0123456789"B)
+let! back = File.ReadAllBytesAsync("tasks.tmp")
 ```
 
 A file can't be waited on the way a socket can, because the system calls a file always ready, then
@@ -131,6 +187,16 @@ File file = File.OpenRead("dirs.tmp/none", out error);
 // file.IsOpen is false, and error is FileError.NotFound
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs errors -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// OpenRead, Create and OpenAppend can say why they failed.
+let mutable error = FileError.None
+let missing = File.OpenRead("dirs.tmp/none", &error)
+// missing.IsOpen is false, and error is FileError.NotFound
+```
+
 `OpenRead`, `Create` and `OpenAppend` take an `out FileError`. `OpenRead` also refuses a directory,
 which the C library would otherwise open on Linux and macOS. `CreateNew` creates a file only if
 nothing has the name yet, so no other program can create it in between. `File.Remove` is `Delete` with
@@ -150,6 +216,17 @@ FileError again = File.Copy("dirs.tmp/notes.txt", "dirs.tmp/copy.txt");
 File.Move("dirs.tmp/copy.txt", "dirs.tmp/logs/moved.txt");
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs copy-move -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Copy and Move refuse to replace a file unless told to overwrite.
+let copied = File.Copy("dirs.tmp/notes.txt", "dirs.tmp/copy.txt")
+let again = File.Copy("dirs.tmp/notes.txt", "dirs.tmp/copy.txt")
+// again is FileError.AlreadyExists
+File.Move("dirs.tmp/copy.txt", "dirs.tmp/logs/moved.txt") |> ignore
+```
+
 `Move` renames when it can. Between file systems, where a rename can't go, it copies the file and then
 deletes the original. `File.GetInfo` returns a file's length, whether it's a directory, and when it was
 last written:
@@ -160,6 +237,17 @@ last written:
 // last written (milliseconds since 1970, as Clock.UnixMilliseconds).
 File.GetInfo("dirs.tmp/notes.txt", out FileInfo info);
 long age = Clock.UnixMilliseconds - info.LastWriteUnixMilliseconds;
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Files.fs info -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// GetInfo: a file's length, whether it's a directory, and when it was last
+// written (milliseconds since 1970, as Clock.UnixMilliseconds).
+let mutable info = FileInfo()
+File.GetInfo("dirs.tmp/notes.txt", &info) |> ignore
+let age = Clock.UnixMilliseconds - info.LastWriteUnixMilliseconds
 ```
 
 The error codes, `Copy`, `Move` and `GetInfo` work on Linux, macOS, Windows and WebAssembly, as

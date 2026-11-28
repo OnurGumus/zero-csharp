@@ -1,0 +1,13 @@
+tick 1
+tick 2
+tick 3
+tick 4
+tick 5
+ticks: 3
+a1 b1 main b2 a2 = 2 4
+when all: 2 4 6
+from another thread: 42
+channel sum: 55
+total: 10
+canceled: true
+All checks passed.

@@ -1,7 +1,7 @@
-PASS interfaces and casts (9 checks)
+PASS interfaces and casts (11 checks)
 PASS classes (5 checks)
 PASS generics and boxing (5 checks)
 PASS structs (6 checks)
-PASS delegates (4 checks)
+PASS delegates (5 checks)
 
 All checks passed.

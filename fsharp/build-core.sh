@@ -5,7 +5,7 @@
 #   <out>/System.Runtime.Extensions.dll shim/: the BCL types fsc needs that
 #                                       zerocore doesn't have
 #   <out>/FSharp.Core.dll               core/: a small FSharp.Core
-#   <out>/FSharp.Printf.dll             printf/: printf, sprintf, failwithf
+#   <lib's dir>/FSharp.Printf.dll       printf/: printf, sprintf, failwithf
 #   <lib's dir>/FSharp.Control.dll      control/: async, task, MailboxProcessor
 #
 # Usage:  fsharp/build-core.sh <System.Private.CoreLib.dll> <BflatLib.dll> <out dir>
@@ -56,16 +56,19 @@ dotnet "$ZERO_FSHARP_SDK/FSharp/fsc.dll" --nologo --noframework --targetprofile:
     --target:library -r:"$out/System.Runtime.dll" -r:"$out/System.Runtime.Extensions.dll" \
     --out:"$out/FSharp.Core.dll" \
     "$here/core/prelude.fs" "$here/core/attrs.fs" "$here/core/core.fs" "$here/core/ops.fs" "$here/core/local.fs" \
-    "$here/core/seqcore.fs" "$here/core/seq.fs" "$here/core/collections.fs" "$here/core/map.fs" "$here/core/set.fs" "$here/core/string.fs" "$here/core/option.fs" "$here/core/lazy.fs" \
+    "$here/core/event.fs" "$here/core/seqcore.fs" "$here/core/seq.fs" "$here/core/collections.fs" "$here/core/map.fs" "$here/core/set.fs" "$here/core/string.fs" "$here/core/option.fs" "$here/core/lazy.fs" \
     "$here/core/nativeptr.fs" "$here/core/printf.fs"
 
 # printf and the others: a library of their own (see printf/Printf.fs), as
-# any F# library, against FSharp.Core and lib/ (for Out).
-echo "[fsc]   fsharp/printf/ -> $out/FSharp.Printf.dll"
+# any F# library, against FSharp.Core and lib/ (Out, and the scratch arena it
+# formats in). Next to lib, as FSharp.Control below is: its signatures name
+# lib's Arena (Arena.Sprintf).
+printf=$(dirname "$lib")/FSharp.Printf.dll
+echo "[fsc]   fsharp/printf/ -> $printf"
 dotnet "$ZERO_FSHARP_SDK/FSharp/fsc.dll" --nologo --noframework --targetprofile:netcore \
     --reflectionfree --optimize+ --deterministic+ --metadataversion:v4.0.30319 --nowarn:75,3370 \
     --target:library -r:"$out/System.Runtime.dll" -r:"$out/System.Runtime.Extensions.dll" -r:"$out/FSharp.Core.dll" -r:"$lib" \
-    --out:"$out/FSharp.Printf.dll" "$here/printf/Printf.fs"
+    --out:"$printf" "$here/printf/Printf.fs"
 
 # async, task and MailboxProcessor: on lib/'s tasks and fibers. Next to lib,
 # not in <out>: fsc takes <out> (System.Runtime.dll's directory) as the

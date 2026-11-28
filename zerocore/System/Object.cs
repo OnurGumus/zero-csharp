@@ -259,6 +259,18 @@ namespace System
             _functionPointer = functionPointerThunk;
             _extraFunctionPointerOrData = functionPointer;
         }
+
+        // A delegate to a static method with its first argument bound (F#'s
+        // `fun () -> f x` as an Action, C#'s `obj.ExtensionMethod` as a
+        // delegate): the thunk receives the delegate as `this`, and calls the
+        // method, in _extraFunctionPointerOrData, with _helperObject first.
+        private void InitializeClosedStaticThunk(object firstParameter, nint functionPointer, nint functionPointerThunk)
+        {
+            _extraFunctionPointerOrData = functionPointer;
+            _helperObject = firstParameter;
+            _functionPointer = functionPointerThunk;
+            _firstParameter = this;
+        }
     }
 
     public abstract class MulticastDelegate : Delegate { }

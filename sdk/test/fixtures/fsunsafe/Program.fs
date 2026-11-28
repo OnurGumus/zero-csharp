@@ -116,7 +116,13 @@ let unmarkedInArena () = Async.InArena(frame, async { return 1 }) // warns
 
 let unmarkedScoped () = MailboxProcessor<int>.StartScoped(frame, fun _ -> async { return () }) // warns
 
+// A safe overload that shares its name and parameter count with unsafe ones
+// (Arena.Scratch(input, func) and Arena.Scratch(buffer, func)): no warning.
+let lengthOf = ScratchFuncIn<int, int>(fun scratch n -> scratch.AllocSpan<int>(n).Length)
+let scratchLength () = Arena.Scratch(5, lengthOf)
+
 let game = Game()
 printfn "%d %d %d" (playFrame 10) (nested 2) (game.Peak + game.Unmarked)
 printfn "%d %d" (unmarkedLambda 3) (unmarkedInner 4)
 printfn "%d %d" (unmarkedArena 3) (markedArena 3)
+printfn "%d" (scratchLength ())

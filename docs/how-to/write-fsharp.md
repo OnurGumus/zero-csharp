@@ -138,6 +138,42 @@ let inline log format =
 log "%d items, %s" 3 "ok"
 ```
 
+### What printf leaves behind
+
+Formatting a line takes memory: the values boxed, the pieces of text, the line itself. In .NET the
+garbage collector frees it after the call. Zero mode has none, so printf does that work in the
+thread's scratch arena and frees it all as the call returns:
+
+```text
+printfn "%d + %d" a b
+  call site (heap)       format object + closures     about 100 bytes, kept
+  printf (scratch)       boxes, digits, the line      freed on return
+  Out's buffer           the line's bytes             written out
+```
+
+The heap keeps only what the F# compiler makes where printf is called: 40 bytes with no values,
+about 100 with up to three, 200 with four and 600 with eight (a closure per value from the fourth
+on). Building the line as a string, as .NET does, would leave about 2 KB. `sprintf`'s string is copied out of the scratch arena, so it lives
+on the heap for good, as you'd expect. `Console.Write` leaves nothing at all, for a loop that prints
+for hours.
+
+A string you mean to keep for a while can go in an arena of yours, which frees it with everything
+else it holds. `Arena.Sprintf` formats as `sprintf` does, into the arena. It's F#'s
+`Str.Format(arena, $"...")`, whose C# interpolated string handler F# can't use:
+
+<!-- sample: sdk/test/fixtures/fsprintf-scope/Program.fs arena-sprintf -->
+```fsharp no-check reason="uses the zero library: the SDK tests build and run it"
+// A string to keep: made in an arena of yours, which frees it with the
+// rest of what it holds, rather than on the heap for good.
+let keep = Arena.Create(4096un)
+let s = keep.Sprintf "%d + %d = %d" 2 3 5
+printfn "%s (%d characters, in the arena)" s s.Length
+```
+
+A value's own `ToString`, for `%O`, `%s` or a `{x}` hole, is your code, so printf runs it outside
+the scratch arena: what it makes goes where it would have without printf, and a `ToString` that
+keeps a cached string keeps a good one.
+
 ## Use lists, sequences, maps and sets
 
 The `List`, `Array`, `Seq`, `Map`, `Set` and `String` modules have FSharp.Core's functions, with the
@@ -225,7 +261,9 @@ object scope around it ([Free F# values with a scope](#free-f-values-with-a-scop
 
 `task { }`, `async { }` and `MailboxProcessor` work, on the library's fibers and tasks, the same
 ones C#'s `async` and `await` use ([Use fibers](use-fibers.html#use-async-and-await)). A `task`
-starts at once and gives a `Task`; `let!` and `do!` wait for a `Task`, a `Task<'T>` or an `Async`:
+starts at once and gives a `Task`; `let!` and `do!` wait for a `Task`, a `Task<'T>`, an `Async`, a
+`ValueTask` (a channel's `SendAsync`), `Task.Yield()` or what `ConfigureAwait` returns. .NET events
+work too: `timer.Elapsed.Add(fun _ -> ...)` subscribes, as in .NET.
 
 <!-- sample: sdk/test/fixtures/fsasync/Program.fs task -->
 ```fsharp
@@ -923,4 +961,7 @@ one with a `bool`) is an error, ZERO005, that names it.
   ([Recover from errors](recover-from-errors.html)). `try ... finally` and `use` work.
 - **`dict`, `HashSet` and .NET's collections.** Use `Map` and `Set`, or the library's `Dict` and
   `List` ([Choose a collection](choose-a-collection.html)).
-- **Casting an array to another array type**, such as `string[]` to `obj[]`, ends the program.
+- **Boxing a span**, as `span.GetType()` does: the IL isn't valid, and the build stops with ZERO015
+  rather than build a program that would fail when the method runs.
+- **Casting an array of arrays to another array type**, such as `string[][]` to `obj[][]`, ends the
+  program. (`string[]` to `obj[]` works, as in .NET.)

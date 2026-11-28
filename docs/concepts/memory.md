@@ -45,6 +45,29 @@ Console.WriteLine(dog.Sound());
 Console.WriteLine(cat.Sound());
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs new-leaks -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+[<AbstractClass>]
+type Animal() =
+    abstract Sound: unit -> string
+
+type Dog() =
+    inherit Animal()
+    override _.Sound() = "Woof"
+
+type Cat() =
+    inherit Animal()
+    override _.Sound() = "Meow"
+
+// Each object is on the heap for good: fine for the few that live as long
+// as the program.
+let dog: Animal = Dog()
+let cat: Animal = Cat()
+printfn "%s %s" (dog.Sound()) (cat.Sound())
+```
+
 Two objects allocated once are not a problem. The same two allocated per request, per frame or per
 line of input are: the program grows until memory runs out. The same goes for boxing and for `a + b` on
 strings, which also call `calloc`.
@@ -72,6 +95,18 @@ Arena frame = Arena.Create(256);
 List<int> numbers = List<int>.Create(frame);
 for (int i = 0; i < 100; i++)
     numbers.Add(i);
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs second-arena -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Arenas are independent: one per lifetime. Here a second arena holds a
+// list for a while and is dropped without touching the first.
+let frame = Arena.Create(256un)
+let numbers = List<int>.Create(frame)
+for i in 0 .. 99 do
+    numbers.Add(i) |> ignore
 ```
 
 Destroying `frame` later frees the list without touching any other arena.
@@ -108,6 +143,20 @@ bool temporaryOk;
     temporaryOk = temporary.EndsWith("3 letters");
 }
 unsafe { s_arena.Restore(mark); } // SAFETY: nothing from the block was kept.
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs restore -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Temporary strings: free them with Restore and keep the rest.
+[<Safety "nothing made after the mark is kept: only a bool leaves">]
+let endsRight (arena: Arena) =
+    let mark = arena.Save()
+    let temporary = arena.Sprintf "%s has %d letters" name name.Length
+    let ok = temporary.EndsWith("3 letters")
+    arena.Restore(mark)
+    ok
 ```
 
 Marks must be restored newest first. Restoring a mark from another arena, or from before a `Reset()`,
@@ -166,6 +215,8 @@ Data goes in and out through a state passed by `ref` and through the callback's 
 lambda can be `static` and allocates nothing after its first call. The state is usually a small
 `ref struct` of your own, which may hold spans of yours:
 
+<div class="lang-text" data-lang="csharp">
+
 <!-- sample: samples/Scratch.cs state -->
 ```csharp
 // What Arena.Scratch passes to its callback by ref: the data going in.
@@ -174,6 +225,14 @@ public ref struct Job
     public ReadOnlySpan<int> Input;
 }
 ```
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+F# passes the data in by value instead, `ScratchFuncIn` with a `ReadOnlySpan<int>` here: F# has no `scoped`, so the SDK refuses a `ref struct` state passed by `ref` (ZERO006). The callback is a module-level value, made once, as C#'s `static` lambda is.
+
+</div>
 
 <!-- sample: samples/Scratch.cs scratch -->
 ```csharp
@@ -190,12 +249,45 @@ int median = Arena.Scratch(ref job,
     });
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs scratch -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The data going in, by value: a span of the caller's array. The callback
+// is made once, a module-level value, as C#'s static lambda is.
+let medianOf =
+    ScratchFuncIn<ReadOnlySpan<int>, int>(fun scratch input ->
+        // A copy to sort, so the caller's array keeps its order.
+        let copy = scratch.AllocSpan<int>(input.Length)
+        input.CopyTo(copy)
+        copy.Sort()
+        copy[copy.Length / 2])
+
+let scores = [| 5; 3; 8; 1 |]
+let median = Arena.Scratch(ReadOnlySpan<int>(scores), medianOf)
+```
+
+<div class="lang-text" data-lang="csharp">
+
 The scope is a `ref struct` passed as a `scoped` parameter, so C#'s own escape rules apply to
 everything it hands out. Returning a span or a ref from the callback, putting it in the state, in a
 field or a static, handing the scope itself out: each is a compile error, not a dangling pointer.
 Leaving out `scoped` doesn't open a way out, since a lambda that could leak no longer matches the
 delegate. `tests/must-not-compile/` holds one program per way, and `test.sh` checks that the compiler
 refuses each. No `unsafe` is needed anywhere.
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+In F#, the scope is a `ref struct` too, and F#'s rules for them keep everything it hands out inside the
+callback: a closure can't capture a span, a field, a ref cell or a module-level value can't hold one,
+and the callback can't return one. Each is a compile error. F# has no `scoped`, which is why the
+by-ref state form refuses a `ref struct` state (ZERO006); the by-value forms are the ones F# uses.
+`sdk/test/fixtures/fs-must-not-compile/` holds one program per way out, and the SDK's tests check
+that the build refuses each.
+
+</div>
 
 When the data only goes in, or is a span the callback fills, pass it by value instead: the callback
 gets a copy, which for a span still points at your items:
@@ -213,6 +305,23 @@ Arena.Scratch(squares,
             work.Add(i * i);
         work.AsSpan().CopyTo(output);
     });
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs input -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// An input passed by value: the callback gets a copy of the span, which
+// points at the same items, so it can fill them.
+let squaresInto =
+    ScratchActionIn<Span<int>>(fun scratch output ->
+        let work = scratch.List<int>()
+        for i in 1 .. output.Length do
+            work.Add(i * i)
+        work.AsSpan().CopyTo(output))
+
+let squares: int[] = Array.zeroCreate 4
+Arena.Scratch(Span<int>(squares), squaresInto)
 ```
 
 The memory comes from a scratch arena of the thread's own, not from one of yours, so the Restore hazard
@@ -234,6 +343,25 @@ Arena.Scratch(ref growing,
     });
 Check("your list is intact",
     growing.Items.Count == 100 && growing.Items.Get(99) == 99);
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs growing -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A list of yours that grows during the callback grows in its own arena,
+// so the scratch memory going away doesn't touch it. A List is a handle:
+// the callback's copy adds to the same list.
+let fillList =
+    ScratchActionIn<List<int>>(fun scratch items ->
+        let temp = scratch.AllocSpan<int>(100)
+        for i in 0 .. temp.Length - 1 do
+            items.Add(i) |> ignore)
+
+let yours = Arena.Create(4096un)
+let growing = List<int>.Create(yours, 4)
+Arena.Scratch(growing, fillList)
+check "your list is intact" (growing.Count = 100 && growing.Get(99) = 99)
 ```
 
 ### Scratch collections
@@ -264,6 +392,32 @@ string report = Arena.Scratch(ref keep,
     });
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs lists -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Lists and text from the scope grow as needed and go away with the rest
+// of the scratch memory. The string to keep is copied out into an arena of
+// yours.
+let evensReport =
+    ScratchFuncIn<Arena, string>(fun scratch target ->
+        let evens = scratch.List<int>(4)
+        for i in 18 .. -2 .. 0 do
+            evens.Add(i)
+        evens.AsSpan().Sort()
+
+        let text = scratch.Text()
+        text.Append(evens.Count)
+        text.Append(" evens:")
+        for even in evens do
+            text.Append(' ')
+            text.Append(even)
+        text.ToArenaString(target))
+
+let keep = Arena.Create(4096un)
+let report = Arena.Scratch(keep, evensReport)
+```
+
 `scratch.Dict<TKey, TValue>()` and `scratch.HashSet<T>()` are the dictionary and set for scratch
 work, compared as `Dict` and `HashSet` are:
 
@@ -289,6 +443,31 @@ int mostCommon = Arena.Scratch(ref dice,
     });
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs dict -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Count each roll in a dictionary that goes away with the scratch memory;
+// only the most common roll comes out.
+let mostCommonOf =
+    ScratchFuncIn<ReadOnlySpan<int>, int>(fun scratch rolls ->
+        let counts = scratch.Dict<int, int>()
+        let mutable best = 0
+        let mutable bestCount = 0
+        for roll in rolls do
+            let mutable count = 0
+            counts.TryGet(roll, &count) |> ignore
+            count <- count + 1
+            counts.Set(roll, count) |> ignore
+            if count > bestCount then
+                best <- roll
+                bestCount <- count
+        best)
+
+let rolls = [| 3; 6; 3; 1; 6; 3 |]
+let mostCommon = Arena.Scratch(ReadOnlySpan<int>(rolls), mostCommonOf)
+```
+
 `Clone(arena)` copies one into an arena of yours, to keep after the callback:
 
 <!-- sample: samples/Scratch.cs dict-clone -->
@@ -307,9 +486,29 @@ Dict<int, int> kept = Arena.Scratch(ref results,
     });
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs dict-clone -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Clone copies a scratch dictionary into an arena of yours, to keep after
+// the callback.
+let squaresTable =
+    ScratchFuncIn<Arena, Dict<int, int>>(fun scratch target ->
+        let table = scratch.Dict<int, int>(4)
+        for i in 0 .. 99 do
+            table.Set(i, i * i) |> ignore
+        table.Remove(50) |> ignore
+        table.Clone(target))
+
+let results = Arena.Create(4096un)
+let kept = Arena.Scratch(results, squaresTable)
+```
+
 A `ScratchPool<T>` from `scratch.Pool<T>()` holds items found by handles, as a `Pool<T>` does. Its
 `MoveTo` moves an item into a pool of yours, which is how a result made in scratch memory is kept. The
 items here are a different `Job`, a plain struct that pools can hold:
+
+<div class="lang-text" data-lang="csharp">
 
 <!-- sample: samples/Links.cs task -->
 ```csharp
@@ -321,6 +520,8 @@ public struct Job
     public Handle<Job> WaitsFor;
 }
 ```
+
+</div>
 
 <!-- sample: samples/Links.cs scratch-pool -->
 ```csharp
@@ -340,6 +541,34 @@ Handle<Job> best = Arena.Scratch(ref results,
         }
         return tries.MoveTo(keep, ref top);
     });
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs scratch-pool -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A job that waits for another: items in a pool point at each other with
+// handles, which are plain structs too.
+[<Struct>]
+type Job =
+    val mutable Id: int
+    val mutable WaitsFor: Handle<Job>
+    new(id) = { Id = id; WaitsFor = Unchecked.defaultof<Handle<Job>> }
+
+// Work in a scratch pool, then move the one result to keep into a pool of
+// yours; the rest goes with the scratch memory.
+let bestJob =
+    ScratchFuncIn<Pool<Job>, Handle<Job>>(fun scratch keep ->
+        let tries = scratch.Pool<Job>()
+        let mutable top = Unchecked.defaultof<Handle<Job>>
+        for id in 1 .. 20 do
+            let next = tries.Add(Job(id * 7 % 20))
+            if top.IsNull || tries[next].Id > tries[top].Id then
+                top <- next
+        tries.MoveTo(keep, &top))
+
+let jobs = Pool<Job>.Create(yours)
+let best = Arena.Scratch(jobs, bestJob)
 ```
 
 ### Nested calls
@@ -393,6 +622,30 @@ unsafe
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs buffer -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Memory of yours instead of the thread's scratch arena, for one call and
+// the Scratch calls nested in it: no malloc, and a fixed size (needing more
+// than the buffer holds stops the program).
+let sumOfHundred =
+    ScratchFunc<int>(fun scratch ->
+        let numbers = scratch.AllocSpan<int>(100)
+        for i in 0 .. numbers.Length - 1 do
+            numbers[i] <- i
+        let mutable sum = 0
+        for n in numbers do
+            sum <- sum + n
+        sum)
+
+[<Safety "nothing else uses memory until the call returns">]
+let sumInBuffer (memory: byte[]) =
+    Arena.Scratch(Span<byte>(memory), sumOfHundred)
+
+let total = sumInBuffer (Array.zeroCreate 2048)
+```
+
 A scope from outside such a call can still allocate inside it: its memory is in another arena, which the
 call doesn't free.
 
@@ -418,6 +671,25 @@ int sumOfSquares = Arena.ScratchOnStack(1024,
     });
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs on-stack -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The same in memory on ScratchOnStack's own stack frame: safe, since
+// nothing but the scope sees it.
+let squaresSum =
+    ScratchFunc<int>(fun scratch ->
+        let items = scratch.List<int>(8)
+        for i in 1 .. 10 do
+            items.Add(i * i)
+        let mutable sum = 0
+        for item in items do
+            sum <- sum + item
+        sum)
+
+let sumOfSquares = Arena.ScratchOnStack(1024, squaresSum)
+```
+
 ### Types of your own
 
 Make a type a plain struct unless it has to hold a span or a scratch list or text: only then does it
@@ -426,6 +698,8 @@ need to be a `ref struct`, which can't go in arrays, lists, class fields or lamb
 What the scope can give out is what the compiler can follow: spans, refs and `ref struct`s. A type of
 your own works with it in one of two shapes. A struct with only unmanaged fields (numbers, enums, other
 such structs) comes from `scratch.Alloc<T>()` and is used through the `ref` it returns:
+
+<div class="lang-text" data-lang="csharp">
 
 <!-- sample: samples/Scratch.cs own-struct -->
 ```csharp
@@ -438,9 +712,13 @@ public struct Particle
 }
 ```
 
+</div>
+
 Unlike `stackalloc`, that memory isn't on the stack: its size can be decided at run time and be as
 large as the machine allows, and a helper called from the callback can allocate and return it, since
 it stays valid until the callback returns:
+
+<div class="lang-text" data-lang="csharp">
 
 <!-- sample: samples/Scratch.cs spawn -->
 ```csharp
@@ -450,10 +728,14 @@ static Span<Particle> Spawn(ScratchScope scratch, int count)
     => scratch.AllocSpan<Particle>(count);
 ```
 
+</div>
+
 A `ref struct` made of scratch pieces (spans, `ScratchList`, `ScratchText`) is an ordinary local filled
 from the scope. Build a collection of your own the same way, on a `ScratchList` or a span from the
 scope, and it gets the same guarantees with no `unsafe`, including the nested-call check, which the
 list it holds makes:
+
+<div class="lang-text" data-lang="csharp">
 
 <!-- sample: samples/Scratch.cs own-collection -->
 ```csharp
@@ -480,6 +762,14 @@ public ref struct ScratchStack<T> where T : unmanaged
 }
 ```
 
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+In F#, a struct with only unmanaged fields comes from the scope the same way, through a byref (`let particle = &scratch.Alloc<Particle>()`), and the scope's own lists serve as a stack:
+
+</div>
+
 <!-- sample: samples/Scratch.cs own-types -->
 ```csharp
 int popped = Arena.Scratch(static (scoped ScratchScope scratch) =>
@@ -494,6 +784,32 @@ int popped = Arena.Scratch(static (scoped ScratchScope scratch) =>
         stack.Push(i * (int)particle.Speed);
     return stack.Pop() * 10 + stack.Count;
 });
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs own-types -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Only unmanaged fields, so the scope can allocate one.
+[<Struct>]
+type Particle =
+    val mutable X: float32
+    val mutable Y: float32
+    val mutable Speed: float32
+
+let speeds =
+    ScratchFunc<int>(fun scratch ->
+        // An unmanaged struct comes from the scope, used through a byref.
+        let particle = &scratch.Alloc<Particle>()
+        particle.Speed <- 2.0f
+        let stack = scratch.List<int>()
+        for i in 1 .. 3 do
+            stack.Add(i * int particle.Speed) |> ignore
+        let top = stack[stack.Count - 1]
+        stack.RemoveAt(stack.Count - 1) |> ignore
+        top * 10 + stack.Count)
+
+let popped = Arena.Scratch(speeds)
 ```
 
 A class can't come from scratch memory, and neither can a struct holding a `string`, an array or any
@@ -536,6 +852,33 @@ for (int round = 0; round < 1000; round++)
 long heapGrowth = System.GC.GetTotalAllocatedBytes() - heapBefore;
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs object-scope -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Ordinary F# allocates with calloc and never frees. Inside an object
+// scope the same code allocates in the arena, so resetting it frees
+// everything the round created: the array, the closure, the string.
+let rounds = Arena.Create(4096un)
+
+[<Safety "nothing created in a round is kept past the Reset">]
+let round (n: int) =
+    let result =
+        use _ = rounds.AllocateObjectsHere()
+        let cells: int[] = Array.zeroCreate 16
+        let shift = fun x -> x + n
+        let text = echo "ab" + echo "cd"
+        shift cells.Length + text.Length
+    rounds.Reset()
+    result
+
+let heapBefore = GC.GetTotalAllocatedBytes()
+let mutable rounded = 0
+for i in 0 .. 999 do
+    rounded <- rounded + round i
+let heapGrowth = GC.GetTotalAllocatedBytes() - heapBefore
+```
+
 `GC.GetTotalAllocatedBytes()` counts only the memory that is never freed, so it is the way to check.
 In this sample, a thousand rounds add nothing to it, and the arena keeps a single block.
 
@@ -553,6 +896,8 @@ nothing may keep a reference to one. The compiler can break that rule for you in
   captures inside the scope, or in a method called from it. `CountAbove` declares the variable its
   lambda captures, `limit`, as a parameter, so the closure is made inside the scope on every call:
 
+<div class="lang-text" data-lang="csharp">
+
 <!-- sample: samples/Queries.cs capture-method -->
 ```csharp
 // The trap: the lambda captures `limit`, so every call of CountAbove
@@ -560,6 +905,10 @@ nothing may keep a reference to one. The compiler can break that rule for you in
 static int CountAbove(int[] numbers, int limit)
     => numbers.Where(x => x > limit).Count();
 ```
+
+</div>
+
+<div class="lang-text" data-lang="csharp">
 
 <!-- sample: samples/Queries.cs capture-in-scope -->
 ```csharp
@@ -583,6 +932,14 @@ for (int i = 0; i < 1000; i++)
 }
 long scoped = GC.GetTotalAllocatedBytes() - before;
 ```
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+F# has no trap of this kind. fsc keeps a lambda that captures nothing in a static field it fills when the module starts, outside any scope, and makes a closure for one that captures where it's called, which inside an object scope goes in the arena with the rest. `samples/Memory.fs` above checks that its thousand rounds leave nothing on the heap.
+
+</div>
 
 ### Freeing objects when the block ends
 
@@ -617,6 +974,32 @@ for (int round = 0; round < 1000; round++)
 long frameHeapGrowth = System.GC.GetTotalAllocatedBytes() - heapBeforeFrames;
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs object-scope-free -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// arena frame { } frees what its body created when it ends, so objects
+// live exactly as long as the body; only a number, a struct of numbers or
+// a string (copied out) comes back. The arena can hold longer-lived data
+// too: only what came after the scope opened is freed.
+let scoped = Arena.Create(4096un)
+let longLived = scoped.Alloc<int>()
+NativePtr.write longLived 42
+
+[<Safety "the body returns an int and stores nothing outside">]
+let frameRound () =
+    arena scoped {
+        let cells: int[] = Array.zeroCreate 16
+        let text = echo "ab" + echo "cd"
+        return cells.Length + text.Length
+    }
+
+let usedOutside = scoped.Used
+let mutable frameTotal = 0
+for _ in 1 .. 1000 do
+    frameTotal <- frameTotal + frameRound ()
+```
+
 Both sets of rules apply: nothing created inside may be kept past the block, and no collection created
 before the scope may grow inside it.
 
@@ -641,6 +1024,17 @@ at that size instead, the same way it fails when memory runs out:
 Arena request = Arena.Create(4096, "request", maxCapacity: 64 * 1024);
 int* small = request.AllocArray<int>(1000);      // fine
 int* huge = request.AllocArray<int>(100_000);    // null: over budget
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs max-capacity -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// A budget: past 64 KB of blocks, allocations fail as if memory had run
+// out, even on systems where malloc never says no.
+let request = Arena.Create(4096un, "request", maxCapacity = 65536un)
+let small = request.AllocArray<int>(1000)       // fine
+let huge = request.AllocArray<int>(100_000)     // null: over budget
 ```
 
 The cap counts the bytes of all blocks together. When the next block would cross it, the block shrinks
@@ -669,10 +1063,28 @@ unsafe { local = Arena.FromBuffer(memory, "local"); }
 Point* p = local.Alloc<Point>();
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs from-buffer -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// An arena in memory you provide: here an array made once. It never calls
+// malloc and never grows; when the buffer is full, allocations fail.
+let memory: byte[] = Array.zeroCreate 1024
+
+[<Safety "the arena is used only inside this function">]
+let fitsInBuffer () =
+    let local = Arena.FromBuffer(Span<byte>(memory), "local")
+    let point = local.Alloc<Particle>()
+    let tooBig = local.AllocArray<byte>(2048)
+    not (NativePtr.isNullPtr point) && NativePtr.isNullPtr tooBig
+```
+
 For one that lives as long as the program, or one too big for the stack, use a static buffer: a struct
 with a `fixed` array, kept in a static field. It is part of the program's data, like a global array in
 C, so it costs neither heap nor stack. (A static `byte[]` wouldn't do that: `new byte[512]` comes from
 the heap.)
+
+<div class="lang-text" data-lang="csharp">
 
 <!-- sample: samples/SmallArena.cs static-buffer -->
 ```csharp
@@ -686,6 +1098,10 @@ struct Pool
 static Pool s_pool;
 ```
 
+</div>
+
+<div class="lang-text" data-lang="csharp">
+
 <!-- sample: samples/SmallArena.cs from-static-buffer -->
 ```csharp
 Arena arena;
@@ -697,6 +1113,14 @@ unsafe
         arena = Arena.FromBuffer(memory, 512, "pool");
 }
 ```
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+F# structs have no fixed-size buffers, so there is no F# version of this: an array made once, as above, or memory from `NativeMemory.Alloc` does the same job from the heap.
+
+</div>
 
 `FromBuffer` is unsafe because the arena can't check that the memory outlives it: an arena on the stack
 must not be used after the method that made it returns.
@@ -724,6 +1148,22 @@ Arena.DebugChecks = true;
 Arena debug = Arena.Create(256);
 int* stale = debug.AllocArray<int>(4);
 unsafe { stale[0] = 12345; }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Memory.fs debug-checks -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Debugging aid: arenas created while DebugChecks is on fill freed memory
+// with 0xDD, so a stale pointer reads an obvious pattern instead of the
+// old value, and collections stop the program when used after a reset.
+Arena.DebugChecks <- true
+let debug = Arena.Create(256un)
+let stale = debug.AllocArray<int>(4)
+NativePtr.write stale 12345
+
+[<Safety "a test of reading after Reset, on purpose">]
+let resetDebug () = debug.Reset()
 ```
 
 Arenas created afterwards fill freed memory with `0xDD` bytes, so a stale pointer reads `0xDDDDDDDD`

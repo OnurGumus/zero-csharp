@@ -7,10 +7,12 @@ namespace System.Runtime
     // arrays of reference types. IsInstanceOf* return the object or null;
     // CheckCast* end the process where .NET would throw InvalidCastException.
     //
-    // Supported: casts to classes and to interfaces, and to an array's exact
-    // type. Not supported, and reported as such instead of giving a wrong
-    // answer: variance (IEnumerable<string> as IEnumerable<object>, string[]
-    // as object[]) and the generic interfaces of arrays (IList<T>).
+    // Supported: casts to classes and to interfaces, and to array types: an
+    // array's exact type, and by covariance an array of classes (string[] as
+    // object[]). Not supported, and reported as such instead of giving a wrong
+    // answer: generic variance (IEnumerable<string> as IEnumerable<object>),
+    // covariance of arrays of arrays, and the generic interfaces of arrays
+    // (IList<T>).
     internal static unsafe class TypeCast
     {
         private static object IsInstanceOfClass(MethodTable* target, object obj)
@@ -46,11 +48,19 @@ namespace System.Runtime
             {
                 // An array of structs matches no other array type (.NET also
                 // lets int[] pass as uint[], and an enum's array as its
-                // underlying type's; not here). Arrays of classes could match
-                // by covariance (string[] as object[]), which isn't supported.
-                if (IsValueType(type->ElementType) || IsValueType(target->ElementType))
+                // underlying type's; not here).
+                MethodTable* from = type->ElementType, to = target->ElementType;
+                if (IsValueType(from) || IsValueType(to))
                     return null;
-                Environment.FailFast("Casts between array types aren't supported");
+                // Arrays of classes match by covariance, as in .NET: a
+                // string[] is an object[] and an IComparable[]. Storing into
+                // one checks each element (StelemRef), so that stays safe.
+                if (to->IsInterface)
+                    return Implements(from, to) ? obj : null;
+                if (!to->IsParameterized)
+                    return IsDerivedFrom(from, to) ? obj : null;
+                // string[][] as object[][]: covariance one level down.
+                Environment.FailFast("Casts between arrays of arrays aren't supported");
             }
             return null;
         }
@@ -79,6 +89,14 @@ namespace System.Runtime
 
         private static bool IsDerivedFrom(MethodTable* type, MethodTable* target)
         {
+            // An array's MethodTable holds its element type where others hold
+            // their base type: every array derives from Array (and object).
+            // Without this, `obj is Array` was false for every array.
+            // (Array is told by its element type kind, SystemArray: taking
+            // its MethodTable would make every program need Array's vtable.)
+            if (type->IsParameterized)
+                return target->ElementTypeKind == SystemArrayKind
+                    || (target->BaseType == null && !target->IsInterface && !target->IsParameterized); // object
             for (; type != null; type = type->BaseType)
             {
                 if (type == target)
@@ -86,6 +104,9 @@ namespace System.Runtime
             }
             return false;
         }
+
+        // .NET's EETypeElementType for System.Array.
+        private const int SystemArrayKind = 0x16;
 
         // .NET's EETypeElementType: Boolean (2) up to Nullable (18) are structs.
         private static bool IsValueType(MethodTable* type)

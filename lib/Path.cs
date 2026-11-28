@@ -23,6 +23,12 @@ public static class Path
     /// <summary>The separator Combine and Normalize write: '\' on Windows, DOS and UEFI, '/' elsewhere.</summary>
     public static char Separator => FileSystem.Backslashes ? '\\' : '/';
 
+    /// <summary>.NET's name for <see cref="Separator"/>.</summary>
+    public static char DirectorySeparatorChar => Separator;
+
+    /// <summary>The other separator accepted: '/' on Windows, DOS and UEFI, and '/' elsewhere too, as in .NET.</summary>
+    public static char AltDirectorySeparatorChar => '/';
+
     /// <summary>Whether <paramref name="c"/> separates names: '/', and on Windows, DOS and UEFI also '\'.</summary>
     public static bool IsSeparator(char c) => c == '/' || (c == '\\' && FileSystem.Backslashes);
 
