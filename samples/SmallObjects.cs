@@ -170,6 +170,12 @@ public static class Program
         Check("a call that changes the object", ((IShape)square).Area() == 100);
         Check("virtual property, overridden", ((Rect)square).Name == "square" && ((IShape)square).Name == "square");
         Check("interface back to class", ((Rect)(IShape)rect).W == 3);
+        object numbers = Opaque(new int[3]);
+        Check("an array is an Array", numbers is Array array && array.Length == 3
+            && !(Opaque(circle) is Array) && !(numbers is ValueType));
+        object words = Opaque(new string[] { "a", "b" });
+        Check("array covariance", words is object[] all && all.Length == 2
+            && words is IComparable[] && !(words is IShape[]) && !(numbers is object[]));
         End("interfaces and casts");
 
         Counter one = (Counter)Opaque(new ByOne());
