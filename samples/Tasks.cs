@@ -13,13 +13,17 @@
 // faulted task unawaited and awaits another only after it faulted: the
 // first must be reported when Main returns, the second not, and the exit
 // code stays 0; `Tasks unobserved-exit` does the same but ends with
-// Environment.Exit(3), which must report it too. test.sh checks them.
+// Environment.Exit(3), which must report it too. `Tasks full` releases a
+// semaphore past its maximum, and `Tasks crossthread` completes a plain
+// TaskCompletionSource on another thread (where there are threads): each
+// must end the program with a message. test.sh checks them.
 // Build: ./build.sh Tasks
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -199,6 +203,98 @@ public static class Program
 
     static async ValueTask Pause() => await Task.Delay(1);
 
+    // docs:run-on-thread
+    // Busy for `ms` milliseconds without waiting: on a fiber this would
+    // stop every other fiber; on another thread it doesn't.
+    static int Spin(int ms)
+    {
+        long end = Clock.Monotonic + ms * 1_000_000L;
+        int turns = 0;
+        while (Clock.Monotonic < end)
+            turns++;
+        return turns;
+    }
+
+    static async Task<int> SpinElsewhere()
+    {
+        int turns = await Task.RunOnThread(() => Spin(50));
+        return turns;
+    }
+    // docs:end
+
+    // Another system thread, as a C library's callback thread would be: it
+    // completes sources made on the fibers' thread.
+    [DllImport("libc")]
+    static unsafe extern int pthread_create(nint* thread, void* attributes, delegate* unmanaged<void*, void*> start, void* argument);
+
+    static ThreadCompletionSource<int>? s_one;
+    static ThreadCompletionSource<int>[]? s_many;
+    static ThreadCompletionSource? s_canceled;
+    static ThreadCompletionSource<int>? s_raced;
+    static int s_wins, s_tried;
+    static TaskCompletionSource<int>? s_plain;
+
+    static void BusyFor(int ms)
+    {
+        long end = Clock.Monotonic + ms * 1_000_000L;
+        while (Clock.Monotonic < end) { }
+    }
+
+    // docs:thread-completion
+    // Runs on another thread: completes the source made on this one.
+    static void CompleteElsewhere()
+    {
+        BusyFor(20);
+        s_one!.SetResult(42);
+    }
+    // docs:end
+
+    static void CompleteMany()
+    {
+        for (int i = 0; i < s_many!.Length; i++)
+            s_many[i].SetResult(i * 2);
+        s_canceled!.SetCanceled();
+    }
+
+    static void Race()
+    {
+        if (s_raced!.TrySetResult(1))
+            Interlocked.Increment(ref s_wins);
+        Interlocked.Increment(ref s_tried);
+    }
+
+    [UnmanagedCallersOnly]
+    static unsafe void* OnThread(void* which)
+    {
+        switch ((int)(nint)which)
+        {
+            case 0: CompleteElsewhere(); break;
+            case 1: CompleteMany(); break;
+            case 3: s_plain!.SetResult(1); break;
+            default: Race(); break;
+        }
+        return null;
+    }
+
+    // Starts `which` on a new thread, or runs it here where there are none.
+    static void StartThread(int which)
+    {
+        unsafe
+        {
+            // SAFETY: the thread gets a number, not a pointer.
+            nint thread = 0;
+            if (pthread_create(&thread, null, &OnThread, (void*)which) == 0)
+                return;
+        }
+        switch (which)
+        {
+            case 0: CompleteElsewhere(); break;
+            case 1: CompleteMany(); break;
+            case 3: s_plain!.SetResult(1); break;
+            default: Race(); break;
+        }
+    }
+
     // docs:channel-async
     // Sends 1..10 and closes; the reader's await foreach ends there.
     static async Task Produce(Channel<int> channel)
@@ -278,6 +374,45 @@ public static class Program
         throw new IOException(message);
     }
 
+    // docs:semaphore
+    // Reads the total, waits, writes it back: without the gate, another
+    // call could run in the wait and its update would be lost.
+    static readonly SemaphoreSlim s_gate = new(1);
+    static int s_total;
+
+    static async Task AddOne()
+    {
+        await s_gate.WaitAsync();
+        try
+        {
+            int seen = s_total;
+            await Task.Yield(); // others run here
+            s_total = seen + 1;
+        }
+        finally
+        {
+            s_gate.Release();
+        }
+    }
+    // docs:end
+
+    // The same, without the gate.
+    static async Task AddOneUnguarded()
+    {
+        int seen = s_total;
+        await Task.Yield();
+        s_total = seen + 1;
+    }
+
+    // Enters, logs its name, leaves after a delay.
+    static async Task Enter(SemaphoreSlim semaphore, string name, int delay)
+    {
+        await semaphore.WaitAsync();
+        s_log += name;
+        await Task.Delay(delay);
+        semaphore.Release();
+    }
+
     static async Task<int> Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "canceled")
@@ -301,6 +436,19 @@ public static class Program
             await once;
             await timer.WaitForNextTickAsync();
             await once; // its task has been reused
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "full")
+        {
+            new SemaphoreSlim(1, 1).Release();
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "crossthread")
+        {
+            // A plain TaskCompletionSource completed on another thread.
+            s_plain = new TaskCompletionSource<int>();
+            StartThread(3);
+            BusyFor(5000); // the other thread stops the program meanwhile
             return 0;
         }
         if (args.Length > 0 && args[0] == "throw")
@@ -795,6 +943,88 @@ public static class Program
                 error is IOException && disposing == null && !full.CanWrite);
         }
         End("Exceptions");
+        // SemaphoreSlim (lib/SemaphoreSlim.cs).
+        {
+            // The gate keeps updates across an await; without it they're lost.
+            s_total = 0;
+            var adds = new Task[10];
+            for (int i = 0; i < adds.Length; i++)
+                adds[i] = AddOne();
+            await Task.WhenAll(adds);
+            Check($"guarded total {s_total}", s_total == 10);
+            s_total = 0;
+            for (int i = 0; i < adds.Length; i++)
+                adds[i] = AddOneUnguarded();
+            await Task.WhenAll(adds);
+            Check($"unguarded total {s_total}: updates lost", s_total < 10);
+            Check("gate free again", s_gate.CurrentCount == 1);
+
+            // Counts, and the order waiters get in.
+            var two = new SemaphoreSlim(2, 3);
+            Task<bool> entered1 = two.WaitAsync(-1), entered2 = two.WaitAsync(-1);
+            Check("free ones enter at once", entered1.IsCompleted && entered2.IsCompleted && entered1.Result && two.CurrentCount == 0);
+            Task third = two.WaitAsync(), fourth = two.WaitAsync();
+            Check("then they wait", !third.IsCompleted && !fourth.IsCompleted);
+            Check("Release returns the count before", two.Release() == 0);
+            await third;
+            Check("oldest first", !fourth.IsCompleted && two.CurrentCount == 0);
+            Check("Release(2)", two.Release(2) == 0 && two.CurrentCount == 1);
+            await fourth;
+            Check("WaitAsync(0) when free", await two.WaitAsync(0) && two.CurrentCount == 0);
+            Check("WaitAsync(0) when taken", !await two.WaitAsync(0));
+
+            // At most two inside at once, in the order they came.
+            var limit = new SemaphoreSlim(2);
+            s_log = "";
+            await Task.WhenAll(Enter(limit, "a", 30), Enter(limit, "b", 10), Enter(limit, "c", 10), Enter(limit, "d", 10));
+            Check($"two at a time: {s_log}", s_log == "abcd" && limit.CurrentCount == 2);
+
+            // A timeout gives false, and leaves the list: the next Release
+            // goes to the count, not to it.
+            var one = new SemaphoreSlim(0);
+            start = Clock.Monotonic;
+            Task<bool> timing = one.WaitAsync(20);
+            Check("waits for the timeout", !timing.IsCompleted);
+            Check("timed out", !await timing);
+            Check($"after {Milliseconds(start)} ms, 19 or more", Milliseconds(start) >= 19);
+            one.Release();
+            Check("count went up", one.CurrentCount == 1);
+            Check("Wait(TimeSpan)", one.Wait(TimeSpan.FromMilliseconds(5)) && one.CurrentCount == 0);
+
+            // A canceled wait leaves the list too.
+            using (var cts = new CancellationTokenSource())
+            {
+                Task<bool> canceled = one.WaitAsync(-1, cts.Token);
+                Task<bool> after = one.WaitAsync(-1);
+                cts.Cancel();
+                Check("canceled", canceled.IsCanceled);
+                one.Release();
+                Check("the next one gets in", await after && one.CurrentCount == 0);
+                Check("canceled already", one.WaitAsync(new CancellationToken(true)).IsCanceled);
+            }
+
+            // A timeout with a token: whichever comes first.
+            using (var cts = new CancellationTokenSource())
+            {
+                Task<bool> timed = one.WaitAsync(10, cts.Token);
+                Check("timeout before the token", !await timed);
+                cts.Cancel();
+                Check("still timed out, not canceled", !timed.IsCanceled);
+            }
+
+            // Fibers wait with Wait() and are let in by an async method.
+            var forFibers = new SemaphoreSlim(0);
+            s_log = "";
+            Task fiberDone = Task.Run(() => { forFibers.Wait(); s_log += "f"; });
+            await Task.Delay(5);
+            Check("fiber waits", s_log == "" && !fiberDone.IsCompleted);
+            forFibers.Release();
+            await fiberDone;
+            Check("fiber let in", s_log == "f");
+            Task<bool> fiberTimeout = Task.Run(() => forFibers.Wait(10));
+            Check("fiber timeout", !await fiberTimeout);
+        }
+        End("SemaphoreSlim");
 
         // Files: reads and writes run on another thread (lib/FileAsync.cs),
         // or, where there are no threads, at once.
@@ -848,6 +1078,105 @@ public static class Program
             File.Remove(name);
         }
         End("Files");
+
+        // Task.RunOnThread (lib/ThreadTasks.cs): on another system thread,
+        // or, where there are none, at once.
+        {
+            var others = new Ticker();
+            Task ticking = others.RunAsync();
+            int turns = await SpinElsewhere();
+            others.Stop = true;
+            await ticking;
+            Check("result back", turns > 0);
+            if (Parallel.ProcessorCount > 1 && !small)
+                Check($"others ran meanwhile: {others.Ticks} ticks", others.Ticks > 0);
+
+            // Several at once: the pool grows; each makes objects there.
+            int threadCalls = small ? 8 : 100;
+            var made = new Task<string>[threadCalls];
+            for (int i = 0; i < threadCalls; i++)
+            {
+                int k = i;
+                made[i] = Task.RunOnThread(() => "x" + k * 3);
+            }
+            string[] strings = await Task.WhenAll(made);
+            bool allThere = true;
+            for (int i = 0; i < threadCalls; i++)
+                allThere &= strings[i] == "x" + i * 3;
+            Check($"{threadCalls} calls, results in order", allThere);
+
+            // Side by side: four 40 ms spins on four threads.
+            if (Parallel.ProcessorCount >= 4 && !small)
+            {
+                start = Clock.Monotonic;
+                await Task.WhenAll(Task.RunOnThread(() => Spin(40)), Task.RunOnThread(() => Spin(40)),
+                    Task.RunOnThread(() => Spin(40)), Task.RunOnThread(() => Spin(40)));
+                Check($"four 40 ms spins in {Milliseconds(start)} ms, under 120", Milliseconds(start) < 120);
+            }
+
+            int bumped = 0;
+            await Task.RunOnThread(() => { Interlocked.Increment(ref bumped); });
+            Check("Action", bumped == 1);
+            Check("canceled before it starts", Task.RunOnThread(() => 1, new CancellationToken(true)).IsCanceled);
+
+            // Fiber.Run (inside await here) waits for calls still out.
+            Task<int> stillOut = Task.RunOnThread(() => { Spin(20); return 5; });
+            Check("waits for the call", await stillOut == 5);
+        }
+        End("RunOnThread");
+        // ThreadCompletionSource (lib/ThreadCompletion.cs): completed on
+        // another thread, awaited here.
+        {
+            var others = new Ticker();
+            Task ticking = others.RunAsync();
+            // docs:thread-completion-await
+            s_one = new ThreadCompletionSource<int>();
+            StartThread(0); // calls CompleteElsewhere there
+            int answer = await s_one.Task;
+            // docs:end
+            others.Stop = true;
+            await ticking;
+            Check("result from the other thread", answer == 42);
+            if (Parallel.ProcessorCount > 1 && !small)
+                Check($"others ran meanwhile: {others.Ticks} ticks", others.Ticks > 0);
+
+            int count = small ? 10 : 200;
+            s_many = new ThreadCompletionSource<int>[count];
+            var manyTasks = new Task<int>[count];
+            for (int i = 0; i < count; i++)
+            {
+                s_many[i] = new ThreadCompletionSource<int>();
+                manyTasks[i] = s_many[i].Task;
+            }
+            s_canceled = new ThreadCompletionSource();
+            StartThread(1);
+            int[] results = await Task.WhenAll(manyTasks);
+            bool inOrder = true;
+            for (int i = 0; i < count; i++)
+                inOrder &= results[i] == i * 2;
+            Check($"{count} completed by one thread", inOrder);
+            await s_canceled.Task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            Check("canceled from the other thread", s_canceled.Task.IsCanceled);
+            Check("only once", !s_many[0].TrySetResult(7) && !s_canceled.TrySetCanceled());
+
+            // Two threads and this one try: exactly one wins.
+            s_raced = new ThreadCompletionSource<int>();
+            s_wins = s_tried = 0;
+            StartThread(2);
+            StartThread(2);
+            if (s_raced.TrySetResult(1))
+                Interlocked.Increment(ref s_wins);
+            Check("raced value", await s_raced.Task == 1);
+            while (Volatile.Read(ref s_tried) < 2)
+                await Task.Delay(1); // the other two have tried
+            Check($"one winner of three: {Volatile.Read(ref s_wins)}", Volatile.Read(ref s_wins) == 1);
+
+            // Set on this thread: also delivered (by Fiber.Run here).
+            var own = new ThreadCompletionSource<string>();
+            own.SetResult("here");
+            Check("set on its own thread", await own.Task == "here");
+        }
+        End("ThreadCompletionSource");
 
         // Cost: awaits that wait, and ones that don't.
         start = Clock.Monotonic;

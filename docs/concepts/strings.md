@@ -42,11 +42,13 @@ Defining `AsSpan(string)` also switches on C# 14's implicit conversion from `str
 `ReadOnlySpan<char>`. So every string converts to a span, and any span parameter takes a string. A
 null string acts as an empty one.
 
-Parsing works on spans too. `Str.TryParse` reads `int`, `long`, `ulong` and `double`, and
-`Str.TryParseHex` reads hex. Parsing is strict and invariant: no surrounding whitespace, so call `Trim()`
-first, and no thousands separators. `TryParse` for `double` is correctly rounded. That combination is
-how the tutorial's quiz reads an answer without allocating anything: the line goes into a stack buffer,
-and the number is parsed from a slice of it.
+Parsing works on spans too. `int.Parse`, `double.TryParse` and the other numbers' `Parse` and
+`TryParse` take a `ReadOnlySpan<char>` as well as a string, and read what .NET reads in the invariant
+culture (see [Read input](../how-to/read-input.html#parse-numbers)). `Str.TryParse` is a stricter
+version for `int`, `long`, `ulong` and `double`, with no surrounding whitespace (call `Trim()` first)
+and no thousands separators, and `Str.TryParseHex` reads hex. Both are correctly rounded for `double`.
+Parsing from a span is how the tutorial's quiz reads an answer without allocating anything: the line
+goes into a stack buffer, and the number is parsed from a slice of it.
 
 <!-- sample: samples/QuizStep2.cs check -->
 ```csharp
@@ -184,7 +186,7 @@ Check("categories",
     && char.IsWhiteSpace('\u00A0'));
 ```
 
-There are no cultures, so `ToUpper` and `ToLower` are `ToUpperInvariant` and `ToLowerInvariant`: each
+There is only the invariant culture (see [Cultures](#cultures)), so `ToUpper` and `ToLower` are `ToUpperInvariant` and `ToLowerInvariant`: each
 char maps to one char, as in .NET's invariant mode. The tables are linked only into programs that use
 them: categories take about 16 KB, casing 1.6 KB and numeric values 3 KB. `IsAsciiDigit`, `IsAsciiLetter`
 and the other ASCII methods, `IsWhiteSpace` and `IsControl` are plain comparisons and need none, which
@@ -222,10 +224,66 @@ There are no `Encoder` or `Decoder` objects, no fallback objects and no other co
 `new UTF8Encoding(false, throwOnInvalidBytes: true)` ends the program at invalid input, which is what
 an exception does here.
 
-## What isn't there
+## Cultures
 
-There is nothing culture-aware. `"n=" + 5`, `ToString("F2")`, `string.Format` and a plain `$"..."`
-work, with .NET's format strings in the invariant culture (see
+A program that formats a number for a person and the same number for a file has to know which rules
+each one uses: in German, 1234.5 is written `1.234,5`. .NET handles this with cultures, and code
+that must not depend on where it runs passes `CultureInfo.InvariantCulture` everywhere. Carrying
+every culture's data would cost far more than most zero-mode programs are, so zero mode does what
+.NET does with `InvariantGlobalization` set: **there is one culture, the invariant one**.
+
+`CultureInfo` and `NumberFormatInfo` are there, so code written that way compiles unchanged and gets
+.NET's invariant results. `CurrentCulture` is the invariant culture too:
+
+<!-- sample: samples/Cultures.cs invariant -->
+```csharp
+CultureInfo invariant = CultureInfo.InvariantCulture;
+Check("format", 1234.5.ToString("N1", invariant) == "1,234.5");
+Check("parse", double.Parse("1,234.5", invariant) == 1234.5);
+Check("string.Format",
+    string.Format(invariant, "{0:F2}", 2.5) == "2.50");
+Check("the current culture is the invariant one",
+    CultureInfo.CurrentCulture.Name == ""
+    && CultureInfo.CurrentCulture.Equals(invariant));
+Check("its numbers",
+    NumberFormatInfo.CurrentInfo.NumberDecimalSeparator == "."
+    && invariant.NumberFormat.NumberGroupSeparator == ",");
+```
+
+Asking for any other culture throws `CultureNotFoundException`, with the message .NET gives in that
+mode, so the program stops at the line that wanted German rules instead of quietly getting English
+ones:
+
+<!-- sample: samples/Cultures.cs other -->
+```csharp
+string message = Thrown(() => new CultureInfo("de-DE"));
+Check("another culture throws", message == InvariantOnly
+    + " (Parameter 'name')\nde-DE is an invalid culture identifier.");
+```
+
+```text
+  what you write                      what zero mode does
+  ----------------------------------  ---------------------------------------
+  CultureInfo.InvariantCulture        the invariant culture
+  CultureInfo.CurrentCulture          the invariant culture
+  new CultureInfo("") / (127)         an invariant culture (writable copy)
+  new CultureInfo("de-DE")            CultureNotFoundException, as .NET's
+  x.ToString(provider)                invariant, whatever the provider
+  string.CompareTo, Sort()            by character code, as .NET's invariant
+                                      mode does
+```
+
+`CurrentCulture` and `CurrentUICulture` can be set, to an invariant culture since there is no
+other, and each is one setting for the whole program rather than one per thread.
+`NumberFormatInfo` is read-only and has no public constructor, so code that sets its own decimal
+separator doesn't compile, rather than compiling and being ignored. `DateTimeFormatInfo` is the same
+for dates (see [Work with dates and times](../how-to/work-with-dates-and-times.html)). `TextInfo` and
+`CompareInfo` aren't there yet.
+
+## What allocates
+
+`"n=" + 5`, `ToString("F2")`, `string.Format` and a plain `$"..."` work, with .NET's format strings
+(see
 [Format text](../how-to/format-text.html#nets-format-strings-tostring-string.format-and-tryformat)),
 but each allocates a new string with calloc that is never freed: fine once, not in a loop. There,
 write `Str.Format(arena, $"n={5}")`, or `TryFormat` into a span.

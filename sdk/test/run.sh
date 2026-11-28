@@ -407,6 +407,10 @@ test_c64_target() {
     # A second build has nothing to do.
     if ! run_in "$dir" c64-again build -p:ZeroTarget=c64 -v:n; then fail "$name" "the second build failed"; return; fi
     if grep -q "c64-bitcode" "$LOG"; then fail "$name" "the second build compiled again"; return; fi
+    # The project's options for the C64's stacks and multiplication reach
+    # the link, and changing them links again.
+    if ! run_in "$dir" c64-options build -p:ZeroTarget=c64 -p:ZeroC64FastMultiply=true -p:ZeroC64ShadowStack=512 -p:ZeroC64StackReserve=768 -v:n; then fail "$name" "the build with C64 options failed"; return; fi
+    if ! grep -q -- "--shadow-stack 512 --stack-reserve 768 --fast-multiply" "$LOG"; then fail "$name" "the C64 options didn't reach the link"; return; fi
     pass "$name"
 }
 
@@ -1833,6 +1837,44 @@ test_fsharp_builders() {
     pass "$name"
 }
 
+# task { }, async { } and MailboxProcessor (fsharp/control/Control.fs),
+# against .NET's output; both ways fsc optimizes.
+test_fsharp_async() {
+    local name="F# async, task and MailboxProcessor" dir exe opt
+    can_build "$name" || return
+    dir=$(fixture fsasync)
+    for opt in true false; do
+        rm -rf "$dir/bin" "$dir/obj"
+        if ! run_in "$dir" fsasync build -p:Optimize=$opt; then fail "$name" "dotnet build failed (Optimize=$opt)"; return; fi
+        exe=$(exe "$dir/bin/Debug/$TFM/fsasync")
+        "$exe" > "$WORK/fsasync.out" 2>&1
+        if ! same_output "$WORK/fsasync.out" "$dir/expected.txt" "$WORK/fsasync.diff"; then
+            fail "$name" "printed (Optimize=$opt): $(head -c 300 "$WORK/fsasync.diff")"; return
+        fi
+    done
+    pass "$name"
+}
+
+# Arena.DebugChecks with agents: a message made inside an arena scope and
+# still queued when it ends stops the program; one taken before is fine.
+test_fsharp_arena_post() {
+    local name="F# message left queued from an arena scope" dir exe opt
+    can_build "$name" || return
+    dir=$(fixture fsarenapost)
+    for opt in true false; do
+        rm -rf "$dir/bin" "$dir/obj"
+        if ! run_in "$dir" fsarenapost build -p:Optimize=$opt; then fail "$name" "dotnet build failed (Optimize=$opt)"; return; fi
+        exe=$(exe "$dir/bin/Debug/$TFM/fsarenapost")
+        if "$exe" > "$WORK/fsarenapost.out" 2>&1; then fail "$name" "the program didn't stop (Optimize=$opt)"; return; fi
+        if ! grep -q 'taken inside: 1' "$WORK/fsarenapost.out" \
+            || ! grep -q "still in an agent's queue as the scope ends" "$WORK/fsarenapost.out" \
+            || grep -q 'not here' "$WORK/fsarenapost.out"; then
+            fail "$name" "printed (Optimize=$opt): $(head -c 300 "$WORK/fsarenapost.out")"; return
+        fi
+    done
+    pass "$name"
+}
+
 # Catch.result and Catch.Run: a raise comes back, a file opened with use is
 # closed after it; optimized and not.
 test_fsharp_catch() {
@@ -2255,7 +2297,7 @@ ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old
     link_library link_library_passed_on link_library_newer_glibc sdl3 sdl3_windows
     native_library_name_with_spaces native_library_reference_kinds native_library_app_recipe native_library_bindings
     native_library_visual_studio
-    fsharp_program fsharp_printf fsharp_collections fsharp_builders fsharp_catch fsharp_memory fsharp_must_not_compile fsharp_scratch_ref_struct_state fsharp_unsafe_calls fsharp_unsafe_calls_libraries fsharp_decimal fsharp_top_level fsharp_libraries fsharp_cross_targets fsharp_incremental fsharp_publish fsharp_c64
+    fsharp_program fsharp_printf fsharp_collections fsharp_builders fsharp_async fsharp_arena_post fsharp_catch fsharp_memory fsharp_must_not_compile fsharp_scratch_ref_struct_state fsharp_unsafe_calls fsharp_unsafe_calls_libraries fsharp_decimal fsharp_top_level fsharp_libraries fsharp_cross_targets fsharp_incremental fsharp_publish fsharp_c64
     fsharp_native_library fsharp_native_library_cross fsharp_native_library_errors
     fsharp_native_library_bindings fsharp_program_calls_native_library fsharp_native_library_bindings_all_types)
 

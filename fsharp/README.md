@@ -7,6 +7,7 @@ What F# projects (`.fsproj` with `ZeroCSharp.Sdk`) compile against: a small FSha
 | `core/` | FSharp.Core: the prelude and attributes (from dotnet/fsharp, MIT); `LanguagePrimitives` with structural equality, comparison and hashing through interfaces instead of reflection; `FSharpFunc` and closures; `Option`, `ValueOption`, `Result`, `Choice`, `Ref`, `list`; `Operators`, with ranges of any numeric type and `char`, the math functions (`sqrt`, `round`, `sin`, `pown`, ...) and `decimal`; `seq { }`, list and array comprehensions (`seqcore.fs`: what the compiler calls for them); the `Seq`, `List`, `Array` and `String` modules; `Map` and `Set`; `lazy` (`lazy.fs`, over zerocore's `System.Lazy<T>`); the format types printf uses |
 | `core/map.fs`, `core/set.fs` | dotnet/fsharp's own, made by `core/adapt-mapset.py` (edit that, not them): the AVL trees and modules as they are, without serialization, debugger views and `IDictionary` |
 | `printf/` | `FSharp.Printf.dll`: `printf`, `printfn`, `eprintf`, `sprintf`, `failwithf`, `ksprintf` and the others |
+| `control/` | `FSharp.Control.dll` (in `ref/`, next to `BflatLib.dll`): `task`, `async`, `MailboxProcessor` (on lib's tasks and fibers), `arena frame { }` (on lib's object scopes) |
 | `shim/` | `System.Runtime.Extensions.dll`: `Tuple` (with .NET's `ToString`), `KeyValuePair`, `IStructuralEquatable`, `IList<T>` and attributes the F# compiler emits or looks up |
 
 `decimal` itself is zerocore's (`zerocore/System/Decimal.cs`), so C# zero programs have it too.

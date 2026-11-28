@@ -22,6 +22,7 @@
 // s.AsSpan(i, n). A null string acts as an empty one everywhere here.
 
 using System;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace System.Runtime.CompilerServices
@@ -326,83 +327,23 @@ public static class Str
     /// [sign] digits [. digits] [e|E [sign] digits], or NaN / Infinity / -Infinity (what
     /// Fmt prints; case-insensitive, "inf" too). ".5" and "5." are accepted, like .NET.
     /// Too large gives +-Infinity and too small gives 0, also like .NET.
-    /// The result is correctly rounded (denormals included), except for rare inputs
-    /// within about 2^-100 of a halfway point between two doubles. Digits past the
-    /// 19th significant one only affect such halfway cases.
+    /// Correctly rounded: this is double.TryParse with the sign, the point and the
+    /// exponent allowed, and nothing around the number.
     /// </summary>
     public static bool TryParse(ReadOnlySpan<char> s, out double value)
     {
         value = 0;
-        int i = 0;
-        bool negative = false;
-        if (s.Length > 0 && (s[0] == '-' || s[0] == '+'))
+        if (s.Length == 0 || IsWhiteSpace(s[0]) || IsWhiteSpace(s[s.Length - 1]) || s[s.Length - 1] == '\0')
+            return false;
+        bool negative = s[0] == '-';
+        if (EqualsIgnoreCase(s[0] == '-' || s[0] == '+' ? s.Slice(1) : s, "inf"))
         {
-            negative = s[0] == '-';
-            i = 1;
-        }
-
-        ReadOnlySpan<char> word = s.Slice(i);
-        if (EqualsIgnoreCase(word, "infinity") || EqualsIgnoreCase(word, "inf"))
-        {
-            value = negative ? -Infinity : Infinity;
+            value = negative ? double.NegativeInfinity : double.PositiveInfinity;
             return true;
         }
-        if (EqualsIgnoreCase(word, "nan"))
-        {
-            value = NaN;
-            return true;
-        }
-
-        ulong mantissa = 0;
-        int kept = 0;
-        int exponent = 0;
-        bool anyDigits = false;
-        for (; i < s.Length && IsDigit(s[i]); i++)
-        {
-            anyDigits = true;
-            AddDigit(s[i] - '0', false, ref mantissa, ref kept, ref exponent);
-        }
-        if (i < s.Length && s[i] == '.')
-        {
-            for (i++; i < s.Length && IsDigit(s[i]); i++)
-            {
-                anyDigits = true;
-                AddDigit(s[i] - '0', true, ref mantissa, ref kept, ref exponent);
-            }
-        }
-        if (!anyDigits)
-            return false;
-
-        if (i < s.Length && (s[i] == 'e' || s[i] == 'E'))
-        {
-            i++;
-            bool negativeExponent = false;
-            if (i < s.Length && (s[i] == '-' || s[i] == '+'))
-            {
-                negativeExponent = s[i] == '-';
-                i++;
-            }
-            int digitsStart = i;
-            int e = 0;
-            for (; i < s.Length && IsDigit(s[i]); i++)
-            {
-                if (e < 100000) // anything past this is 0 or Infinity anyway
-                    e = e * 10 + (s[i] - '0');
-            }
-            if (i == digitsStart)
-                return false;
-            exponent += negativeExponent ? -e : e;
-        }
-        if (i != s.Length)
-            return false;
-
-        double magnitude = Scale(mantissa, exponent);
-        value = negative ? -magnitude : magnitude;
-        return true;
+        return double.TryParse(s, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent,
+            null, out value);
     }
-
-    const double Infinity = 1.0 / 0.0; // the core library's double has no PositiveInfinity or NaN
-    const double NaN = 0.0 / 0.0;
 
     static bool TryParseDigits(ReadOnlySpan<char> digits, ulong limit, out ulong value)
     {
@@ -421,8 +362,6 @@ public static class Str
         value = result;
         return true;
     }
-
-    static bool IsDigit(char c) => c >= '0' && c <= '9';
 
     static int HexDigit(char c)
     {
@@ -445,244 +384,6 @@ public static class Str
                 return false;
         }
         return true;
-    }
-
-    // Keeps the first 19 significant digits (they fit in a ulong); later digits only
-    // move the decimal exponent.
-    static void AddDigit(int digit, bool fraction, ref ulong mantissa, ref int kept, ref int exponent)
-    {
-        if (mantissa == 0 && digit == 0)
-        {
-            if (fraction)
-                exponent--; // leading zero after the point
-            return;
-        }
-        if (kept < 19)
-        {
-            mantissa = mantissa * 10 + (ulong)digit;
-            kept++;
-            if (fraction)
-                exponent--;
-        }
-        else if (!fraction)
-        {
-            exponent++; // dropped an integer digit
-        }
-    }
-
-    // mantissa * 10^exponent.
-    // Fast path: with mantissa <= 2^53 and |exponent| <= 22 both operands are exact,
-    // so the single multiply or divide is correctly rounded.
-    // Otherwise 10^exponent = 5^exponent * 2^exponent, with 5^exponent computed in
-    // double-double arithmetic (about 106 bits) and the power of two applied exactly.
-    // The result is correctly rounded except for inputs within about 2^-100 of a
-    // halfway point; Finish keeps denormals to a single rounding.
-    static double Scale(ulong mantissa, int exponent)
-    {
-        if (mantissa == 0)
-            return 0;
-        if (exponent > 400)
-            return Infinity;
-        if (exponent < -400)
-            return 0;
-        if (mantissa <= (1UL << 53) && exponent >= -22 && exponent <= 22)
-        {
-            double m = mantissa;
-            return exponent >= 0 ? m * Pow10(exponent) : m / Pow10(-exponent);
-        }
-
-        DoubleDouble five = Pow5(exponent < 0 ? -exponent : exponent, out int binary);
-        DoubleDouble value = DoubleDouble.FromULong(mantissa);
-        if (exponent >= 0)
-            return Finish(DoubleDouble.Mul(value, five), binary + exponent);
-        return Finish(DoubleDouble.Div(value, five), exponent - binary);
-    }
-
-    const double MinNormal = 2.2250738585072014e-308;
-
-    // value * 2^n, rounded once. In the normal range rounding hi + lo to a double
-    // and scaling by 2^n is exact. Below it, that would round twice (to 53 bits,
-    // then to the denormal grid), so round the double-double straight to a
-    // multiple of 2^-1074 instead.
-    static double Finish(DoubleDouble value, int n)
-    {
-        double x = LdExp(value.ToDouble(), n);
-        if (x > MinNormal)
-            return x;
-
-        int shift = n + 1074; // value * 2^shift = the result in units of 2^-1074
-        double hi = LdExp(value.Hi, shift); // exact unless the result rounds to 0 anyway
-        if (hi < 0.25)
-            return 0;                        // hi + lo < 0.5 units
-        double lo = LdExp(value.Lo, shift);
-        double whole = (long)hi;            // floor; hi < 2^53
-        double fraction = (hi - whole) + lo;
-        if (fraction >= 1)
-        {
-            whole += 1;
-            fraction -= 1;
-        }
-        else if (fraction < 0)
-        {
-            whole -= 1;
-            fraction += 1;
-        }
-        if (fraction > 0.5 || (fraction == 0.5 && ((long)whole & 1) != 0))
-            whole += 1;
-        return whole * TwoPow(-1022) * TwoPow(-52); // exact: whole <= 2^52
-    }
-
-    // 5^n as a double-double in [1, 2), times 2^binary.
-    static DoubleDouble Pow5(int n, out int binary)
-    {
-        DoubleDouble result = new DoubleDouble(1, 0);
-        DoubleDouble power = new DoubleDouble(1.25, 0); // 5 = 1.25 * 2^2
-        int resultBinary = 0;
-        int powerBinary = 2;
-        while (n > 0)
-        {
-            if ((n & 1) != 0)
-            {
-                result = DoubleDouble.Mul(result, power);
-                resultBinary += powerBinary;
-                result.Normalize(ref resultBinary);
-            }
-            n >>= 1;
-            if (n > 0)
-            {
-                power = DoubleDouble.Mul(power, power);
-                powerBinary *= 2;
-                power.Normalize(ref powerBinary);
-            }
-        }
-        binary = resultBinary;
-        return result;
-    }
-
-    // x * 2^n, exact unless the result is denormal.
-    static double LdExp(double x, int n)
-    {
-        while (n > 1023)
-        {
-            x *= TwoPow(1023);
-            n -= 1023;
-        }
-        while (n < -1022)
-        {
-            x *= TwoPow(-1022);
-            n += 1022;
-        }
-        return x * TwoPow(n);
-    }
-
-    // 2^k for -1022 <= k <= 1023, built from its bit pattern.
-    static double TwoPow(int k)
-    {
-        long bits = (long)(k + 1023) << 52;
-        unsafe { return *(double*)&bits; } // SAFETY: bits is a local of the same size as double.
-    }
-
-    // A value hi + lo with |lo| <= ulp(hi) / 2: about 106 bits of precision.
-    struct DoubleDouble
-    {
-        public double Hi;
-        public double Lo;
-
-        public DoubleDouble(double hi, double lo)
-        {
-            Hi = hi;
-            Lo = lo;
-        }
-
-        public double ToDouble() => Hi + Lo;
-
-        public static DoubleDouble FromULong(ulong value)
-        {
-            double hi = value;                         // rounded to 53 bits
-            long rest = (long)(value - (ulong)hi);     // the rounding error, exact
-            return QuickTwoSum(hi, rest);
-        }
-
-        // Keeps Hi in [1, 2) by moving powers of two into binary (exact).
-        public void Normalize(ref int binary)
-        {
-            while (Hi >= 2)
-            {
-                Hi *= 0.5;
-                Lo *= 0.5;
-                binary++;
-            }
-        }
-
-        public static DoubleDouble Mul(DoubleDouble a, DoubleDouble b)
-        {
-            double p = a.Hi * b.Hi;
-            double e = TwoProductError(a.Hi, b.Hi, p) + (a.Hi * b.Lo + a.Lo * b.Hi);
-            return QuickTwoSum(p, e);
-        }
-
-        public static DoubleDouble Div(DoubleDouble a, DoubleDouble b)
-        {
-            double q1 = a.Hi / b.Hi;
-            DoubleDouble r = Sub(a, MulDouble(b, q1));
-            double q2 = r.Hi / b.Hi;
-            r = Sub(r, MulDouble(b, q2));
-            double q3 = r.Hi / b.Hi;
-            DoubleDouble q = QuickTwoSum(q1, q2);
-            return QuickTwoSum(q.Hi, q.Lo + q3);
-        }
-
-        static DoubleDouble MulDouble(DoubleDouble a, double b)
-        {
-            double p = a.Hi * b;
-            return QuickTwoSum(p, TwoProductError(a.Hi, b, p) + a.Lo * b);
-        }
-
-        static DoubleDouble Sub(DoubleDouble a, DoubleDouble b)
-        {
-            double s = a.Hi - b.Hi;
-            double v = s - a.Hi;
-            double e = (a.Hi - (s - v)) + (-b.Hi - v);
-            return QuickTwoSum(s, e + (a.Lo - b.Lo));
-        }
-
-        // a + b as hi + lo; needs |a| >= |b|.
-        static DoubleDouble QuickTwoSum(double a, double b)
-        {
-            double s = a + b;
-            return new DoubleDouble(s, b - (s - a));
-        }
-
-        // The exact error of p = a * b (Dekker), without FMA.
-        static double TwoProductError(double a, double b, double p)
-        {
-            Split(a, out double aHi, out double aLo);
-            Split(b, out double bHi, out double bLo);
-            return ((aHi * bHi - p) + aHi * bLo + aLo * bHi) + aLo * bLo;
-        }
-
-        // Veltkamp split into two 26-bit halves.
-        static void Split(double a, out double hi, out double lo)
-        {
-            double t = 134217729.0 * a; // 2^27 + 1
-            hi = t - (t - a);
-            lo = a - hi;
-        }
-    }
-
-    // Exact for n <= 22: every intermediate power and product is a representable integer.
-    static double Pow10(int n)
-    {
-        double result = 1;
-        double power = 10;
-        while (n > 0)
-        {
-            if ((n & 1) != 0)
-                result *= power;
-            power *= power;
-            n >>= 1;
-        }
-        return result;
     }
 
     // ---- arena strings ---------------------------------------------------

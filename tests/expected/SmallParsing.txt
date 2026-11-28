@@ -1,0 +1,2 @@
+PASS integers (11 checks)
+All checks passed.

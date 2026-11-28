@@ -333,6 +333,82 @@ static async Task<int> Sleeper(int times)
 - If an arena makes a task, the arena must stay alive until whoever awaits the task has finished
   with it.
 
+## Run a blocking call on another thread
+
+`Task.Run` starts a fiber, which shares the thread with the others: a long computation or a slow C
+call inside it stops every fiber until it returns. `Task.RunOnThread` (`lib/ThreadTasks.cs`) runs the
+call on another system thread instead, which is what .NET's `Task.Run` does, and gives you a task to
+await. Meanwhile this thread's fibers and async methods carry on:
+
+<!-- sample: samples/Tasks.cs run-on-thread -->
+```csharp
+// Busy for `ms` milliseconds without waiting: on a fiber this would
+// stop every other fiber; on another thread it doesn't.
+static int Spin(int ms)
+{
+    long end = Clock.Monotonic + ms * 1_000_000L;
+    int turns = 0;
+    while (Clock.Monotonic < end)
+        turns++;
+    return turns;
+}
+
+static async Task<int> SpinElsewhere()
+{
+    int turns = await Task.RunOnThread(() => Spin(50));
+    return turns;
+}
+```
+
+The threads come from a pool per calling thread. An idle worker takes the call. When every worker
+is busy, a new one starts, up to 64, and after that calls queue on the least busy worker. `Fiber.Run`
+doesn't return while calls are still running. A token is checked when the call is made; a running
+call can't be stopped.
+
+The call runs at the same time as your fibers, so the rules of `Parallel.For` apply to it, not those
+of fibers. Locks become necessary again, and there aren't any (`SemaphoreSlim` works within one
+thread only). So keep the call self-contained: pass in what it needs, return a result, and touch
+nothing a fiber also uses, such as lists, dictionaries, static fields, tasks, channels or arenas. Use
+`Interlocked` for a shared counter. Objects it makes with `new` are fine to return. Static
+constructors aren't thread-safe, so touch a type's statics before the call.
+
+Where there are no threads (DOS, UEFI, microcontrollers) the call runs at once, on the calling
+thread.
+## Complete a task from another thread
+
+A task, a `TaskCompletionSource`, a channel and a fiber all belong to their thread, and nothing there
+is locked. Completing a plain `TaskCompletionSource` from another thread, such as a C library's
+callback thread, would corrupt its waiters, so it stops the program with a message instead.
+`ThreadCompletionSource` (`lib/ThreadCompletion.cs`) is the one any thread may complete. Make it on the fibers' thread and await its task there:
+
+<!-- sample: samples/Tasks.cs thread-completion-await -->
+```csharp
+s_one = new ThreadCompletionSource<int>();
+StartThread(0); // calls CompleteElsewhere there
+int answer = await s_one.Task;
+```
+
+and complete it anywhere:
+
+<!-- sample: samples/Tasks.cs thread-completion -->
+```csharp
+// Runs on another thread: completes the source made on this one.
+static void CompleteElsewhere()
+{
+    BusyFor(20);
+    s_one!.SetResult(42);
+}
+```
+
+The result travels back through a pipe that `Fiber.Run` polls, so the task completes, and whatever
+awaits it runs, on the thread that made the source. Until then the task isn't completed, even seen
+from the thread that set it. `SetResult`, `SetCanceled` and their `Try` forms can be called from
+any thread, and only the first call wins.
+
+A source that hasn't been completed keeps its thread's `Fiber.Run` waiting: that is what lets it
+wait for the other thread. So complete or cancel every source you make, or the program won't end.
+Where there are no threads (DOS, UEFI, microcontrollers), the task completes at once.
+
 ## Await a channel
 
 A channel also has .NET's `ChannelReader`/`ChannelWriter` methods: `ReceiveAsync`, `SendAsync`,
@@ -363,6 +439,42 @@ static async Task<int> Consume(Channel<int> channel)
 `ReceiveAsync` then ends the program, as .NET's `ReadAsync` throws. The channel reuses the tasks
 behind these waits, so a loop over them allocates nothing, and a program that never calls them
 doesn't link their code.
+
+## Guard state across an await
+
+Fibers switch only where code waits, so code that doesn't wait needs no lock. Code that reads
+something, awaits, and writes it back does: another async method can run during the await and its
+update is lost. `SemaphoreSlim` (`lib/SemaphoreSlim.cs`) works as in .NET, and with a count of 1 it's
+the lock for that:
+
+<!-- sample: samples/Tasks.cs semaphore -->
+```csharp
+// Reads the total, waits, writes it back: without the gate, another
+// call could run in the wait and its update would be lost.
+static readonly SemaphoreSlim s_gate = new(1);
+static int s_total;
+
+static async Task AddOne()
+{
+    await s_gate.WaitAsync();
+    try
+    {
+        int seen = s_total;
+        await Task.Yield(); // others run here
+        s_total = seen + 1;
+    }
+    finally
+    {
+        s_gate.Release();
+    }
+}
+```
+
+A larger count limits how many run at once, for example how many connections are open. `WaitAsync`
+costs no fiber, and waiters get in in the order they came. A timeout makes it return `false`, and a
+canceled token cancels it. `Wait()` blocks a fiber instead. Releasing past the maximum ends the
+program, as .NET's `SemaphoreFullException` would. A semaphore belongs to one thread, like the rest of
+the tasks, so `Parallel.For`'s threads can't share one: they use `Interlocked`.
 
 ## Cancel
 

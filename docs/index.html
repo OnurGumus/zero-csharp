@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Zero-mode C#: C# compiled by a bflat fork into small native programs with no .NET runtime, for Linux, macOS, Windows, WebAssembly, DOS on a 386, UEFI with no operating system, and the Commodore 64." />
-  <title>Zero C# | C# without a runtime, from Linux to a 386</title>
+  <meta name="description" content="Zero-mode C# and F#: C# and F# compiled by a bflat fork into small native programs with no .NET runtime, for Linux, macOS, Windows, WebAssembly, DOS on a 386, UEFI with no operating system, and the Commodore 64." />
+  <title>Zero C# | C# and F# without a runtime, from Linux to a 386</title>
   <link rel="icon" href="img/favicon.svg" type="image/svg+xml" />
   <!-- Link previews. The image is drawn from docs/social/card.html; build-docs.py adds the same to every guide page. -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Zero C#" />
-  <meta property="og:title" content="Zero C#: C# with nothing underneath" />
-  <meta property="og:description" content="A bflat fork that compiles C# to small native programs with no .NET runtime and no garbage collector, for Linux, macOS, Windows, WebAssembly, DOS on a 386, UEFI with no operating system, and the Commodore 64." />
+  <meta property="og:title" content="Zero C#: C# and F# with nothing underneath" />
+  <meta property="og:description" content="A bflat fork that compiles C# and F# to small native programs with no .NET runtime and no garbage collector, for Linux, macOS, Windows, WebAssembly, DOS on a 386, UEFI with no operating system, and the Commodore 64." />
   <meta property="og:url" content="https://onurgumus.github.io/zero-csharp/" />
   <meta property="og:image" content="https://onurgumus.github.io/zero-csharp/img/social.png?v=3" />
   <meta property="og:image:width" content="1200" />
@@ -174,8 +174,9 @@
 
     /* The Commodore 64: the machine's own blues, and the promo video. */
     .c64 { background: #352879; color: #c3bcf0; padding: 56px 0 60px; }
-    .c64 h2 { color: #fff; }
-    .c64-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 32px 48px; align-items: center; }
+    .c64 h2, .c64 h3 { color: #fff; }
+    .c64 h3 { margin: 0 0 12px; font-size: 1.375rem; }
+    .c64-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 48px 48px; align-items: center; }
     .c64 video { display: block; width: 100%; height: auto; border-radius: 10px; border: 6px solid #6c5eb5; background: #000; }
     .c64 p { margin: 0 0 14px; }
     .c64 code { font: .875em var(--mono); color: #fff; }
@@ -239,9 +240,9 @@
   <main data-pagefind-body>
     <section class="hero wrap">
       <div>
-        <h1>C# with nothing underneath</h1>
-        <p class="lede">A fork of bflat compiles C# straight to a small native program: no .NET runtime, no garbage collector, nothing to install where it runs.</p>
-        <p>You keep C#'s syntax, type checking and generics. Memory comes from arenas you free all at once, and a small library gives you strings, collections, input and output on those terms. The same source runs on Linux, macOS and Windows, on WebAssembly, on DOS on a 386, on a bare PC with no operating system, started by its UEFI firmware, and on a Commodore 64.</p>
+        <h1>C# and F# with nothing underneath</h1>
+        <p class="lede">A fork of bflat compiles C# and F# straight to a small native program: no .NET runtime, no garbage collector, nothing to install where it runs.</p>
+        <p>You keep the language's syntax, type checking and generics: C#'s records and pattern matching, or F#'s unions, active patterns and units of measure (<a href="how-to/write-fsharp.html">write F#</a>). Memory comes from arenas you free all at once, and a small library gives you strings, collections, input and output on those terms. The same source runs on Linux, macOS and Windows, on WebAssembly, on DOS on a 386, on a bare PC with no operating system, started by its UEFI firmware, and on a Commodore 64.</p>
         <div class="actions">
           <a class="button primary" href="get-started/index.html">Get started</a>
           <a class="button" href="tutorial/index.html">Build the quiz tutorial</a>
@@ -352,6 +353,16 @@ D:\&gt;<span class="cursor" aria-hidden="true"></span></pre>
           <p>Nineteen of the test programs run there, and so does this game: records, a union and pattern matching, sprites, the keyboard, and music on the SID chip, in 37 KB, with nothing allocated while it plays.</p>
           <p><a href="how-to/build-for-c64.html">Build for the Commodore 64</a></p>
           <p class="note">Recorded in the VICE emulator. A project builds for the C64 with <code>dotnet build -p:ZeroTarget=c64</code> (on a Mac, with Docker running).</p>
+        </div>
+        <video controls preload="none" poster="img/c64-llm.jpg" aria-label="An F# language model telling a story on a Commodore 64, in VICE, sped up, with its music">
+          <source src="img/c64-llm.mp4" type="video/mp4" />
+        </video>
+        <div>
+          <h3>A language model, in F#</h3>
+          <p>Karpathy's stories260K, a Llama-style model of 260,000 parameters, tells a story on the same machine. Its weights wait in a 512 KB RAM Expansion Unit, and the C64 copies in a row at a time.</p>
+          <p>All of the program is F#, in integers only: int8 weights, struct unions, active patterns, and units of measure that keep an REU address from passing for a C64 one. Its next token matches the floating-point model's 98% of the time, at about a minute a token.</p>
+          <p><a href="how-to/build-for-c64.html#a-language-model">The language model</a></p>
+          <p class="note">Recorded in the VICE emulator: 28 minutes of C64 time, sped up.</p>
         </div>
       </div>
     </section>

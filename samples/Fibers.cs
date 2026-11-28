@@ -148,6 +148,17 @@ public static class Program
             return 0;
         }
 
+        if (args.Length > 0 && args[0] == "deadlock")
+        {
+            // Taken outside the fibers, then wanted by one: it can never be
+            // left while the fiber waits, so the program must stop.
+            var taken = new object();
+            System.Threading.Monitor.Enter(taken);
+            Fiber.Spawn(taken, static t => { lock (t) { } });
+            Fiber.Run();
+            return 0;
+        }
+
         // A microcontroller has a few hundred KB of RAM, or less, and a DOS
         // machine a few MB: fewer fibers, on smaller stacks.
         bool small = Fiber.DefaultStackSize < 64 * 1024;
@@ -435,6 +446,49 @@ public static class Program
         Fiber.Run();
         Check("each fiber's own stack", onStack.Count == 2);
         Section("Scratch");
+
+        // lock between fibers (lib/Monitor.cs): a fiber that holds it and
+        // yields keeps the others out; they yield until it's left.
+        var gate = new object();
+        var order = new Log();
+        for (int id = 1; id <= 3; id++)
+            Fiber.Spawn((gate, order, id), static s =>
+            {
+                lock (s.gate)
+                {
+                    s.order.Add(s.id);
+                    Fiber.Yield(); // the others run, and wait
+                    s.order.Add(s.id);
+                }
+            });
+        Fiber.Run();
+        int[] pairs = [1, 1, 2, 2, 3, 3];
+        bool paired = order.Count == 6;
+        for (int i = 0; paired && i < pairs.Length; i++)
+            paired = order.Entries[i] == pairs[i];
+        Check("each fiber's two entries together", paired);
+        var fiberLock = new System.Threading.Lock();
+        bool reentered = false, othersOut = true;
+        Fiber.Spawn(fiberLock, static l =>
+        {
+            l.Enter();
+            Fiber.Yield();
+            Fiber.Yield();
+            l.Exit();
+        });
+        Fiber.Spawn((fiberLock, 0), static s =>
+        {
+            // Spawned second: finds it taken, and can't get it in time.
+            if (s.fiberLock.TryEnter(0))
+                s.fiberLock.Exit();
+        });
+        Fiber.Run();
+        lock (fiberLock)
+            lock (fiberLock)
+                reentered = fiberLock.IsHeldByCurrentThread;
+        othersOut = !fiberLock.IsHeldByCurrentThread;
+        Check("taken again by its holder, then left", reentered && othersOut);
+        Section("lock");
 
         // How long a switch takes: two fibers yielding to each other.
         int yields = small ? 100_000 : 1_000_000;

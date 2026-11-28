@@ -24,8 +24,13 @@ namespace System
 
     public delegate int Comparison<in T>(T x, T y);
 
-    // Cultures don't exist here: every provider means the invariant culture.
-    public interface IFormatProvider { }
+    // Something that supplies formatting rules: CultureInfo and
+    // NumberFormatInfo. Only the invariant culture exists, so formatting and
+    // parsing don't ask; every provider means the invariant culture.
+    public interface IFormatProvider
+    {
+        object GetFormat(Type formatType);
+    }
 
     // A value that takes a format string, as string.Format's "{0:F2}" and
     // $"{x:F2}" pass it.

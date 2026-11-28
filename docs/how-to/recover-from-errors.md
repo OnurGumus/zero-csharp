@@ -286,6 +286,10 @@ match Catch.result (fun () -> download url path) with
 when nothing was thrown. `use` is a `using`: after a raise, `Catch.result` closes the files and
 sockets that were opened inside it.
 
+Inside `async { }` and `task { }` they work as in .NET: the builders run their pieces under
+`Catch.Run`, so `with` gets what's thrown and `finally` runs either way
+([Wait without blocking](write-fsharp.html#wait-without-blocking-task-async-and-agents)).
+
 ## What it doesn't catch
 
 - **Bugs.** An index out of range, a failed cast, a null dereference or an overflow in `checked`
