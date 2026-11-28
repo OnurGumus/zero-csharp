@@ -92,8 +92,11 @@ namespace System.Runtime
             // An array's MethodTable holds its element type where others hold
             // their base type: every array derives from Array (and object).
             // Without this, `obj is Array` was false for every array.
+            // (Array is told by its element type kind, SystemArray: taking
+            // its MethodTable would make every program need Array's vtable.)
             if (type->IsParameterized)
-                return target == MethodTable.Of<Array>() || target == MethodTable.Of<object>();
+                return target->ElementTypeKind == SystemArrayKind
+                    || (target->BaseType == null && !target->IsInterface && !target->IsParameterized); // object
             for (; type != null; type = type->BaseType)
             {
                 if (type == target)
@@ -101,6 +104,9 @@ namespace System.Runtime
             }
             return false;
         }
+
+        // .NET's EETypeElementType for System.Array.
+        private const int SystemArrayKind = 0x16;
 
         // .NET's EETypeElementType: Boolean (2) up to Nullable (18) are structs.
         private static bool IsValueType(MethodTable* type)
