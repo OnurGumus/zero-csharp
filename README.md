@@ -100,7 +100,8 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - Classes, structs, interfaces (with default methods), virtual calls, generics, and static abstract
   interface members
 - `Span<T>`, arrays, `stackalloc`, pointers and function pointers
-- Strings with `==`, `+` and `switch`; `lib/` adds formatting, parsing and span operations
+- Strings with `==`, `+` and `switch`, numbers' `ToString(format)`, `Parse` and `TryParse`; `lib/` adds
+  arena strings and span operations
 - Casts (`is`, `as`, `(T)x`), boxing, records, anonymous types, tuples
 - Lambdas and delegates, `try`/`finally`, `using`
 - Static fields and static constructors, `Main(string[] args)`, top-level statements

@@ -57,6 +57,7 @@ SMALL_SAMPLES=(
     SmallFormats
     SmallDoubleFormats
     SmallDecimalFormats
+    SmallParsing
     SmallKeys
     SmallFibers
     SmallChannels
@@ -109,6 +110,7 @@ SAMPLES=(
     CryptoErrors
     CryptoRandom
     Formats
+    Parsing
     Keys
     Tensors
     TensorsAvx
@@ -173,6 +175,7 @@ DOS_SAMPLES=(
     Crypto
     CryptoErrors
     Formats
+    Parsing
     Keys
     Tensors
     TensorTypes
@@ -238,6 +241,7 @@ ARM_SAMPLES=(
     Crypto
     CryptoErrors
     Formats
+    Parsing
     Keys
     Tensors
     TensorTypes

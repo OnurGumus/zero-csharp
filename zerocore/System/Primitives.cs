@@ -21,7 +21,7 @@ namespace System
 
     // Char is in Char.cs.
 
-    public struct SByte : IEquatable<sbyte>, IComparable<sbyte>, IComparable, ISpanFormattable
+    public unsafe partial struct SByte : IEquatable<sbyte>, IComparable<sbyte>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is sbyte other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type SByte.");
 
@@ -41,7 +41,7 @@ namespace System
             Number.TryFormatInteger((ulong)(long)(sbyte)this, true, 8, destination, out charsWritten, format);
     }
 
-    public struct Byte : IEquatable<byte>, IComparable<byte>, IComparable, ISpanFormattable
+    public unsafe partial struct Byte : IEquatable<byte>, IComparable<byte>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is byte other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type Byte.");
 
@@ -61,7 +61,7 @@ namespace System
             Number.TryFormatInteger((ulong)(byte)this, false, 8, destination, out charsWritten, format);
     }
 
-    public struct Int16 : IEquatable<short>, IComparable<short>, IComparable, ISpanFormattable
+    public unsafe partial struct Int16 : IEquatable<short>, IComparable<short>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is short other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type Int16.");
 
@@ -81,7 +81,7 @@ namespace System
             Number.TryFormatInteger((ulong)(long)(short)this, true, 16, destination, out charsWritten, format);
     }
 
-    public struct UInt16 : IEquatable<ushort>, IComparable<ushort>, IComparable, ISpanFormattable
+    public unsafe partial struct UInt16 : IEquatable<ushort>, IComparable<ushort>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is ushort other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type UInt16.");
 
@@ -101,7 +101,7 @@ namespace System
             Number.TryFormatInteger((ulong)(ushort)this, false, 16, destination, out charsWritten, format);
     }
 
-    public struct Int32 : IEquatable<int>, IComparable<int>, IComparable, ISpanFormattable
+    public unsafe partial struct Int32 : IEquatable<int>, IComparable<int>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is int other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type Int32.");
 
@@ -121,7 +121,7 @@ namespace System
             Number.TryFormatInteger((ulong)(long)(int)this, true, 32, destination, out charsWritten, format);
     }
 
-    public struct UInt32 : IEquatable<uint>, IComparable<uint>, IComparable, ISpanFormattable
+    public unsafe partial struct UInt32 : IEquatable<uint>, IComparable<uint>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is uint other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type UInt32.");
 
@@ -141,7 +141,7 @@ namespace System
             Number.TryFormatInteger((ulong)(uint)this, false, 32, destination, out charsWritten, format);
     }
 
-    public struct Int64 : IEquatable<long>, IComparable<long>, IComparable, ISpanFormattable
+    public unsafe partial struct Int64 : IEquatable<long>, IComparable<long>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is long other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type Int64.");
 
@@ -161,7 +161,7 @@ namespace System
             Number.TryFormatInteger((ulong)(long)this, true, 64, destination, out charsWritten, format);
     }
 
-    public struct UInt64 : IEquatable<ulong>, IComparable<ulong>, IComparable, ISpanFormattable
+    public unsafe partial struct UInt64 : IEquatable<ulong>, IComparable<ulong>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is ulong other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type UInt64.");
 
@@ -181,7 +181,7 @@ namespace System
             Number.TryFormatInteger((ulong)this, false, 64, destination, out charsWritten, format);
     }
 
-    public unsafe struct IntPtr : IEquatable<nint>, IComparable<nint>, IComparable, ISpanFormattable
+    public unsafe partial struct IntPtr : IEquatable<nint>, IComparable<nint>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is nint other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type IntPtr.");
 
@@ -216,7 +216,7 @@ namespace System
             Number.TryFormatInteger((ulong)(long)(nint)this, true, sizeof(nint) * 8, destination, out charsWritten, format);
     }
 
-    public unsafe struct UIntPtr : IEquatable<nuint>, IComparable<nuint>, IComparable, ISpanFormattable
+    public unsafe partial struct UIntPtr : IEquatable<nuint>, IComparable<nuint>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is nuint other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type UIntPtr.");
 
@@ -244,7 +244,7 @@ namespace System
     //
     // Equals here is bit equality, so NaN equals NaN, as .NET's Equals has
     // it (unlike ==); 0.0 and -0.0 are equal, as in .NET.
-    public unsafe struct Single : IEquatable<float>, IComparable<float>, IComparable, ISpanFormattable,
+    public unsafe partial struct Single : IEquatable<float>, IComparable<float>, IComparable, ISpanFormattable,
         System.Numerics.Tensors.IFloatTensorElement
     {
         public int CompareTo(object obj) => obj is float other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type Single.");
@@ -313,7 +313,7 @@ namespace System
         }
     }
 
-    public unsafe struct Double : IEquatable<double>, IComparable<double>, IComparable, ISpanFormattable
+    public unsafe partial struct Double : IEquatable<double>, IComparable<double>, IComparable, ISpanFormattable
     {
         public int CompareTo(object obj) => obj is double other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type Double.");
 
