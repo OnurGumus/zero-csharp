@@ -35,7 +35,6 @@ Certificates|elements in order|.NET's chain holds its own copies of the certific
 Certificates|signed by another key|.NET reports a certificate whose signature doesn't verify as PartialChain alone (seen on Linux and macOS); lib/ reports NotSignatureValid with it
 Certificates|SHA-1|.NET accepts a certificate signed with SHA-1: the chain builds, on Linux and macOS. lib/ has no SHA-1 and refuses it
 Certificates|RSA-PSS in a certificate|.NET accepts a certificate signed with RSA-PSS on Linux, and on macOS reports PartialChain alone; lib/ doesn't verify RSA-PSS in certificates and reports NotSignatureValid and PartialChain
-Certificates|element status|.NET checks a trusted root's dates too: with all three certificates expired, each element carries NotTimeValid. lib/ checks only the certificates below a trusted root, so the root's element has no status
 Certificates|@macos 1025: key read|macOS's RSA reports KeySize in whole bytes: 1032 for a key of 1025 bits (the key is read)
 Certificates|@macos 1025: PSS|the PSS signature made with the 1025-bit key doesn't verify on macOS (not looked into further)
 Certificates|@macos 2047: key read|as 1025: macOS reports 2048 for a key of 2047 bits

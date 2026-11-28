@@ -40,8 +40,8 @@ are the platform's, and a program on .NET gets those. `X25519` and `EncryptedStr
 - .NET's certificates, RSA and chain building are each system's own, and answer differently
   from `lib/`'s in places. The list names those checks of the Certificates sample with what
   .NET returned, some for macOS alone (`@macos`). Among them: .NET accepts certificates signed
-  with SHA-1, and on Linux with RSA-PSS, which `lib/` refuses; .NET checks a trusted root's
-  dates, which `lib/` doesn't; a chain's elements are copies of the certificates in .NET.
+  with SHA-1, and on Linux with RSA-PSS, which `lib/` refuses; a chain's elements are copies
+  of the certificates in .NET.
 
 **`--bcl-types`** leaves out every file of `lib/` that re-declares a .NET type, so `Task`,
 `Stream` and `Socket` are .NET's. That is for a program that passes them to other .NET code. It
