@@ -1600,8 +1600,9 @@ case "$TARGET" in
             clang -O2 -dynamiclib -arch arm64 -arch x86_64 dotnet/native/compat-mac.c mac/runtime.c \
                 -o "$PAYLOAD_DIR/dotnet/native/osx/libzerocompat.dylib"
         else
-            # Not built here yet (it would take the layout's lld and
-            # mac/libSystem.tbd): a package from this payload gives ZERO016
+            # Built on a Mac only. CI's payload is built on Linux: its
+            # bflat-macos job builds the library and pack adds it
+            # (.github/workflows/sdk.yml). A package without it gives ZERO016
             # for ZeroTarget=dotnet on a Mac.
             echo "Warning: no libzerocompat.dylib in the payload (not on a Mac): ZeroTarget=dotnet won't build on macOS with it." >&2
         fi
