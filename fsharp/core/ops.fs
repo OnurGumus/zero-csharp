@@ -74,6 +74,18 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("InvalidOp")>]
         let inline invalidOp message = raise (InvalidOperationException(message))
 
+        [<CompiledName("Infinity")>]
+        let infinity = Double.PositiveInfinity
+
+        [<CompiledName("NaN")>]
+        let nan = Double.NaN
+
+        [<CompiledName("InfinitySingle")>]
+        let infinityf = Single.PositiveInfinity
+
+        [<CompiledName("NaNSingle")>]
+        let nanf = Single.NaN
+
         /// Ends the program with an exit code, as Environment.Exit does: output
         /// is flushed and the hooks the program added run first.
         [<CompiledName("Exit")>]

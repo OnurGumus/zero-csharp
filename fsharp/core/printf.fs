@@ -219,6 +219,29 @@ namespace Microsoft.FSharp.Core
         /// scope, so what it keeps isn't freed).
         type ValueText = obj -> string
 
+        /// A {x:format} hole: the value's ToString(format), with .NET's format
+        /// strings, for numbers (zerocore's numbers have it without
+        /// IFormattable); other values without IFormattable ignore it, as in
+        /// .NET. "" for null.
+        let formatted (text: ValueText) (format: string) (value: obj) =
+            match value with
+            | null -> ""
+            | :? int as v -> v.ToString(format)
+            | :? int64 as v -> v.ToString(format)
+            | :? float as v -> v.ToString(format)
+            | :? decimal as v -> v.ToString(format)
+            | :? uint32 as v -> v.ToString(format)
+            | :? uint64 as v -> v.ToString(format)
+            | :? int16 as v -> v.ToString(format)
+            | :? uint16 as v -> v.ToString(format)
+            | :? sbyte as v -> v.ToString(format)
+            | :? byte as v -> v.ToString(format)
+            | :? float32 as v -> v.ToString(format)
+            | :? nativeint as v -> v.ToString(format)
+            | :? unativeint as v -> v.ToString(format)
+            | :? IFormattable as v -> v.ToString(format, null)
+            | v -> text v
+
         /// %O and {x}: the value's ToString, "<null>" for null.
         let display (text: ValueText) (value: obj) =
             match value with
@@ -346,9 +369,12 @@ namespace Microsoft.FSharp.Core
                 else
                     let h = hole i
                     if h > 0 then
-                        // {x}: its ToString, "" for null.
+                        // {x}: its ToString, "" for null; {x:format}: with
+                        // the .NET format in the parentheses.
+                        let dotnet = format.Substring(i + 3, h - 4)
                         match takeCapture () with
                         | null -> ()
+                        | v when dotnet.Length > 0 -> b.Append(formatted text dotnet v) |> ignore
                         | v -> b.Append(text v) |> ignore
                         i <- i + h
                     else
@@ -377,14 +403,28 @@ namespace Microsoft.FSharp.Core
                                     i <- i + 1
                         let kind = format.Chars(i)
                         i <- i + 1
-                        // In an interpolated string the value follows as a hole.
-                        let h = hole i
-                        let value =
-                            if h > 0 then
-                                i <- i + h
-                                takeCapture ()
-                            else takeArg ()
-                        pad b flags width (formatOne text kind flags precision value)
+                        if kind = 'P' && i < format.Length && format.Chars(i) = '(' then
+                            // {x,width} and {x:format} in an interpolated
+                            // string: %-5P() and %P(F2), the .NET format in
+                            // the parentheses.
+                            let start = i + 1
+                            while i < format.Length && format.Chars(i) <> ')' do i <- i + 1
+                            let dotnet = format.Substring(start, i - start)
+                            i <- i + 1
+                            let value = takeCapture ()
+                            let body =
+                                if dotnet.Length > 0 then formatted text dotnet value
+                                else match value with null -> "" | v -> text v
+                            pad b flags width (struct ("", body))
+                        else
+                            // In an interpolated string the value follows as a hole.
+                            let h = hole i
+                            let value =
+                                if h > 0 then
+                                    i <- i + h
+                                    takeCapture ()
+                                else takeArg ()
+                            pad b flags width (formatOne text kind flags precision value)
             b.ToString()
 
         /// A value's ToString, where no scratch scope is open (interpolated
