@@ -1,3 +1,4 @@
+PASS Memory (3 checks)
 PASS RSA and ECDSA (17 checks)
 PASS Reading certificates (17 checks)
 PASS Host names (11 checks)

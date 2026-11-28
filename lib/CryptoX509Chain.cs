@@ -543,7 +543,12 @@ public class X509Chain : IDisposable
 /// <summary>The system's trusted root certificates, read once from its PEM bundle.</summary>
 internal static class SystemRoots
 {
-    static X509Certificate2Collection s_roots;
+    // Loaded by a static constructor, on first use, so the roots are allocated
+    // outside any object scope the program has open then (lib/Arena.cs).
+    static class Loaded
+    {
+        internal static readonly X509Certificate2Collection Roots = Load();
+    }
 
     static readonly string[] s_files =
     {
@@ -554,10 +559,10 @@ internal static class SystemRoots
         "/etc/ssl/cert.pem",                                 // macOS, Alpine, BSDs
     };
 
-    internal static X509Certificate2Collection Get()
+    internal static X509Certificate2Collection Get() => Loaded.Roots;
+
+    static X509Certificate2Collection Load()
     {
-        if (s_roots != null)
-            return s_roots;
         X509Certificate2Collection roots = new X509Certificate2Collection();
         string fromEnvironment = Environment.GetEnvironmentVariable("SSL_CERT_FILE");
         if (!string.IsNullOrEmpty(fromEnvironment))
@@ -566,7 +571,6 @@ internal static class SystemRoots
             AddFile(roots, s_files[i]);
         if (roots.Count == 0)
             AddDirectory(roots, "/system/etc/security/cacerts"); // Android: one PEM file per root
-        s_roots = roots;
         return roots;
     }
 

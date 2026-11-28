@@ -281,16 +281,25 @@ internal sealed class Curve
     readonly uint[] _b;           // Montgomery form
     readonly uint[] _g;           // the base point, affine, Montgomery form
 
-    static Curve s_p256, s_p384;
+    // Made by static constructors (Curves), so they are allocated outside any
+    // object scope a program has open when it first verifies (lib/Arena.cs).
+    internal static Curve P256 => Curves.P256;
+    internal static Curve P384 => Curves.P384;
 
-    internal static Curve P256 => s_p256 ??= new Curve(
+    static class Curves
+    {
+        internal static readonly Curve P256 = MakeP256();
+        internal static readonly Curve P384 = MakeP384();
+    }
+
+    static Curve MakeP256() => new Curve(
         "ffffffff00000001000000000000000000000000ffffffffffffffffffffffff",
         "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
         "5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b",
         "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
         "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5");
 
-    internal static Curve P384 => s_p384 ??= new Curve(
+    static Curve MakeP384() => new Curve(
         "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
         "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973",
         "b3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef",

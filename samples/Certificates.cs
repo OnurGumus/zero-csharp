@@ -67,6 +67,7 @@ public static class Program
 
     public static int Main()
     {
+        Memory(); // first, so lib's caches are first made inside an object scope
         Signatures();
         Reading();
         HostNames();
@@ -74,6 +75,55 @@ public static class Program
         Refusals();
         RealChains();
         return s_failures;
+    }
+
+    // There is no garbage collector: what checking a chain allocates (the
+    // certificates, their keys, the chain's arrays and strings) stays unless
+    // it is made inside an object scope (lib/Arena.cs), which frees it when the
+    // block ends. A program that checks a chain per connection does this.
+    static void Memory()
+    {
+        Arena.DebugChecks = true; // stops the program if a static would point at freed memory
+        Arena connections = Arena.Create(16 * 1024, "connections");
+        nuint firstPeak = 0;
+        bool allTrusted = true, allFreed = true;
+        for (int i = 0; i < 20; i++)
+        {
+            // docs:connection-scope
+            Arena.ObjectScope objects;
+            unsafe { objects = connections.OpenObjectScope(); } // SAFETY: nothing made inside is kept
+            using (objects)
+            {
+                X509Certificate2Collection sent = new X509Certificate2Collection();
+                sent.ImportFromPem(LetsEncryptChainPem);
+                using X509Chain chain = NewChain(IsrgRootX1Pem, Day(2026, 11, 28));
+                for (int c = 1; c < sent.Count; c++)
+                    chain.ChainPolicy.ExtraStore.Add(sent[c]);
+                allTrusted &= chain.Build(sent[0]) && sent[0].Subject == "CN=letsencrypt.org";
+            }   // everything above is freed here
+            // docs:end
+            // And a P-256 signature (the chain above has only P-384 and RSA ones).
+            unsafe { objects = connections.OpenObjectScope(); } // SAFETY: nothing made inside is kept
+            using (objects)
+            {
+                using X509Chain chain = NewChain(RootEPem, Day(2026, 6, 1));
+                allTrusted &= chain.Build(X509Certificate2.CreateFromPem(LeafRsaPem));
+                // Names in UTF8String decode with Encoding.UTF8, made on first use.
+                allTrusted &= X509Certificate2.CreateFromPem(LeafPem).Subject.Length > 0;
+            }
+            allFreed &= connections.Used == 0;
+            if (i == 0)
+                firstPeak = connections.PeakUsed;
+        }
+        Arena.DebugChecks = false;
+        Check("every check trusted", allTrusted);
+        Check("everything freed each time", allFreed);
+        // Each round needs the same memory again: nothing piles up.
+        Check("no growth", connections.PeakUsed == firstPeak && firstPeak > 0 && firstPeak < 256 * 1024);
+        if (Environment.GetEnvironmentVariable("CERTIFICATES_MEMORY") != null)
+            Out.Line($"  one chain check: {(long)firstPeak} bytes");
+        unsafe { connections.Destroy(); } // SAFETY: nothing from it is kept
+        Section("Memory");
     }
 
     static void Signatures()
