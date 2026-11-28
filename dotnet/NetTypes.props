@@ -1,0 +1,15 @@
+<!--
+  The files of lib/ that only re-declare .NET types (Task, Stream, Socket,
+  Console, timers...), or are built on lib/'s own tasks. A program that is to
+  use .NET's own types leaves them out: dotnet/test.sh with its bcl-types
+  option (dotnet/ZeroCompat), and in the SDK ZeroDotnetTypes=Net
+  (Sdk/ZeroDotnet.targets, which gets this file with the payload). One list
+  for both. lib/'s cryptography and TLS are left out either way.
+-->
+<Project>
+  <ItemGroup>
+    <ZeroLibOwnTypes Include="Cancellation;Console;Monitor;Net;SemaphoreSlim;Sockets;SocketsAsync;Streams;ThreadTasks;TimeProvider;Timers;ValueTasks;Tasks" />
+    <!-- Built on lib/Tasks.cs's continuations. -->
+    <ZeroLibOwnTypes Include="ChannelAsync;ThreadCompletion;FileAsync" />
+  </ItemGroup>
+</Project>

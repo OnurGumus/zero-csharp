@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A measurement (2026-11-28): one sample for real .NET with lib/'s own Task,
+       timers, streams and sockets instead of the BCL's, so async code behaves
+       as in zero mode (Task.Run on a fiber, sockets that let other fibers
+       run). lib/ is compiled into the program: its types take the place of
+       the BCL's of the same name (CS0436), which a referenced assembly can't do.
+       The crypto classes stay .NET's (see the Compile Remove below). -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>$(Sample)</AssemblyName>
+    <SampleFile Condition="'$(SampleFile)' == ''">$(Sample)</SampleFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
+    <NoWarn>$(NoWarn);CS0436;CS8500</NoWarn>
+    <TieredPGO>false</TieredPGO>
+    <!-- .NET's invariant globalization mode, by default: strings compare by
+         character code there, as zerocore's invariant culture does (with ICU,
+         .NET's compares by language rules). The samples that name cultures
+         need ICU, whose cultures zerocore's tables come from. -->
+    <InvariantGlobalization Condition="'$(Sample)' != 'Cultures' and '$(Sample)' != 'Locales' and '$(Sample)' != 'Sorting'">true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../samples/$(SampleFile).cs" />
+    <Compile Include="../../bin/gen/Stories260K.cs" Condition="'$(Sample)' == 'Llama'" />
+    <Compile Include="../../libs/**/*.cs" />
+    <Compile Include="../../lib/*.cs" />
+    <!-- Not lib/'s own cryptography: its hashes, HMAC, HKDF, ciphers, random
+         numbers, RSA, ECDSA, certificates and TLS. .NET's are the platform's,
+         and a program on .NET should get those. X25519 stays: .NET has no
+         type by that name. TlsBridge.cs runs .NET's SslStream over lib/'s
+         sockets. -->
+    <Compile Remove="../../lib/Crypto*.cs;../../lib/SslStream.cs;../../lib/Tls*.cs" />
+    <Compile Include="../../lib/CryptoX25519.cs" />
+    <Compile Include="../ZeroCompat/Shims.cs;../ZeroCompat/Fibers.cs;../ZeroCompat/Additions.cs" />
+    <Compile Include="*.cs" />
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />
+    <None Include="../out/libzerocompat.dylib" Link="libzerocompat.dylib" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../out/libzerocompat.dylib')" />
+  </ItemGroup>
+  <!-- .NET's own assemblies under the alias `bcl` as well: TlsBridge.cs
+       reaches the .NET types lib/'s take the place of (Stream, SslStream)
+       through it. -->
+  <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences">
+    <ItemGroup>
+      <_ZeroBclReference Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
+      <ReferencePath Remove="@(_ZeroBclReference)" />
+      <ReferencePath Include="@(_ZeroBclReference)" Aliases="global,bcl" />
+    </ItemGroup>
+  </Target>
+</Project>

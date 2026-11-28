@@ -60,7 +60,14 @@ enum SystemKind
 
 static class FileSystem
 {
+#if ZERO_DOTNET
+    // Real .NET knows which system it runs on (no native code needed for it).
+    static int ZeroSystem() => (int)(OperatingSystem.IsMacOS() ? SystemKind.MacOS
+        : OperatingSystem.IsWindows() ? SystemKind.Windows
+        : RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? SystemKind.LinuxArm64 : SystemKind.LinuxX64);
+#else
     [DllImport("*")] static safe extern int ZeroSystem();
+#endif
 
     [DllImport("libc")] internal static unsafe extern int* __errno_location();
     [DllImport("libc")] internal static unsafe extern int __xstat64(int version, byte* path, byte* stat);
@@ -228,7 +235,8 @@ static class FileSystem
     internal static string ToString(ReadOnlySpan<byte> bytes)
     {
         string result = string.Allocate(bytes.Length);
-        Span<char> chars = MemoryMarshal.CreateSpan(ref result.FirstChar, bytes.Length);
+        Span<char> chars;
+        unsafe { chars = MemoryMarshal.CreateSpan(ref result.FirstChar, bytes.Length); } // SAFETY: the string is new, nothing else has it yet, and the span covers its length chars.
         int used = Utf8.Decode(bytes, chars);
         return used == bytes.Length ? result : string.FromChars(chars.Slice(0, used));
     }

@@ -139,8 +139,18 @@ public static class Catch
         {
             // SAFETY: state outlives the call (the caller's), and frame is a
             // local of this frame, which does too.
+#if ZERO_DOTNET
+            // Real .NET: state may be a field of an object, which the GC
+            // could move during the call: pinned for as long.
+            fixed (byte* pinned = &Unsafe.As<TState, byte>(ref state))
+            {
+                frame.State = pinned;
+                return Invoke(StateInvoker<TState>.Instance, Unsafe.AsPointer(ref frame));
+            }
+#else
             frame.State = Unsafe.AsPointer(ref state);
             return Invoke(StateInvoker<TState>.Instance, Unsafe.AsPointer(ref frame));
+#endif
         }
     }
 
@@ -201,7 +211,13 @@ public static class Catch
         {
             // SAFETY: the state machine is the caller's (on its stack, or in
             // a box it holds), which outlives the call.
+#if ZERO_DOTNET
+            // Real .NET: the box is an object the GC could move during the step.
+            fixed (byte* pinned = &Unsafe.As<TStateMachine, byte>(ref stateMachine))
+                return Invoke(StepInvoker<TStateMachine>.Instance, pinned);
+#else
             return Invoke(StepInvoker<TStateMachine>.Instance, Unsafe.AsPointer(ref stateMachine));
+#endif
         }
     }
 

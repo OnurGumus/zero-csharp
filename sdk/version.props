@@ -2,7 +2,7 @@
      framework zero projects target. -->
 <Project>
   <PropertyGroup>
-    <ZeroSdkVersion>0.15.0</ZeroSdkVersion>
+    <ZeroSdkVersion>0.16.0</ZeroSdkVersion>
     <!-- The framework names the library format, not the SDK version. Change it
          only when a library built for it can't work with this SDK: when
          zerocore's or lib/'s types or members are removed or changed, or the

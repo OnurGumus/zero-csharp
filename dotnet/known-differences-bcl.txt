@@ -1,0 +1,52 @@
+Numerics|Tan near a pole|.NET's Complex.Tan loses accuracy next to the pole: 3041875.68 for 3043234.85 (zerocore's is right to 1e-9)
+Tensors|SoftMax|.NET's TensorPrimitives.SoftMax overflows for large scores: NaN for {1000, 1001, 1002} (zerocore subtracts the largest first)
+Tensors|Sigmoid|.NET's Sigmoid(-100) is 0; the right answer is a subnormal, 3.7e-44
+Tensors|Tanh, vectors, exact near 0|.NET's vector Tanh(-4e-20) is 5.96e-08; the right answer is -4e-20
+TensorsAvx|SoftMax|as Tensors
+TensorsAvx|Sigmoid|as Tensors
+TensorsAvx|Tanh, vectors, exact near 0|as Tensors
+Queries|the same lambda in an object scope leaves nothing behind|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Threads|workers' allocations went to their arenas|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Streams|the buffer came from the arena|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Catches|and its next read runs the factory again|.NET's Lazy keeps a factory's exception and throws it again on every read; zerocore's runs the factory again (the exception may be in an arena freed meanwhile)
+Catches|what was flushed is in it; what was still buffered isn't|a throw runs the using's Dispose on .NET, which writes the stream's buffer out; zero mode jumps over it and the buffer is lost
+Catches|and disposing it then does nothing|as above: the file already holds all five bytes
+Catches|Copy copies|as above: the file it copies holds five bytes, not three
+Catches|a file in use on the I/O thread is closed once its write is done|Catch.Run closes lib/'s File handles left open after a throw; a BCL FileStream opened without a using stays open until the GC finalizes it
+Catches|1000 failed attempts in an arena leave nothing behind|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Core|?AlignedAlloc, AlignedFree|the check expects NativeMemory.AlignedAlloc's memory zeroed, which zerocore's is; .NET's is whatever was there, zero or not
+Strings|scratch: only the result is kept|an arena string takes one more word on .NET: the header every .NET object has in front, which zero mode's objects don't
+Numerics|?Cbrt|.NET's Math.Cbrt is the C library's cbrt: glibc's answer isn't the one the check expects, macOS's is
+SmallNative|?AlignedAlloc, AlignedFree|as Core: the check expects NativeMemory.AlignedAlloc's memory zeroed, which .NET doesn't promise
+SmallScratchBuffer|?the buffer's memory, nested calls included|the sample takes the array's address as a number before the call, and .NET's GC may move the array in between (Arena.Scratch pins it only for the call)
+Strings|other span ToString|.NET prints the element type (System.ReadOnlySpan<Int32>[2]); zerocore, which has no type names, prints System.ReadOnlySpan[2]
+Links|(sample)|.NET's runtime can't load two structs that refer to each other through a generic struct (Town holds a Handle<Road>, Road a Handle<Town>)
+Crypto|(sample:macos)|.NET's AesGcm takes only 16-byte tags on macOS; the sample makes one with 12 and stops there
+CryptoErrors|(sample:macos)|as Crypto; elsewhere it runs, and the two checks below fail
+CryptoErrors|RSA without a key|.NET's RSA.Create() makes a key when one is needed, so VerifyData answers false; lib/'s RSA has none and throws
+CryptoErrors|RSA private part|as above: .NET's RSA.Create() has a private key to export
+Network|(sample)|uses lib/'s own socket members (NetworkStream.Error, TryConnect), which .NET's sockets don't have
+Tasks|(sample)|tests lib/'s tasks: on .NET's, Task.Run is the thread pool, and a continuation that blocks in a fiber call stops the program
+Keys|(sample)|.NET's Console refuses to read keys from redirected input
+SmallKeys|(sample)|as Keys
+Certificates|no growth|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Certificates|elements in order|.NET's chain holds its own copies of the certificates, so an element isn't the object the program passed; lib/'s is
+Certificates|SHA-1|.NET accepts a certificate signed with SHA-1: the chain builds, on Linux and macOS. lib/ has no SHA-1 and refuses it, with PartialChain
+Certificates|@linux RSA-PSS in a certificate|.NET accepts a certificate signed with RSA-PSS on Linux (macOS refuses it with PartialChain, as lib/ does); lib/ doesn't verify RSA-PSS in certificates
+Certificates|@macos 1025: key read|macOS's RSA reports KeySize in whole bytes: 1032 for a key of 1025 bits (the key is read)
+Certificates|@macos 1025: PSS|the PSS signature made with the 1025-bit key doesn't verify on macOS (not looked into further)
+Certificates|@macos 2047: key read|as 1025: macOS reports 2048 for a key of 2047 bits
+Certificates|@macos revocation unknown|macOS reports RevocationStatusUnknown without OfflineRevocation (Linux reports both, as lib/ does)
+Certificates|@macos only the leaf overlooked|macOS builds the chain with only the leaf's revocation overlooked (Linux refuses it, as lib/ does)
+Timers|?took at least 3 periods|.NET's PeriodicTimer can tick a little early by the clock the sample measures with: three 20 ms ticks took under 60 ms on Linux
+Timers|?one tick|.NET's timers call back on thread-pool threads, beside the program's own; with the machine busy the sample read its counts before a callback had finished (seen on macOS under load)
+Timers|?stopped before the handler|as "one tick"
+Timers|?restarted from its handler|as "one tick"
+Timers|?timers|as "one tick"
+Sorting|back to ordinal|with ICU, which the sample needs for its cultures, .NET's invariant culture compares strings by language rules ("a" before "B"); zerocore's compares them by character code, as .NET does in its invariant globalization mode, the default elsewhere
+Cultures|current UI and installed|.NET's InstalledUICulture is the system's; zerocore has no system culture
+Cultures|no default for threads|the program sets DefaultThreadCurrentCulture to the invariant culture at startup, so that threads (lib/'s fibers here) don't start in the user's locale as .NET's would
+Locales|@linux ?Japanese date*|depends on the system's ICU: 78.2 writes ja-JP's long date without the space before the weekday that macOS's ICU, where zerocore's table comes from, has: 2026年3月5日木曜日
+Timers|?timer|as "one tick": .NET's TimeProvider.System timer calls back on a thread-pool thread, which Fiber.Run doesn't wait for (failed once on CI's Linux x64)
+Sorting|the invariant culture ignores it, as .NET's invariant mode|with ICU, which the sample needs for its cultures, .NET's invariant culture applies NumericOrdering ("a2" before "a10"); zerocore's ignores it, as .NET does in its invariant globalization mode
+SortingRoot|(sample)|it tests a zero-mode build switch (ZeroIdeographOrders=false: Chinese, Japanese and Korean ideographs in the root order, for a smaller program), which .NET has no equivalent of: ICU sorts them in each culture's own order

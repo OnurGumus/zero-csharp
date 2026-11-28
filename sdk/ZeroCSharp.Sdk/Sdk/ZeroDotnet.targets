@@ -1,0 +1,169 @@
+<!--
+  ZeroTarget=dotnet: a zero project as an ordinary .NET program (Sdk.props).
+
+  lib/ is compiled into the program as source (payload/dotnet/): its Task,
+  timers, streams, sockets and Console have the names of .NET's, and only
+  types of the program's own assembly can take the place of .NET's (the
+  compiler warns, CS0436, and uses them; the same types in a referenced
+  assembly would be an ambiguity, CS0433). So the program behaves as in zero
+  mode: Task.Run starts a fiber, a socket lets the other fibers run.
+  Cryptography and TLS are .NET's own, which are the platform's (SslStream
+  is .NET's, running over lib/'s sockets: the payload's TlsBridge.cs).
+
+  F# projects reference lib/ as one assembly instead, from a package
+  (ZeroCSharp.Dotnet: ZeroLib.dll, and zero's task/async/MailboxProcessor as
+  FSharp.Control.dll), which a packed F# library then depends on.
+  F#, unlike C#, takes a referenced assembly's type over .NET's of the same
+  name, and an F# library and the F# program using it then share lib/'s
+  types: the same Task, Fiber and Channel. FSharp.Core is .NET's own. With
+  ZeroDotnetTypes=Net an F# project gets lib/ without what .NET has
+  (ZeroCSharp.Dotnet.Net: ZeroLib.Net.dll) and FSharp.Core's own task { }
+  and async { }, over .NET's tasks, which any .NET library takes and
+  returns. A library built that way works in any .NET project, C# too: it
+  has no types with .NET's names (with lib/'s own Task, a C# project that
+  installs it finds two Task types, CS0433).
+
+  With ZeroDotnetTypes=Net a project gets .NET's own Task, streams and
+  sockets instead, to hand to other .NET code, and lib/ without what .NET has
+  as an assembly (the ZeroCSharp.Dotnet.Net package), for C# and F# alike: so
+  C# libraries, projects that reference zero libraries, and C# and F# zero
+  libraries in one program work there, and a library built that way works in
+  any .NET project.
+
+  What differs from zero mode is in the repository's dotnet/ folder
+  (README.md, known-differences.txt): objects are the garbage collector's,
+  not an arena's; a throw runs catch and finally blocks on its way to
+  Catch.Run; fibers are threads that take turns.
+
+  And objects move. In zero mode an object stays where it was made, so code
+  may keep its address (Unsafe.AsPointer on a field, a pointer kept after
+  `fixed`, a reference stored as a number). .NET's collector moves objects,
+  and such an address then points at other memory: the program compiles, and
+  fails rarely. lib/ was changed where it did this; a project's own code is
+  the project's to check. Running the program with ZERO_GC_STRESS=1 in the
+  environment makes the collector move everything every few milliseconds,
+  which shows most of it (dotnet/README.md).
+-->
+<Project>
+  <PropertyGroup>
+    <!-- Nothing native is built: .NET runs the IL. -->
+    <ZeroBuildsNative>false</ZeroBuildsNative>
+    <!-- Zero (the default): lib/'s own Task, timers, streams, sockets and
+         Console, so the program behaves as in zero mode. Net: .NET's own,
+         for a program that hands them to other .NET code (a NuGet library
+         that takes a Task or a Stream). Net is further from zero mode:
+         Task.Run is .NET's thread pool, in parallel with the program, and a
+         fiber that blocks in a .NET socket blocks the others. An await's
+         continuation still comes back to the program's own thread. -->
+    <ZeroDotnetTypes Condition="'$(ZeroDotnetTypes)' == ''">Zero</ZeroDotnetTypes>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
+    <DefineConstants Condition="'$(ZeroDotnetTypes)' == 'Net'">$(DefineConstants);ZERO_DOTNET_BCL</DefineConstants>
+    <!-- CS0436: lib/'s types in place of .NET's, at every use. (Not CS8500,
+         a pointer to something with references in it: lib/'s own are
+         answered for in zero.editorconfig, and in the project's code the
+         warning is worth having here, see below.) With .NET's own types
+         nothing of lib/'s has a .NET type's name: there CS0436 is an error. -->
+    <NoWarn Condition="'$(ZeroDotnetTypes)' != 'Net'">$(NoWarn);CS0436</NoWarn>
+    <WarningsAsErrors Condition="'$(ZeroDotnetTypes)' == 'Net'">$(WarningsAsErrors);CS0436</WarningsAsErrors>
+    <!-- .NET's invariant globalization mode unless the project says otherwise:
+         strings compare by character code, as in zero mode, and no ICU is
+         needed. A program that names cultures sets it to false (ICU: named
+         cultures as zerocore's, but strings in the invariant culture compare
+         by language rules). -->
+    <InvariantGlobalization Condition="'$(InvariantGlobalization)' == ''">true</InvariantGlobalization>
+    <ZeroDotnetDir>$(ZeroSdkRoot)payload/dotnet/</ZeroDotnetDir>
+    <!-- F#: no reference assemblies, so a project using an F# library compiles
+         against the library itself. Switching ZeroDotnetTypes leaves the
+         library's signatures as they were while the assembly behind its Task
+         changes, and the reference assembly in obj/ref, copied only when its
+         ID changes, would stay the old one. -->
+    <ProduceReferenceAssembly Condition="'$(ZeroLanguage)' == 'FSharp'">false</ProduceReferenceAssembly>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'CSharp' and '$(ZeroDotnetTypes)' != 'Net'">
+    <Compile Include="$(ZeroDotnetDir)lib/*.cs" Link="Zero/lib/%(Filename)%(Extension)" Visible="false" />
+    <Compile Include="$(ZeroDotnetDir)compat/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false" />
+    <Compile Include="$(ZeroDotnetDir)compat-zero/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false" />
+  </ItemGroup>
+  <!-- C# with .NET's own types: nothing of lib/ has a .NET type's name, so it
+       can be an assembly here too, the one F# projects use: C# libraries,
+       projects that reference them, and C# and F# zero libraries together.
+       The program compiles only its startup (its own DllImports, and zero
+       mode's rule for continuations on the main thread, before Main). -->
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'CSharp' and '$(ZeroDotnetTypes)' == 'Net'">
+    <Compile Include="$(ZeroDotnetDir)compat-net/ZeroStartup.cs" Link="Zero/compat/ZeroStartup.cs" Visible="false"
+             Condition="'$(OutputType)' != 'Library'" />
+    <PackageReference Include="ZeroCSharp.Dotnet.Net" Version="[$(ZeroSdkVersion)]" IsImplicitlyDefined="true" />
+  </ItemGroup>
+  <!-- F#: lib/ built for .NET, from ZeroCSharp.Dotnet (ZeroCSharp.Dotnet.Net
+       with ZeroDotnetTypes=Net), a package like any other: an F# library
+       packed from the project lists it, so any .NET project that installs
+       the library gets it too. -->
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'FSharp'">
+    <PackageReference Include="ZeroCSharp.Dotnet" Version="[$(ZeroSdkVersion)]" IsImplicitlyDefined="true" Condition="'$(ZeroDotnetTypes)' != 'Net'" />
+    <PackageReference Include="ZeroCSharp.Dotnet.Net" Version="[$(ZeroSdkVersion)]" IsImplicitlyDefined="true" Condition="'$(ZeroDotnetTypes)' == 'Net'" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- lib/Gpu.cs and the tensor samples use it; zerocore has its own. -->
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" IsImplicitlyDefined="true" />
+    <!-- macOS: glibc's names and layouts, which lib/ calls (dotnet/native). Linux has glibc. -->
+    <None Include="$(ZeroDotnetDir)native/osx/libzerocompat.dylib" Link="libzerocompat.dylib" Visible="false"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('$(ZeroDotnetDir)native/osx/libzerocompat.dylib')" />
+  </ItemGroup>
+
+  <!-- The payload's own warnings stay out of the project's build: its
+       zero.editorconfig turns them off for its folder only, so the project's
+       code keeps every warning. (NuGet leaves a file named .editorconfig out
+       of a package, hence the name.) -->
+  <Target Name="ZeroDotnetAnalyzerConfig" BeforeTargets="GenerateMSBuildEditorConfigFile;CoreCompile">
+    <ItemGroup>
+      <EditorConfigFiles Include="$(ZeroDotnetDir)zero.editorconfig" />
+    </ItemGroup>
+  </Target>
+
+  <!-- .NET's own assemblies under the alias `bcl` as well: the payload's
+       TlsBridge.cs reaches the .NET types lib/'s take the place of (Stream,
+       SslStream) through it, to run .NET's TLS over lib/'s sockets. -->
+  <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences"
+          Condition="'$(ZeroDotnetTypes)' != 'Net' and '$(ZeroLanguage)' == 'CSharp'">
+    <ItemGroup>
+      <_ZeroBclReference Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
+      <ReferencePath Remove="@(_ZeroBclReference)" />
+      <ReferencePath Include="@(_ZeroBclReference)" Aliases="global,bcl" />
+    </ItemGroup>
+  </Target>
+
+  <!-- One lib/ per program. An F# library built with the other ZeroDotnetTypes
+       brings the other package (ZeroCSharp.Dotnet or ZeroCSharp.Dotnet.Net),
+       and a C# program has lib/ compiled in: either way the program would
+       get two of lib/'s Arena, Fiber and Channel, and two fiber schedulers. -->
+  <Target Name="ZeroCheckOneLib" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <_ZeroLibZero Include="@(ReferencePath)" Condition="'%(Filename)' == 'ZeroLib'" />
+      <_ZeroLibNet Include="@(ReferencePath)" Condition="'%(Filename)' == 'ZeroLib.Net'" />
+    </ItemGroup>
+    <Error Code="ZERO016" Condition="'$(ZeroDotnetTypes)' == 'Net' and '@(_ZeroLibZero)' != ''"
+           Text="A library this project uses was built with lib/'s own Task (ZeroCSharp.Dotnet), and this project with ZeroDotnetTypes=Net: build both the same way. (A library meant for any .NET project is best built with ZeroDotnetTypes=Net.)" />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'FSharp' and '$(ZeroDotnetTypes)' != 'Net' and '@(_ZeroLibNet)' != ''"
+           Text="A library this project uses was built with ZeroDotnetTypes=Net (ZeroCSharp.Dotnet.Net), and this project with lib/'s own Task: build both the same way, here with -p:ZeroDotnetTypes=Net." />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'CSharp' and '$(ZeroDotnetTypes)' != 'Net' and '@(_ZeroLibZero)@(_ZeroLibNet)' != ''"
+           Text="A library this project uses is built on ZeroCSharp.Dotnet(.Net), and this C# project has lib/ compiled in: it would get two of it. Build it with -p:ZeroDotnetTypes=Net (and the library too)." />
+  </Target>
+
+  <!-- Before .NET's own check for a framework the SDK is too old for (NETSDK1045), so an old SDK gets this one, which says what to install. -->
+  <Target Name="ZeroCheckDotnetTarget" BeforeTargets="_CheckForUnsupportedNETCoreVersion;Restore;_CheckForInvalidConfigurationAndPlatform;CoreCompile">
+    <Error Code="ZERO016" Condition="'$(NETCoreSdkVersion)' != '' and $([MSBuild]::VersionLessThan($([System.Text.RegularExpressions.Regex]::Replace('$(NETCoreSdkVersion)', '-.*', '')), '11.0.100'))"
+           Text="ZeroTarget=dotnet needs the .NET SDK 11.0.100 or newer (the program targets $(ZeroDotnetFramework)); this build uses $(NETCoreSdkVersion)." />
+    <Error Code="ZERO016" Condition="'$(ZeroDotnetTypes)' != 'Zero' and '$(ZeroDotnetTypes)' != 'Net'"
+           Text="ZeroDotnetTypes is '$(ZeroDotnetTypes)': use Zero (lib/'s own Task, streams and sockets, the default) or Net (.NET's own)." />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'CSharp' and '$(ZeroDotnetTypes)' != 'Net' and '$(OutputType)' == 'Library'"
+           Text="ZeroTarget=dotnet builds C# programs, not C# libraries: lib/ is compiled into a C# program, and a library of its own would get a second copy of its types. (With -p:ZeroDotnetTypes=Net, C# libraries work: lib/ is then one assembly, as for F#.)" />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'CSharp' and '$(ZeroDotnetTypes)' != 'Net' and '@(ProjectReference)' != ''"
+           Text="ZeroTarget=dotnet doesn't build C# projects that reference zero libraries (@(ProjectReference->'%(Filename)', ', ')): lib/ is compiled into a C# program, and a library's lib/ types would be others. (With -p:ZeroDotnetTypes=Net they can.)" />
+    <Error Code="ZERO016" Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+           Text="ZeroTarget=dotnet builds on macOS and Linux for now: on Windows, lib/'s calls to the C library need the functions win/runtime.c gives a zero-mode program, as a library for .NET to load." />
+    <Error Code="ZERO016" Condition="$([MSBuild]::IsOSPlatform('OSX')) and !Exists('$(ZeroDotnetDir)native/osx/libzerocompat.dylib')"
+           Text="This build of ZeroCSharp.Sdk has no libzerocompat.dylib (payload/dotnet/native/osx), which ZeroTarget=dotnet needs on macOS: it was packed on a machine that couldn't build it." />
+  </Target>
+</Project>

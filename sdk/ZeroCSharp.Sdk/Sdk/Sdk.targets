@@ -1,5 +1,10 @@
 <Project>
-  <PropertyGroup>
+  <!-- ZeroTarget=dotnet (see Sdk.props): an ordinary .NET program with lib/
+       compiled in. None of what follows about zerocore, bflat and native
+       code applies; ZeroDotnet.targets has what does. -->
+  <Import Project="ZeroDotnet.targets" Condition="'$(_ZeroDotnet)' == 'true'" />
+
+  <PropertyGroup Condition="'$(_ZeroDotnet)' != 'true'">
     <ZeroRefDir>$(ZeroSdkRoot)payload/ref/</ZeroRefDir>
     <!-- Setting these skips MSBuild's search for an installed targeting pack,
          which doesn't exist for this framework. -->
@@ -19,7 +24,7 @@
     <CopyOutputSymbolsToOutputDirectory Condition="'$(OutputType)' != 'Library'">false</CopyOutputSymbolsToOutputDirectory>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(ZeroLanguage)' == 'CSharp'">
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'CSharp' and '$(_ZeroDotnet)' != 'true'">
     <Reference Include="$(ZeroRefDir)System.Private.CoreLib.dll" Private="false" ZeroFramework="true" />
     <!-- The compiler the bflat fork uses: unions and the updated memory safety rules. -->
     <PackageReference Include="Microsoft.Net.Compilers.Toolset" Version="5.12.0" PrivateAssets="all" IsImplicitlyDefined="true" />
@@ -28,7 +33,7 @@
        (the IL it writes still names System.Private.CoreLib), the BCL types fsc
        needs that zerocore lacks, and FSharp.Core. bflat gets zerocore under
        its own name instead (ZeroNative="false" here, ZeroNativeCommand). -->
-  <ItemGroup Condition="'$(ZeroLanguage)' == 'FSharp'">
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'FSharp' and '$(_ZeroDotnet)' != 'true'">
     <Reference Include="$(ZeroRefDir)fsharp/System.Runtime.dll" Private="false" ZeroFramework="true" ZeroNative="false" />
     <Reference Include="$(ZeroRefDir)fsharp/System.Runtime.Extensions.dll" Private="false" ZeroFramework="true" />
     <Reference Include="$(ZeroRefDir)fsharp/FSharp.Core.dll" Private="false" ZeroFramework="true" />
@@ -39,7 +44,7 @@
          BflatLib, which its signatures name (see fsharp/build-core.sh). -->
     <Reference Include="$(ZeroRefDir)FSharp.Control.dll" Private="false" ZeroFramework="true" />
   </ItemGroup>
-  <ItemGroup>
+  <ItemGroup Condition="'$(_ZeroDotnet)' != 'true'">
     <Reference Include="$(ZeroRefDir)BflatLib.dll" Private="false" ZeroFramework="true" />
   </ItemGroup>
 
@@ -264,7 +269,7 @@
   <!-- The framework is the SDK's: a TargetFramework set in the project would
        otherwise be ignored without a word. -->
   <Target Name="ZeroCheckTargetFramework" BeforeTargets="Restore;_CheckForInvalidConfigurationAndPlatform;DispatchToInnerBuilds"
-          Condition="'$(TargetFramework)' != '$(ZeroSdkTfm)' or '$(TargetFrameworks)' != ''">
+          Condition="'$(_ZeroDotnet)' != 'true' and ('$(TargetFramework)' != '$(ZeroSdkTfm)' or '$(TargetFrameworks)' != '')">
     <Error Code="ZERO001"
            Text="A zero project's target framework is the SDK's ($(ZeroSdkTfm)); remove TargetFramework and TargetFrameworks from the project (TargetFramework is '$(TargetFramework)', TargetFrameworks '$(TargetFrameworks)')." />
   </Target>

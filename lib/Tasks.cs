@@ -852,7 +852,11 @@ namespace System.Threading.Tasks
         // This thread, by an address only it has.
         internal static nint Current
         {
+#if ZERO_DOTNET
+            get => Fiber.ThreadIdentity; // real .NET: each fiber is a thread, and they count as one
+#else
             get { unsafe { return (nint)Unsafe.AsPointer(ref t_marker); } } // SAFETY: only compared, never read through
+#endif
         }
 
         internal static bool Check(nint owner)
@@ -1235,7 +1239,10 @@ namespace System.Threading.Tasks
         }
 
         // The first to complete wins; later ones find the task done.
-        public void Completed(Task task) => TrySetResult(System.Runtime.CompilerServices.Unsafe.As<TTask>(task));
+        public void Completed(Task task)
+        {
+            unsafe { TrySetResult(System.Runtime.CompilerServices.Unsafe.As<TTask>(task)); } // SAFETY: only tasks of this type are given this observer
+        }
     }
 }
 
@@ -1759,7 +1766,7 @@ namespace System.Runtime.CompilerServices
         static Task Target<TAwaiter>(ref TAwaiter awaiter) where TAwaiter : INotifyCompletion
         {
             if (awaiter is IFiberAwaiter)
-                return Unsafe.As<TAwaiter, TaskAwaiter>(ref awaiter).m_task;
+                unsafe { return Unsafe.As<TAwaiter, TaskAwaiter>(ref awaiter).m_task; } // SAFETY: an IFiberAwaiter is a struct whose one field is its task
             if (awaiter is IWaitTarget target) // boxes: ValueTask<T>'s awaiters, which hold a result too
                 return target.WaitTarget;
             Task signal = new Task();

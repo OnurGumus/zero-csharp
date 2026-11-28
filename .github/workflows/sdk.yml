@@ -246,6 +246,16 @@ jobs:
         with:
           name: trimmed-osx-arm64
           path: zero-csharp/sdk/trimmed/osx-arm64
+      # ZeroTarget=dotnet's native half on macOS (dotnet/native): built here,
+      # on a Mac, because the payload job runs on Linux. pack adds it.
+      - name: Build libzerocompat.dylib
+        working-directory: zero-csharp
+        run: dotnet/native/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zerocompat-osx
+          path: zero-csharp/dotnet/out/libzerocompat.dylib
+          if-no-files-found: error
 
   pack:
     needs: [trim, trim-windows, bflat-macos]
@@ -256,9 +266,11 @@ jobs:
       - name: Check the release tag
         if: startsWith(github.ref, 'refs/tags/sdk-v')
         run: sdk/check-tag.sh "$GITHUB_REF_NAME"
+      # ZeroCSharp.Dotnet(.Net) target net11.0, so the packing is done with the
+      # .NET SDK 11 (the newest installed is the one dotnet runs).
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
       - uses: actions/download-artifact@v4
         with:
           name: payload
@@ -267,10 +279,18 @@ jobs:
         with:
           pattern: trimmed-*
           path: sdk/trimmed
+      - uses: actions/download-artifact@v4
+        with:
+          name: zerocompat-osx
+          path: sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx
       - name: Pack
         run: |
+          # Without it, ZeroTarget=dotnet refuses to build on macOS (ZERO016).
+          test -f sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib
           for d in sdk/trimmed/trimmed-*; do mv "$d" "sdk/trimmed/${d#sdk/trimmed/trimmed-}"; done
           ZERO_PAYLOAD_PREBUILT=1 sdk/pack.sh
+          # F# projects on ZeroTarget=dotnet need it (pack.sh leaves it out without the .NET SDK 11).
+          ls sdk/feed/ZeroCSharp.Dotnet.[0-9]*.nupkg sdk/feed/ZeroCSharp.Dotnet.Net.[0-9]*.nupkg
       - uses: actions/upload-artifact@v4
         with:
           name: feed
@@ -435,12 +455,25 @@ jobs:
           path: sdk/ZeroCSharp.Sdk/payload
       - uses: actions/download-artifact@v4
         with:
+          name: zerocompat-osx
+          path: sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx
+      - uses: actions/download-artifact@v4
+        with:
           name: feed
           path: sdk/feed
       - name: Test
         env:
           ZERO_NO_PACK: '1'
         run: dotnet --version && sdk/test/run.sh
+      # ZeroTarget=dotnet needs the .NET SDK 11: its tests, with the packed
+      # libzerocompat.dylib, after the rest ran on the SDK 10.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+      - name: Test ZeroTarget=dotnet
+        env:
+          ZERO_NO_PACK: '1'
+        run: dotnet --version && sdk/test/run.sh dotnet_target dotnet_net_types dotnet_fsharp
       - uses: actions/upload-artifact@v4
         with:
           name: macos-built

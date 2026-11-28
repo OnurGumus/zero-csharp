@@ -17,6 +17,8 @@
 
 using System.Collections.Generic;
 
+// Real .NET (dotnet/ZeroCompat) has these MemoryExtensions already.
+#if !ZERO_DOTNET
 namespace System
 {
     public static partial class MemoryExtensions
@@ -97,6 +99,7 @@ namespace System
         }
     }
 }
+#endif
 
 namespace System.Collections.Generic
 {

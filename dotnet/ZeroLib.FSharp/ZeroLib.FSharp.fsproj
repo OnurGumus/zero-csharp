@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- zero's task { }, async { }, MailboxProcessor and arena { } (fsharp/control),
+       built for .NET on dotnet/ZeroLib and FSharp.Core: F# projects on
+       ZeroTarget=dotnet get lib/'s tasks and fibers from them, as in zero
+       mode. sdk/pack.sh packs it, with ZeroLib, as ZeroCSharp.Dotnet. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <!-- zero mode's name: lib/ lets FSharp.Control see its internals (InternalsVisibleTo). -->
+    <AssemblyName>FSharp.Control</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Attributes.fs" />
+    <Compile Include="../../fsharp/control/Control.fs" />
+    <Compile Include="../../fsharp/control/Arena.fs" />
+  </ItemGroup>
+  <!-- Packed as ZeroCSharp.Dotnet (sdk/pack.sh): with ZeroLib.dll from the C# project
+       inside, and the macOS helper library as a native asset, so that any
+       .NET project that installs an F# zero library (which lists ZeroCSharp.Dotnet
+       as a dependency) gets what it needs. -->
+  <Import Project="../../sdk/version.props" />
+  <PropertyGroup>
+    <PackageId>ZeroCSharp.Dotnet</PackageId>
+    <Version>$(ZeroSdkVersion)</Version>
+    <Authors>Zero C# contributors</Authors>
+    <Description>Zero C#'s lib/ built for .NET, with lib/'s own Task, streams and sockets, and zero's F# task, async and MailboxProcessor on them: what F# projects built with ZeroCSharp.Sdk and ZeroTarget=dotnet reference.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://onurgumus.github.io/zero-csharp/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/OnurGumus/zero-csharp</RepositoryUrl>
+    <PackageTags>fsharp;zero</PackageTags>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);ZeroPackLib</TargetsForTfmSpecificBuildOutput>
+    <!-- libzerocompat.dylib: the SDK payload's (CI's pack job), or dotnet/native's. -->
+    <ZeroCompatDylib Condition="'$(ZeroCompatDylib)' == '' and Exists('../../sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib')">../../sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib</ZeroCompatDylib>
+    <ZeroCompatDylib Condition="'$(ZeroCompatDylib)' == ''">../out/libzerocompat.dylib</ZeroCompatDylib>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ZeroLib/ZeroLib.csproj" PrivateAssets="all" />
+    <!-- ZeroLib's own dependency, which the package lists instead. -->
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />
+    <None Include="$(ZeroCompatDylib)" Pack="true" PackagePath="runtimes/osx/native/" Visible="false" Condition="Exists('$(ZeroCompatDylib)')" />
+    <None Include="../../lib/THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="lib-THIRD-PARTY-NOTICES.txt" Visible="false" />
+  </ItemGroup>
+  <Target Name="ZeroPackLib">
+    <ItemGroup>
+      <BuildOutputInPackage Include="$(OutputPath)ZeroLib.dll;$(OutputPath)ZeroLib.pdb" />
+    </ItemGroup>
+  </Target>
+</Project>

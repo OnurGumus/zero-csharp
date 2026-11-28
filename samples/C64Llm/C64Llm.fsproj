@@ -1,4 +1,4 @@
-<Project Sdk="ZeroCSharp.Sdk/0.15.0">
+<Project Sdk="ZeroCSharp.Sdk/0.16.0">
   <!-- The language model for the C64 (Program.fs), all in F#. Build:
        dotnet build -p:ZeroTarget=c64 (samples/C64Llm/README.md). -->
   <PropertyGroup>

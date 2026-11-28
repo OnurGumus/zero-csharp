@@ -706,7 +706,12 @@ public class ZeroFSharpNative : Task
         {
             int typeToken = AttributeType(Cell(CustomAttribute, row, 1));
             int table = typeToken >> 24, typeRow = typeToken & 0xFFFFFF;
-            if ((table != TypeRef && table != TypeDef) || Str(Cell(table, typeRow, 1)) != "NoCompilerInliningAttribute") continue;
+            // On ZeroTarget=dotnet, FSharp.Core is .NET's, whose NoCompilerInlining
+            // takes no argument: [<Safety>] is an attribute of its own there
+            // (dotnet/ZeroLib.FSharp/Attributes.fs), with the reason likewise.
+            if (table != TypeRef && table != TypeDef) continue;
+            string attributeName = Str(Cell(table, typeRow, 1));
+            if (attributeName != "NoCompilerInliningAttribute" && attributeName != "SafetyAttribute") continue;
             int length = CompressedLength(_blobs + Cell(CustomAttribute, row, 2), out int p);
             if (length < 5 || U16(p) != 1 || _pe[p + 2] == 0xFF) continue;    // no argument, or null
             p += 2;

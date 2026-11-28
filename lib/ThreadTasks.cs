@@ -127,7 +127,12 @@ sealed class WorkerThreads : Fiber.IoWaiter
     {
         public Job* Next;
         public Worker* Worker;
+#if ZERO_DOTNET
+        nint _work; // real .NET: a GC handle, since the GC neither sees a reference in calloc'd memory nor updates it when the object moves
+        public IThreadWork Work { get => (IThreadWork)Fiber.Held(_work); set => Fiber.Hold(ref _work, value); }
+#else
         public IThreadWork Work;
+#endif
     }
 
     // From calloc, kept for the program's life.
@@ -151,7 +156,15 @@ sealed class WorkerThreads : Fiber.IoWaiter
     readonly Shared* _shared;
     readonly Worker** _workers;
     int _count;
+#if ZERO_DOTNET
+    // Real .NET: the scheduler keeps this record's address, so it can't be in
+    // an object the GC moves.
+    readonly nint _recordMemory = Fiber.NewRecord();
+    ref Fiber.Record _record { get { unsafe { return ref *(Fiber.Record*)_recordMemory; } } } // SAFETY: allocated with this object, freed by its finalizer
+    ~WorkerThreads() => Fiber.FreeRecord(_recordMemory); // off the scheduler's list by now, or this object would still be referenced
+#else
     Fiber.Record _record;               // on Fiber.Run's poll list while jobs are out
+#endif
     int _out;
     bool _waiting;
 

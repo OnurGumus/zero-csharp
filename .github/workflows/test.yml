@@ -1,7 +1,7 @@
 # Builds the samples and runs ./test.sh on every target CI can run:
 # Linux x64 and arm64, Android arm64 (in a container), macOS on Apple Silicon,
 # the iOS simulator, Windows x64 (under Wine),
-# WebAssembly, and UEFI x64 and arm64 (in QEMU, on OVMF). DOS isn't here: it runs under an emulated 386 for 15 minutes
+# WebAssembly, UEFI x64 and arm64 (in QEMU, on OVMF), and .NET's own runtime on Linux x64 (dotnet/). DOS isn't here: it runs under an emulated 386 for 15 minutes
 # and more, so run ./test.sh --dos locally. The GPU's kernels are checked up to
 # Metal (./test.sh --gpu-air) and to CUDA's ptxas (./build.sh --cuda), not run:
 # run ./test.sh --gpu on a Mac.
@@ -450,6 +450,36 @@ jobs:
         env:
           BFLAT_DIR: ${{ github.workspace }}/bflat/layouts/linux-glibc-x64
         run: xvfb-run -a ./test.sh --c64
+
+  # The samples on .NET's own runtime (dotnet/README.md): built for net11.0
+  # with lib/ compiled in, run, and checked against tests/expected as
+  # ./test.sh checks them, but for what dotnet/known-differences.txt names;
+  # and once more with .NET's own Task, streams and sockets in place of lib/'s.
+  # Then the samples that wait, switch fibers and do input and output once
+  # more with the garbage collector moving every object every few
+  # milliseconds: lib/ was written for objects that stay put, and code of its
+  # that keeps an object's address shows there. And TLS, which is .NET's over
+  # lib/'s sockets, against OpenSSL's server. Needs no bflat.
+  dotnet:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+      - name: Test
+        run: dotnet/test.sh
+      - name: Test with .NET's own Task, streams and sockets
+        run: dotnet/test.sh --bcl-types
+      - name: Test with the GC moving objects
+        env:
+          ZERO_TEST_TIMEOUT: 600
+        run: dotnet/test.sh --gc-stress Fibers Tasks Network Timers Catches Streams Files Strings SmallScratchBuffer SmallChannels Pipe
+      - name: TLS against OpenSSL's server
+        run: |
+          dotnet build dotnet/Faithful -c Release -p:Sample=Https -v q
+          scripts/tls-interop.sh --dotnet
 
   # Cortex-M microcontrollers: the Raspberry Pi Pico 2's processor and the
   # Arduino Uno R4's, each on the QEMU board that stands in for it.

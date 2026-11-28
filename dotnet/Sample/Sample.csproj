@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- One sample for real .NET: dotnet build -p:Sample=Hello (dotnet/test.sh). -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>$(Sample)</AssemblyName>
+    <SampleFile Condition="'$(SampleFile)' == ''">$(Sample)</SampleFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET;ZERO_DOTNET_BCL</DefineConstants>
+    <WarningsAsErrors>$(WarningsAsErrors);CS0436</WarningsAsErrors>
+    <NoWarn>$(NoWarn);CS8500</NoWarn>
+    <TieredPGO>false</TieredPGO>
+    <!-- .NET's invariant globalization mode, by default: strings compare by
+         character code there, as zerocore's invariant culture does (with ICU,
+         .NET's compares by language rules). The samples that name cultures
+         need ICU, whose cultures zerocore's tables come from. -->
+    <InvariantGlobalization Condition="'$(Sample)' != 'Cultures' and '$(Sample)' != 'Locales' and '$(Sample)' != 'Sorting'">true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../samples/$(SampleFile).cs" />
+    <Compile Include="ZeroStartup.cs" />
+    <!-- Llama's model, as C# (scripts/llama-model-cs.sh, as build.sh). -->
+    <Compile Include="../../bin/gen/Stories260K.cs" Condition="'$(Sample)' == 'Llama'" />
+    <!-- Your own libraries (libs/, as build.sh compiles them). -->
+    <Compile Include="../../libs/**/*.cs" />
+    <ProjectReference Include="../ZeroCompat/ZeroCompat.csproj" />
+  </ItemGroup>
+</Project>

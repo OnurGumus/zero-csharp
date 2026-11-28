@@ -678,7 +678,7 @@ public class MemoryStream : Stream
 // handle in here, and so IsOpen below, finds out.
 public partial class FileStream : Stream
 {
-    File _file;
+    global::File _file;
     readonly byte[] _buffer; // null: unbuffered
     int _readPos, _readLen;  // bytes read ahead into _buffer, and how many are used
     int _writeLen;           // bytes in _buffer waiting to be written
@@ -763,37 +763,37 @@ public partial class FileStream : Stream
 
     // fopen's mode for each FileMode: r, w or a; + to read and write both;
     // x to fail if the file exists.
-    static File OpenFile(string path, FileMode mode, bool write, out FileError error)
+    static global::File OpenFile(string path, FileMode mode, bool write, out FileError error)
     {
         switch (mode)
         {
             case FileMode.Open:
-                return File.Open(path, 'r', false, out error, plus: write);
+                return global::File.Open(path, 'r', false, out error, plus: write);
             case FileMode.Create:
-                return File.Open(path, 'w', false, out error, plus: true);
+                return global::File.Open(path, 'w', false, out error, plus: true);
             case FileMode.CreateNew:
-                return File.Open(path, 'w', true, out error, plus: true);
+                return global::File.Open(path, 'w', true, out error, plus: true);
             case FileMode.Truncate:
-                if (!File.Exists(path))
+                if (!global::File.Exists(path))
                 {
                     error = FileError.NotFound;
                     return default;
                 }
-                return File.Open(path, 'w', false, out error, plus: true);
+                return global::File.Open(path, 'w', false, out error, plus: true);
             case FileMode.Append:
-                return File.Open(path, 'a', false, out error);
+                return global::File.Open(path, 'a', false, out error);
             case FileMode.OpenOrCreate:
             {
-                File file = File.Open(path, 'r', false, out error, plus: write);
+                global::File file = global::File.Open(path, 'r', false, out error, plus: write);
                 if (file.IsOpen)
                     return file;
-                if (error != FileError.NotFound && File.Exists(path))
+                if (error != FileError.NotFound && global::File.Exists(path))
                     return file;
                 // Not there: create it, unless another program just did.
-                file = File.Open(path, 'w', true, out error, plus: true);
+                file = global::File.Open(path, 'w', true, out error, plus: true);
                 if (error != FileError.AlreadyExists)
                     return file;
-                return File.Open(path, 'r', false, out error, plus: write);
+                return global::File.Open(path, 'r', false, out error, plus: write);
             }
             default:
                 throw new ArgumentOutOfRangeException(nameof(mode));

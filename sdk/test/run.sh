@@ -269,8 +269,17 @@ test_payload_complete() {
              native/arm/{an505,an386,rp2350}.ld.in \
              tools/zero-bitcode/zero-bitcode.dll tools/zero-bitcode/zero-bitcode.runtimeconfig.json \
              tools/zero-bitcode/SharpCompress.dll tools/zero-bitcode/THIRD-PARTY-NOTICES.txt \
-             analyzers/ZeroCSharp.LibraryImport.dll; do
+             analyzers/ZeroCSharp.LibraryImport.dll \
+             dotnet/lib/Fibers.cs dotnet/lib/Tasks.cs dotnet/compat/{Shims,Fibers,Additions}.cs dotnet/compat-zero/{CryptoBridge,TlsBridge,ZeroStartup}.cs \
+             dotnet/compat-net/ZeroStartup.cs \
+             dotnet/zero.editorconfig; do
         if [ ! -s "$payload/$f" ]; then fail "payload complete" "missing $f"; return; fi
+    done
+    # ZeroTarget=dotnet uses .NET's own hashes, ciphers and random numbers: lib/'s aren't in its sources.
+    for f in "$payload"/dotnet/lib/Crypto*.cs "$payload/dotnet/lib/SslStream.cs" "$payload"/dotnet/lib/Tls*.cs; do
+        [ -e "$f" ] || continue
+        [ "$(basename "$f")" = CryptoX25519.cs ] && continue
+        fail "payload complete" "dotnet/lib has $(basename "$f"): .NET's own must be used there"; return
     done
     if ! is_elf "$payload/native/linux-x64/zerocore.o" x86-64; then fail "payload complete" "linux-x64 object isn't x86-64"; return; fi
     if ! is_elf "$payload/native/linux-arm64/zerocore.o" aarch64; then fail "payload complete" "linux-arm64 object isn't aarch64"; return; fi
@@ -555,6 +564,251 @@ test_arm_target() {
     else
         echo "     (no qemu-system-arm: built, not run)"
     fi
+    pass "$name"
+}
+
+# ZeroTarget=dotnet: the same project as an ordinary .NET program, with lib/
+# compiled in. It needs the .NET SDK 11 (the program targets net11.0), and
+# macOS or Linux.
+has_dotnet_11() { dotnet --list-sdks 2>/dev/null | grep -q '^11\.'; }
+
+test_dotnet_target() {
+    local name="dotnet target" dir exe
+    can_build "$name" || return
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    if ! has_dotnet_11; then skip "$name" "needs the .NET SDK 11"; return; fi
+    if [ "$HOST_OS" = Darwin ] && [ ! -f "$ROOT/sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib" ]; then
+        skip "$name" "this payload has no libzerocompat.dylib (it was built off a Mac)"; return
+    fi
+    dir=$(fixture dotnettarget)
+    # Zero mode first: what the .NET build must print too.
+    if ! run_in "$dir" dotnettarget-zero build; then fail "$name" "the zero-mode build failed"; return; fi
+    exe=$(exe "$dir/bin/Debug/$TFM/dotnettarget")
+    if ! (cd "$dir" && run_limited 60 "$WORK/dotnettarget-zero.txt" "$exe"); then fail "$name" "the zero-mode program failed"; return; fi
+    if ! run_in "$dir" dotnettarget build -p:ZeroTarget=dotnet; then fail "$name" "the build for .NET failed"; return; fi
+    # lib/'s own warnings stay out of the project's build.
+    if grep -q 'warning' "$LOG" && ! grep -q ' 0 Warning(s)' "$LOG"; then fail "$name" "the build for .NET has warnings"; return; fi
+    if [ ! -f "$dir/bin/Debug/net11.0/dotnettarget.dll" ]; then fail "$name" "no bin/Debug/net11.0/dotnettarget.dll"; return; fi
+    LOG=$WORK/dotnettarget-dotnet.txt
+    if ! (cd "$dir" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/dotnettarget.dll); then fail "$name" "the .NET program failed"; return; fi
+    if [ "$(head -1 "$LOG")" != "on .NET" ] || [ "$(head -1 "$WORK/dotnettarget-zero.txt")" != "on zero" ]; then
+        fail "$name" "the first lines aren't 'on zero' and 'on .NET'"; return
+    fi
+    tail -n +2 "$WORK/dotnettarget-zero.txt" > "$WORK/dotnettarget-zero.rest"
+    tail -n +2 "$LOG" > "$WORK/dotnettarget-dotnet.rest"
+    if ! same_output "$WORK/dotnettarget-dotnet.rest" "$WORK/dotnettarget-zero.rest" "$WORK/dotnettarget.diff"; then
+        fail "$name" "on .NET it prints something else: $(cat "$WORK/dotnettarget.diff")"; return
+    fi
+    pass "$name"
+}
+
+# ZeroDotnetTypes=Net: .NET's own Task and streams in place of lib/'s, for a
+# program that hands them to other .NET code.
+test_dotnet_net_types() {
+    local name="dotnet net types" dir
+    can_build "$name" || return
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    if ! has_dotnet_11; then skip "$name" "needs the .NET SDK 11"; return; fi
+    if [ "$HOST_OS" = Darwin ] && [ ! -f "$ROOT/sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib" ]; then
+        skip "$name" "this payload has no libzerocompat.dylib (it was built off a Mac)"; return
+    fi
+    dir=$(fixture dotnetnet)
+    if ! run_in "$dir" dotnetnet build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "the build failed"; return; fi
+    if grep -q 'warning' "$LOG" && ! grep -q ' 0 Warning(s)' "$LOG"; then fail "$name" "the build has warnings"; return; fi
+    LOG=$WORK/dotnetnet.txt
+    if ! (cd "$dir" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/dotnetnet.dll); then fail "$name" "the program failed"; return; fi
+    cat > "$WORK/dotnetnet.expected" <<'EXPECTED'
+Task is .NET's: True
+Stream is .NET's: True
+1000 characters, compressed to fewer than 100 bytes: True
+after await, on the same thread: True
+sum of squares 55
+arena: 300
+EXPECTED
+    if ! same_output "$LOG" "$WORK/dotnetnet.expected" "$WORK/dotnetnet.diff"; then
+        fail "$name" "it prints something else: $(cat "$WORK/dotnetnet.diff")"; return
+    fi
+    # The default is lib/'s own: the same program doesn't build with it (no StreamWriter there).
+    dir=$(fixture dotnetnet dotnetnet-zero)
+    if run_in "$dir" dotnetnet-zero build -p:ZeroTarget=dotnet; then fail "$name" "it built with lib/'s own types too"; return; fi
+    dir=$(fixture dotnetnet dotnetnet-bad)
+    if run_in "$dir" dotnetnet-bad build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Bcl; then fail "$name" "ZeroDotnetTypes=Bcl built"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "Zero .* or Net" "$LOG"; then fail "$name" "no ZERO016 for ZeroDotnetTypes=Bcl"; return; fi
+    pass "$name"
+}
+
+# F# on ZeroTarget=dotnet: an F# library (task { } over Task.Run) used by an
+# F# program, both on one lib/ assembly (ZeroCSharp.Dotnet). As in
+# dotnet_target, zero mode first, and the .NET builds must print the same:
+# with lib/'s types, and with .NET's own (ZeroDotnetTypes=Net).
+test_dotnet_fsharp() {
+    local name="dotnet fsharp" dir exe
+    can_build "$name" || return
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    if ! has_dotnet_11; then skip "$name" "needs the .NET SDK 11"; return; fi
+    if [ "$HOST_OS" = Darwin ] && [ ! -f "$ROOT/sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib" ]; then
+        skip "$name" "this payload has no libzerocompat.dylib (it was built off a Mac)"; return
+    fi
+    if ! ls "$FEED"/ZeroCSharp.Dotnet.*.nupkg > /dev/null 2>&1; then fail "$name" "no ZeroCSharp.Dotnet in $FEED"; return; fi
+    dir=$(fixture dotnetfsharp)
+    if ! run_in "$dir/App" dotnetfsharp-zero build; then fail "$name" "the zero-mode build failed"; return; fi
+    exe=$(exe "$dir/App/bin/Debug/$TFM/App")
+    if ! (cd "$dir/App" && run_limited 60 "$WORK/dotnetfsharp-zero.txt" "$exe"); then fail "$name" "the zero-mode program failed"; return; fi
+    if ! run_in "$dir/App" dotnetfsharp build -p:ZeroTarget=dotnet; then fail "$name" "the build for .NET failed"; return; fi
+    if [ ! -f "$dir/App/bin/Debug/net11.0/App.dll" ] || [ ! -f "$dir/App/bin/Debug/net11.0/ZeroLib.dll" ]; then
+        fail "$name" "no App.dll and ZeroLib.dll in bin/Debug/net11.0"; return
+    fi
+    LOG=$WORK/dotnetfsharp-dotnet.txt
+    if ! (cd "$dir/App" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/App.dll); then fail "$name" "the .NET program failed"; return; fi
+    if [ "$(head -1 "$LOG")" != "on .NET" ] || [ "$(head -1 "$WORK/dotnetfsharp-zero.txt")" != "on zero" ]; then
+        fail "$name" "the first lines aren't 'on zero' and 'on .NET'"; return
+    fi
+    tail -n +2 "$WORK/dotnetfsharp-zero.txt" > "$WORK/dotnetfsharp-zero.rest"
+    tail -n +2 "$LOG" > "$WORK/dotnetfsharp-dotnet.rest"
+    if ! same_output "$WORK/dotnetfsharp-dotnet.rest" "$WORK/dotnetfsharp-zero.rest" "$WORK/dotnetfsharp.diff"; then
+        fail "$name" "on .NET it prints something else: $(cat "$WORK/dotnetfsharp.diff")"; return
+    fi
+    # And with .NET's own Task (FSharp.Core's task { }, ZeroLib.Net): the same source.
+    if ! run_in "$dir/App" dotnetfsharp-net build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "the build with ZeroDotnetTypes=Net failed"; return; fi
+    if [ ! -f "$dir/App/bin/Debug/net11.0/ZeroLib.Net.dll" ]; then fail "$name" "no ZeroLib.Net.dll with ZeroDotnetTypes=Net"; return; fi
+    LOG=$WORK/dotnetfsharp-net.txt
+    if ! (cd "$dir/App" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/App.dll); then fail "$name" "the program with ZeroDotnetTypes=Net failed"; return; fi
+    tail -n +2 "$LOG" > "$WORK/dotnetfsharp-net.rest"
+    if [ "$(head -1 "$LOG")" != "on .NET" ] || ! same_output "$WORK/dotnetfsharp-net.rest" "$WORK/dotnetfsharp-zero.rest" "$WORK/dotnetfsharp.diff"; then
+        fail "$name" "with ZeroDotnetTypes=Net it prints something else: $(cat "$WORK/dotnetfsharp.diff")"; return
+    fi
+    # Write once, use anywhere: the library packed with ZeroDotnetTypes=Net,
+    # installed in a plain C# project (no zero SDK), gets what it needs
+    # (ZeroCSharp.Dotnet.Net, as a dependency) and gives the same answer.
+    rm -rf "$WORK/dotnetfsharp-feed" "${NUGET_PACKAGES:-$HOME/.nuget/packages}/shapes"
+    if ! run_in "$dir/Shapes" dotnetfsharp-pack pack -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net -o "$WORK/dotnetfsharp-feed"; then fail "$name" "packing the library failed"; return; fi
+    mkdir -p "$dir/PlainCs"
+    cat > "$dir/PlainCs/PlainCs.csproj" <<'EOF2'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Shapes" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+EOF2
+    cat > "$dir/PlainCs/Program.cs" <<'EOF2'
+using Microsoft.FSharp.Collections;
+
+var shapes = ListModule.OfArray(new[] { Shapes.Shape.NewCircle(1), Shapes.Shape.NewSquare(2), Shapes.Shape.NewCircle(3) });
+System.Console.WriteLine($"total {Shapes.totalArea(shapes).Result}");
+EOF2
+    cat > "$dir/PlainCs/nuget.config" <<EOF2
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="shapes" value="$(native_path "$WORK/dotnetfsharp-feed")" />
+    <add key="zero" value="$(native_path "$FEED")" />
+    <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+EOF2
+    if ! run_in "$dir/PlainCs" dotnetfsharp-plaincs build; then fail "$name" "a plain C# project with the packed library didn't build"; return; fi
+    LOG=$WORK/dotnetfsharp-plaincs.txt
+    if ! (cd "$dir/PlainCs" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/PlainCs.dll); then fail "$name" "the plain C# program failed"; return; fi
+    if [ "$(cat "$LOG")" != "$(grep '^total ' "$WORK/dotnetfsharp-zero.txt")" ]; then
+        fail "$name" "the plain C# program printed '$(cat "$LOG")', not zero mode's '$(grep '^total ' "$WORK/dotnetfsharp-zero.txt")'"; return
+    fi
+    # But an F# zero program built with lib/'s own Task can't take it: it would
+    # get both lib/ assemblies (ZERO016).
+    mkdir -p "$dir/Mixed"
+    cp "$dir/PlainCs/nuget.config" "$dir/Mixed/"
+    cat > "$dir/Mixed/Mixed.fsproj" <<EOF2
+<Project Sdk="ZeroCSharp.Sdk/$VERSION">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+    <PackageReference Include="Shapes" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+EOF2
+    echo 'printfn "%d" (Shapes.area (Shapes.Square 2))' > "$dir/Mixed/Program.fs"
+    if run_in "$dir/Mixed" dotnetfsharp-mixed build -p:ZeroTarget=dotnet; then fail "$name" "a program built with lib/'s Task took a library built with ZeroDotnetTypes=Net"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "built with ZeroDotnetTypes=Net" "$LOG"; then fail "$name" "no ZERO016 for mixing the two lib/ builds"; return; fi
+    # With Net, C# zero projects take lib/ as the same assembly: a C# program
+    # using the F# library and a C# zero library of its own.
+    mkdir -p "$dir/CsLib" "$dir/CsApp"
+    cat > "$dir/CsLib/CsLib.csproj" <<EOF2
+<Project Sdk="ZeroCSharp.Sdk/$VERSION">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+</Project>
+EOF2
+    cat > "$dir/CsLib/Doubler.cs" <<'EOF2'
+using System.Threading.Tasks;
+
+public static class Doubler
+{
+    // Through a channel between two fibers: lib/'s, beside .NET's Task.
+    public static async Task<int> TwiceAsync(int x)
+    {
+        await Task.Delay(1);
+        var work = new Work { Channel = new Channel<int>(1), Input = x };
+        Fiber.Spawn(work, static w => { w.Channel.Send(w.Input * 2); w.Channel.Close(); });
+        Fiber.Spawn(work, static w => { while (w.Channel.Receive(out int v)) w.Result = v; });
+        Fiber.Run();
+        return work.Result;
+    }
+
+    sealed class Work
+    {
+        public Channel<int> Channel;
+        public int Input, Result;
+    }
+}
+EOF2
+    cat > "$dir/CsApp/CsApp.csproj" <<EOF2
+<Project Sdk="ZeroCSharp.Sdk/$VERSION">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Shapes/Shapes.fsproj" />
+    <ProjectReference Include="../CsLib/CsLib.csproj" />
+  </ItemGroup>
+</Project>
+EOF2
+    cat > "$dir/CsApp/Program.cs" <<'EOF2'
+using System;
+using Microsoft.FSharp.Collections;
+
+var shapes = ListModule.OfArray(new[] { Shapes.Shape.NewCircle(1), Shapes.Shape.NewSquare(2), Shapes.Shape.NewCircle(3) });
+Console.WriteLine($"total {Shapes.totalArea(shapes).Result}");
+Console.WriteLine($"twice {await Doubler.TwiceAsync(21)}");
+EOF2
+    if ! run_in "$dir/CsApp" dotnetfsharp-csapp build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "a C# program with the F# library and a C# library didn't build with Net"; return; fi
+    LOG=$WORK/dotnetfsharp-csapp.txt
+    if ! (cd "$dir/CsApp" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/CsApp.dll); then fail "$name" "the C# program with Net failed"; return; fi
+    if [ "$(head -1 "$LOG")" != "$(grep '^total ' "$WORK/dotnetfsharp-zero.txt")" ] || [ "$(sed -n 2p "$LOG")" != "twice 42" ]; then
+        fail "$name" "the C# program with Net printed: $(tr '\n' ' ' < "$LOG")"; return
+    fi
+    pass "$name"
+}
+
+# What ZeroTarget=dotnet doesn't build yet says so (ZERO016), and an older
+# .NET SDK is told which one it needs.
+test_dotnet_target_errors() {
+    local name="dotnet target errors" dir
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    # (With the .NET SDK 10, .NET's own NETSDK1045 for net11.0 comes first.)
+    if has_dotnet_11; then
+        dir=$(fixture fs-with-libs dotnet-cslib)
+        if run_in "$dir/CsLib" dotnet-cslib build -p:ZeroTarget=dotnet; then fail "$name" "a C# library built"; return; fi
+        if ! grep -q "ZERO016" "$LOG" || ! grep -q "not C# libraries" "$LOG"; then fail "$name" "no ZERO016 for a C# library"; return; fi
+    fi
+    dir=$(fixture dotnettarget dotnet-oldsdk)
+    if run_in "$dir" dotnet-oldsdk build -p:ZeroTarget=dotnet -p:NETCoreSdkVersion=10.0.404; then fail "$name" "the build with the .NET SDK 10 succeeded"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "11.0.100 or newer" "$LOG"; then fail "$name" "no ZERO016 for the .NET SDK 10"; return; fi
     pass "$name"
 }
 
@@ -2295,7 +2549,7 @@ test_fsharp_native_library_errors() {
 }
 
 ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old_dotnet_sdk_refused unions_compile plain_packages_refused
-    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target path_with_spaces compile_items incremental
+    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target dotnet_target dotnet_net_types dotnet_fsharp dotnet_target_errors path_with_spaces compile_items incremental
     bflat_failure_fails_the_build size strip_symbols ideograph_orders debug_unoptimized mac_debug_object_kept windows_debugger macos_error
     project_reference library_change_rebuilds pack_and_package_reference version_mismatch templates
     custom_packages_folder dotnet_run publish extra_dll_imports library_import inherited_settings clean_and_rebuild

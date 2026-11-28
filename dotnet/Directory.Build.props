@@ -1,0 +1,10 @@
+<Project>
+  <!-- Stops the repo root's Directory.Build.props (zerocore instead of the BCL):
+       everything under dotnet/ builds against real .NET. -->
+  <PropertyGroup>
+    <Features>$(Features);updated-memory-safety-rules</Features>
+    <!-- Each sample gets its own obj/ and bin/, so they can build side by side. -->
+    <BaseIntermediateOutputPath Condition="'$(Sample)' != '' and ('$(MSBuildProjectName)' == 'Sample' or '$(MSBuildProjectName)' == 'Faithful')">obj/$(Sample)/</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(Sample)' != '' and ('$(MSBuildProjectName)' == 'Sample' or '$(MSBuildProjectName)' == 'Faithful')">bin/$(Sample)/</BaseOutputPath>
+  </PropertyGroup>
+</Project>

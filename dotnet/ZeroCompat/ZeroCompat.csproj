@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../NetTypes.props" />
+  <!-- lib/ for real .NET: the parts that aren't .NET types already.
+       Files that only re-declare BCL types (System.Console, Task, Stream,
+       Socket, SHA256, ...) are left out: real .NET's own serve. CS0436 is an
+       error, so a lib/ type can't quietly shadow a BCL one. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET;ZERO_DOTNET_BCL</DefineConstants>
+    <WarningsAsErrors>$(WarningsAsErrors);CS0436</WarningsAsErrors>
+    <NoWarn>$(NoWarn);CS8500</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../lib/*.cs" />
+    <!-- Only .NET types, or built on lib/'s tasks: real .NET has them (../NetTypes.props). -->
+    <Compile Remove="@(ZeroLibOwnTypes->'../../lib/%(Identity).cs')" />
+    <!-- lib/'s own cryptography and TLS: .NET's are used (X25519 stays, .NET has no type by that name). -->
+    <Compile Remove="../../lib/Crypto*.cs;../../lib/SslStream.cs;../../lib/Tls*.cs" />
+    <Compile Include="../../lib/CryptoX25519.cs" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../out/libzerocompat.dylib" Link="libzerocompat.dylib" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../out/libzerocompat.dylib')" />
+  </ItemGroup>
+</Project>

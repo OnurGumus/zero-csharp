@@ -132,6 +132,35 @@ Linux x64 and arm64, Windows under Wine, UEFI x64 and arm64 in QEMU, macOS (comp
 and run on an Apple Silicon runner) and WebAssembly. It runs the SDK's tests on every host
 (`sdk.yml`).
 
+### The samples on .NET
+
+CI's `dotnet` job builds the same samples as ordinary .NET programs and checks them the same way
+(`dotnet/README.md` says what that is for). It needs only the .NET SDK 11, no bflat:
+
+```bash
+dotnet/test.sh                    # with lib/'s own Task, streams and sockets
+dotnet/test.sh --bcl-types        # with .NET's own
+dotnet/test.sh --gc-stress Tasks  # one sample, with the GC moving every object
+```
+
+A change here can turn that job red without breaking anything in zero mode:
+
+- **A new or changed check answers differently on .NET.** zerocore and `lib/` are meant to answer
+  as .NET does, so first see what .NET returns: often the difference is a bug here, and the fix is
+  in `lib/`. Where .NET is the one that differs, or can't do it (objects in arenas, a platform's
+  cryptography), add a line to `dotnet/known-differences.txt` (and `-bcl.txt`): the sample, the
+  check's name, and the reason, with what .NET returned. The file's entries show the forms,
+  including a check that differs on one system only.
+- **`lib/` code that only .NET's compiler refuses.** .NET 11 wants `Unsafe.As`, `Unsafe.Add` and
+  `MemoryMarshal.CreateSpan` inside an `unsafe` block; zerocore doesn't yet.
+- **`lib/` code that keeps an object's address.** Zero mode's objects never move and .NET's do.
+  The stress step fails for it, with a crash or a wrong answer in a sample that waits or does input
+  and output. It moves objects at moments it doesn't choose, so it can pass on one run and fail on
+  the next: a failure there is a real bug in how `lib/` runs on .NET, though not always one the
+  pull request made. Run the sample again a few times with `--gc-stress` to see it, and look for
+  `Unsafe.AsPointer`, a pointer used after its `fixed` block, or a reference kept in native
+  memory (`dotnet/README.md`, "Objects move").
+
 ## Editor setup
 
 The `.csproj` files and `BflatTest.slnx` exist only for IntelliSense; bflat ignores them.
