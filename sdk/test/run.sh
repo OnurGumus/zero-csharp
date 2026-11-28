@@ -271,7 +271,7 @@ test_payload_complete() {
              tools/zero-bitcode/SharpCompress.dll tools/zero-bitcode/THIRD-PARTY-NOTICES.txt \
              analyzers/ZeroCSharp.LibraryImport.dll \
              dotnet/lib/Fibers.cs dotnet/lib/Tasks.cs dotnet/compat/{Shims,Fibers,Additions}.cs dotnet/compat-zero/{CryptoBridge,TlsBridge,ZeroStartup}.cs \
-             dotnet/compat-net/{Async,ZeroStartup}.cs dotnet/NetTypes.props \
+             dotnet/compat-net/ZeroStartup.cs \
              dotnet/zero.editorconfig; do
         if [ ! -s "$payload/$f" ]; then fail "payload complete" "missing $f"; return; fi
     done
@@ -734,6 +734,64 @@ EOF2
     echo 'printfn "%d" (Shapes.area (Shapes.Square 2))' > "$dir/Mixed/Program.fs"
     if run_in "$dir/Mixed" dotnetfsharp-mixed build -p:ZeroTarget=dotnet; then fail "$name" "a program built with lib/'s Task took a library built with ZeroDotnetTypes=Net"; return; fi
     if ! grep -q "ZERO016" "$LOG" || ! grep -q "built with ZeroDotnetTypes=Net" "$LOG"; then fail "$name" "no ZERO016 for mixing the two lib/ builds"; return; fi
+    # With Net, C# zero projects take lib/ as the same assembly: a C# program
+    # using the F# library and a C# zero library of its own.
+    mkdir -p "$dir/CsLib" "$dir/CsApp"
+    cat > "$dir/CsLib/CsLib.csproj" <<EOF2
+<Project Sdk="ZeroCSharp.Sdk/$VERSION">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+</Project>
+EOF2
+    cat > "$dir/CsLib/Doubler.cs" <<'EOF2'
+using System.Threading.Tasks;
+
+public static class Doubler
+{
+    // Through a channel between two fibers: lib/'s, beside .NET's Task.
+    public static async Task<int> TwiceAsync(int x)
+    {
+        await Task.Delay(1);
+        var work = new Work { Channel = new Channel<int>(1), Input = x };
+        Fiber.Spawn(work, static w => { w.Channel.Send(w.Input * 2); w.Channel.Close(); });
+        Fiber.Spawn(work, static w => { while (w.Channel.Receive(out int v)) w.Result = v; });
+        Fiber.Run();
+        return work.Result;
+    }
+
+    sealed class Work
+    {
+        public Channel<int> Channel;
+        public int Input, Result;
+    }
+}
+EOF2
+    cat > "$dir/CsApp/CsApp.csproj" <<EOF2
+<Project Sdk="ZeroCSharp.Sdk/$VERSION">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Shapes/Shapes.fsproj" />
+    <ProjectReference Include="../CsLib/CsLib.csproj" />
+  </ItemGroup>
+</Project>
+EOF2
+    cat > "$dir/CsApp/Program.cs" <<'EOF2'
+using System;
+using Microsoft.FSharp.Collections;
+
+var shapes = ListModule.OfArray(new[] { Shapes.Shape.NewCircle(1), Shapes.Shape.NewSquare(2), Shapes.Shape.NewCircle(3) });
+Console.WriteLine($"total {Shapes.totalArea(shapes).Result}");
+Console.WriteLine($"twice {await Doubler.TwiceAsync(21)}");
+EOF2
+    if ! run_in "$dir/CsApp" dotnetfsharp-csapp build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "a C# program with the F# library and a C# library didn't build with Net"; return; fi
+    LOG=$WORK/dotnetfsharp-csapp.txt
+    if ! (cd "$dir/CsApp" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/CsApp.dll); then fail "$name" "the C# program with Net failed"; return; fi
+    if [ "$(head -1 "$LOG")" != "$(grep '^total ' "$WORK/dotnetfsharp-zero.txt")" ] || [ "$(sed -n 2p "$LOG")" != "twice 42" ]; then
+        fail "$name" "the C# program with Net printed: $(tr '\n' ' ' < "$LOG")"; return
+    fi
     pass "$name"
 }
 

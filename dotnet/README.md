@@ -139,6 +139,7 @@ as one assembly from a package, which a packed F# library then lists as a depend
 | `task { }`, `async { }`, `MailboxProcessor` | zero's, on `lib/`'s tasks and fibers (`FSharp.Control.dll`, `dotnet/ZeroLib.FSharp`) | FSharp.Core's, on .NET's tasks |
 | `arena { }` | yes | not yet (it's built on zero's `async`) |
 | A packed library works in | F# zero programs built the same way | any .NET project, C# included |
+| C# zero projects | compile `lib/` in; no libraries | use the same package: C# libraries, and C# and F# zero libraries in one program |
 
 F# takes a referenced assembly's type over .NET's of the same name, where C# calls it ambiguous
 (CS0433). So with `lib/`'s own types, an F# library and the program using it share `lib/`'s
@@ -148,7 +149,9 @@ arenas, fibers and channels: build a library meant for any .NET project that way
 
 A program and the zero libraries it uses must be built the same way: one built otherwise would
 bring the other `lib/`, with its own `Arena` and fiber scheduler, and the SDK stops the build
-(ZERO016). C# programs on this target, which have `lib/` compiled in, can't use them either.
+(ZERO016). C# projects with `lib/`'s own types have `lib/` compiled in, so they can't use these
+libraries; with `Net` they reference the same `ZeroCSharp.Dotnet.Net` as F#, compile only a
+small startup (their own `DllImport`s, and zero's rule for continuations), and can be libraries.
 
 FSharp.Core is .NET's own. zero's two unsafe-code marks come with the package: `[<RequiresUnsafe>]`
 as in zero mode, and `[<Safety "why">]` as an attribute of its own (zero's FSharp.Core makes it
@@ -156,14 +159,16 @@ as in zero mode, and `[<Safety "why">]` as an attribute of its own (zero's FShar
 F# projects here make no reference assemblies, so that switching `ZeroDotnetTypes` rebuilds what
 uses a library. The SDK test `dotnet_fsharp` builds an F# library and program for zero mode, for
 .NET and for .NET with `Net`, checks all three print the same, installs the `Net` library in a
-plain C# project, and checks that a program built the other way is refused.
+plain C# project, checks that a program built the other way is refused, and builds a C# zero
+program with `Net` that uses the F# library and a C# zero library.
 
 ## Not yet
 
 - Windows (the functions `win/runtime.c` gives a zero-mode program would have to be a library
   for .NET to load).
-- C# libraries, and C# projects that reference zero libraries (SDK: ZERO016): a C# program has
-  `lib/` compiled in, so a library's `lib/` types would be other types.
-- C# programs using F# zero libraries, and `arena { }` with `ZeroDotnetTypes=Net`.
+- C# libraries, and C# projects that reference zero libraries, with `lib/`'s own types
+  (SDK: ZERO016): there a C# program has `lib/` compiled in, so a library's `lib/` types would be
+  other types. With `ZeroDotnetTypes=Net` they work.
+- `arena { }` with `ZeroDotnetTypes=Net`.
 - The Links sample: .NET's runtime can't load two structs that refer to each other through a
   generic struct (`Town` holds a `Handle<Road>`, `Road` a `Handle<Town>`).

@@ -1584,14 +1584,13 @@ case "$TARGET" in
         # TLS stay out, all but X25519, which .NET has no type for.)
         rm "$PAYLOAD_DIR"/dotnet/lib/Crypto*.cs "$PAYLOAD_DIR/dotnet/lib/SslStream.cs" "$PAYLOAD_DIR"/dotnet/lib/Tls*.cs
         cp lib/CryptoX25519.cs "$PAYLOAD_DIR/dotnet/lib/"
-        # compat/ for every program; compat-zero/ with lib/'s own types (the
-        # default: dotnet/Faithful); compat-net/ with .NET's (ZeroDotnetTypes=Net:
-        # dotnet/ZeroCompat and dotnet/Sample), and the list of lib/'s files
-        # that build leaves out.
+        # compat/ for programs with lib/ compiled in, and compat-zero/ with
+        # lib/'s own types (the default: dotnet/Faithful). With .NET's own
+        # (ZeroDotnetTypes=Net) lib/ comes from the ZeroCSharp.Dotnet.Net
+        # package, and a C# program compiles only compat-net/'s startup.
         cp dotnet/ZeroCompat/Shims.cs dotnet/ZeroCompat/Fibers.cs dotnet/ZeroCompat/Additions.cs "$PAYLOAD_DIR/dotnet/compat/"
         cp dotnet/Faithful/CryptoBridge.cs dotnet/Faithful/TlsBridge.cs dotnet/Faithful/ZeroStartup.cs "$PAYLOAD_DIR/dotnet/compat-zero/"
-        cp dotnet/ZeroCompat/Async.cs dotnet/Sample/ZeroStartup.cs "$PAYLOAD_DIR/dotnet/compat-net/"
-        cp dotnet/NetTypes.props "$PAYLOAD_DIR/dotnet/"
+        cp dotnet/Sample/ZeroStartup.cs "$PAYLOAD_DIR/dotnet/compat-net/"
         # The warnings these files give are theirs to answer, not the
         # project's that compiles them in: off for this folder only.
         cp dotnet/payload.editorconfig "$PAYLOAD_DIR/dotnet/zero.editorconfig"
