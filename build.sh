@@ -134,6 +134,8 @@ ALL_SAMPLES=(
     CryptoRandom
     Formats
     Parsing
+    Cultures
+    Dates
     Keys
     Tensors
     TensorsAvx
@@ -142,8 +144,9 @@ ALL_SAMPLES=(
     "${SMALL_SAMPLES[@]}"
 )
 # Samples WebAssembly can't run: the fiber samples switch stacks, which a WebAssembly
-# program has no way to do.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors "
+# program has no way to do, and Catches, CryptoErrors and Cultures catch exceptions with Catch.Run,
+# which jumps back up the stack, which it can't do either.
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures "
 # Programs with kernels for the GPU (Metal): only --gpu builds them.
 GPU_SAMPLES=(Gpu)
 # Simd and Kernels benchmark SIMD instructions, which a 386 doesn't have.
@@ -189,6 +192,8 @@ DOS_SAMPLES=(
     CryptoErrors
     Formats
     Parsing
+    Cultures
+    Dates
     Keys
     Tensors
     TensorTypes
@@ -258,6 +263,8 @@ ARM_SAMPLES=(
     CryptoErrors
     Formats
     Parsing
+    Cultures
+    Dates
     Keys
     Tensors
     TensorTypes
@@ -287,6 +294,8 @@ R4_SAMPLES=(
     Records
     Shapes
     Refs
+    Cultures
+    Dates
     "${SMALL_SAMPLES[@]}"
     Blink
 )

@@ -30,7 +30,7 @@ instead, and lists what compiles as usual but behaves differently.
 | `Task`, `async`/`await`, `CancellationToken`, `TimeProvider` | The same, on fibers: one thread runs them all, with no thread pool | [Use async and await](../how-to/use-fibers.html#use-async-and-await) |
 | `Thread`, `Parallel.For` | `Parallel.For`; fibers for work that waits | [Run a loop in parallel](../how-to/run-in-parallel.html) |
 | `File.ReadAllText`, `File.WriteAllText`, `FileStream` | `File`, with the same names for whole files (strings and bytes read go in an arena), and `FileStream`; their async methods run on an I/O thread | [Read and write files](../how-to/read-and-write-files.html) |
-| `Stopwatch`, `DateTime.UtcNow` | `Clock.Monotonic` (nanoseconds), `Clock.UtcNow` (a `CalendarTime`) | [Use the clock and random numbers](../how-to/use-the-clock-and-random-numbers.html) |
+| `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeZoneInfo`, `Stopwatch` | The same, in zerocore; local time from the system's zone, with no time zone database for other zones | [Work with dates and times](../how-to/work-with-dates-and-times.html) |
 | `Random` | `Random`, a struct with .NET's method names: pass it by `ref` | [Use the clock and random numbers](../how-to/use-the-clock-and-random-numbers.html) |
 | `Environment.Exit`, `GetEnvironmentVariable`, `ProcessorCount`, `TickCount64`, `NewLine` | The same, in zerocore; `NewLine` is `"\n"` on every target | [Read environment variables and exit](../how-to/use-the-environment.html) |
 | `Vector128.IsHardwareAccelerated`, `Avx2.IsSupported` at run time | Decided when building, by `ZeroInstructionSet` (`-m`) | [Use SIMD](../how-to/use-simd.html) |
@@ -232,9 +232,10 @@ Arenas and `lib/`'s collections aren't thread-safe, so give each thread its own;
   instruction set, and the program then assumes the processor has it.
 - **Arrays aren't `IList<T>` or `IEnumerable<T>`.** Pass a span instead.
 - **Strings sort by character code.** `string.CompareTo`, `Comparer<string>.Default`, and so
-  `Sort()` on strings, compare UTF-16 code units, as `string.CompareOrdinal` does: zero mode has no
-  cultures to follow. Every capital letter goes before every lowercase one, so `"Banana"` sorts
-  before `"apple"`, where .NET puts `"apple"` first. To ignore case, sort with your own comparer.
+  `Sort()` on strings, compare UTF-16 code units, as `string.CompareOrdinal` does. Zero mode has only
+  the invariant culture, and compares as .NET does with `InvariantGlobalization` set. Every capital
+  letter goes before every lowercase one, so `"Banana"` sorts before `"apple"`, where .NET with its
+  cultures puts `"apple"` first. To ignore case, sort with your own comparer.
 - **`HashCode` gives the same result on every run.** .NET seeds `HashCode.Combine` with a random
   number in each process; zero mode has nothing random at startup, so its seed is fixed. Don't save
   or send hash codes in either case.

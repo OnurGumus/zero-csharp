@@ -73,6 +73,13 @@ namespace System
         public ArgumentOutOfRangeException(string paramName) : base("ArgumentOutOfRangeException: " + paramName) { }
         public ArgumentOutOfRangeException(string paramName, string message) : base(message, paramName) { }
 
+        // .NET's message with the value that was out of range on a line of its own.
+        public ArgumentOutOfRangeException(string paramName, object actualValue, string message)
+            : base((paramName == null ? message : message + " (Parameter '" + paramName + "')")
+                + (actualValue == null ? "" : "\nActual value was " + actualValue.ToString() + "."))
+        {
+        }
+
         // .NET's checks (generic over INumberBase there), for the integer types.
         public static void ThrowIfNegative(int value, [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(value))] string paramName = null)
         {

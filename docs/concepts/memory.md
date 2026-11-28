@@ -135,7 +135,15 @@ marking means.
 
 One mistake none of the above prevents. A `List`, `Dict` or `StrBuilder` created before the mark may
 grow after it. Its new buffer is then allocated after the mark, so `Restore` frees it while the
-collection still points at it. Later allocations overwrite it, and nothing reports that.
+collection still points at it. Later allocations overwrite it, and nothing reports that:
+
+```csharp no-sample
+List<int> numbers = List<int>.Create(arena, 4); // before the mark
+Arena.Mark mark = arena.Save();
+for (int i = 0; i < 100; i++)
+    numbers.Add(i);  // grows: the new buffer comes after the mark
+unsafe { arena.Restore(mark); } // frees that buffer; numbers still uses it
+```
 
 The rule: between `Save()` and `Restore()`, only add to collections created after the mark. When
 temporary work has to add to long-lived collections, do it in **`Arena.Scratch`** instead (below),
@@ -152,7 +160,20 @@ Everything above relies on you: `Restore` and `OpenScope` are `unsafe` because t
 when an arena frees memory, so nothing stops a span from outliving it. **`Arena.Scratch`** is the
 exception. It runs a callback with a `ScratchScope` to allocate from, frees what was allocated when the
 callback returns, and the compiler makes sure nothing allocated is still reachable then (with one
-exception checked when the program runs, below):
+exception, [checked when the program runs](#nested-calls)).
+
+Data goes in and out through a state passed by `ref` and through the callback's return value, so the
+lambda can be `static` and allocates nothing after its first call. The state is usually a small
+`ref struct` of your own, which may hold spans of yours:
+
+<!-- sample: samples/Scratch.cs state -->
+```csharp
+// What Arena.Scratch passes to its callback by ref: the data going in.
+public ref struct Job
+{
+    public ReadOnlySpan<int> Input;
+}
+```
 
 <!-- sample: samples/Scratch.cs scratch -->
 ```csharp
@@ -176,8 +197,160 @@ Leaving out `scoped` doesn't open a way out, since a lambda that could leak no l
 delegate. `tests/must-not-compile/` holds one program per way, and `test.sh` checks that the compiler
 refuses each. No `unsafe` is needed anywhere.
 
+When the data only goes in, or is a span the callback fills, pass it by value instead: the callback
+gets a copy, which for a span still points at your items:
+
+<!-- sample: samples/Scratch.cs input -->
+```csharp
+// An input passed by value: the callback gets a copy of the span,
+// which points at the same items, so it can fill them.
+Span<int> squares = stackalloc int[4];
+Arena.Scratch(squares,
+    static (scoped ScratchScope scratch, Span<int> output) =>
+    {
+        ScratchList<int> work = scratch.List<int>();
+        for (int i = 1; i <= output.Length; i++)
+            work.Add(i * i);
+        work.AsSpan().CopyTo(output);
+    });
+```
+
 The memory comes from a scratch arena of the thread's own, not from one of yours, so the Restore hazard
 can't happen: a `List` of yours that grows during the callback grows in its own arena. Calls nest.
+
+<!-- sample: samples/Scratch.cs growing -->
+```csharp
+// A list of yours that grows during the callback grows in its own
+// arena, so the scratch memory going away doesn't touch it.
+Arena arena = Arena.Create(4096);
+Arena.DebugChecks = true;
+var growing = new Growing { Items = List<int>.Create(arena, 4) };
+Arena.Scratch(ref growing,
+    static (scoped ScratchScope scratch, scoped ref Growing state) =>
+    {
+        Span<int> temp = scratch.AllocSpan<int>(100);
+        for (int i = 0; i < temp.Length; i++)
+            state.Items.Add(i);
+    });
+Check("your list is intact",
+    growing.Items.Count == 100 && growing.Items.Get(99) == 99);
+```
+
+### Scratch collections
+
+Besides spans, the scope makes lists and text that grow as needed, `ScratchList<T>` and
+`ScratchText`. They are `ref struct`s too, so the same rules keep them inside the callback, and a
+string to keep is copied out into an arena of yours:
+
+<!-- sample: samples/Scratch.cs lists -->
+```csharp
+// Lists and text from the scope grow as needed and go away with the
+// rest of the scratch memory. The string to keep is copied out into
+// an arena of yours.
+Arena keep = Arena.Create(4096);
+string report = Arena.Scratch(ref keep,
+    static (scoped ScratchScope scratch, scoped ref Arena target) =>
+    {
+        ScratchList<int> evens = scratch.List<int>(4);
+        for (int i = 18; i >= 0; i -= 2)
+            evens.Add(i);
+        evens.AsSpan().Sort();
+
+        ScratchText text = scratch.Text();
+        text.Append($"{evens.Count} evens:");
+        foreach (int even in evens)
+            text.Append($" {even}");
+        return text.ToArenaString(target);
+    });
+```
+
+`scratch.Dict<TKey, TValue>()` and `scratch.HashSet<T>()` are the dictionary and set for scratch
+work, compared as `Dict` and `HashSet` are:
+
+<!-- sample: samples/Scratch.cs dict -->
+```csharp
+// Count each roll in a dictionary that goes away with the scratch
+// memory; only the most common roll comes out.
+int[] rolls = { 3, 6, 3, 1, 6, 3 };
+var dice = new Job { Input = rolls };
+int mostCommon = Arena.Scratch(ref dice,
+    static (scoped ScratchScope scratch, scoped ref Job state) =>
+    {
+        ScratchDict<int, int> counts = scratch.Dict<int, int>();
+        int best = 0, bestCount = 0;
+        foreach (int roll in state.Input)
+        {
+            counts.TryGet(roll, out int count);
+            counts.Set(roll, ++count);
+            if (count > bestCount)
+                (best, bestCount) = (roll, count);
+        }
+        return best;
+    });
+```
+
+`Clone(arena)` copies one into an arena of yours, to keep after the callback:
+
+<!-- sample: samples/Scratch.cs dict-clone -->
+```csharp
+// Clone copies a scratch dictionary into an arena of yours, to keep
+// after the callback.
+Arena results = Arena.Create(4096);
+Dict<int, int> kept = Arena.Scratch(ref results,
+    static (scoped ScratchScope scratch, scoped ref Arena target) =>
+    {
+        ScratchDict<int, int> squares = scratch.Dict<int, int>(4);
+        for (int i = 0; i < 100; i++)
+            squares.Set(i, i * i);
+        squares.Remove(50);
+        return squares.Clone(target);
+    });
+```
+
+A `ScratchPool<T>` from `scratch.Pool<T>()` holds items found by handles, as a `Pool<T>` does. Its
+`MoveTo` moves an item into a pool of yours, which is how a result made in scratch memory is kept. The
+items here are a different `Job`, a plain struct that pools can hold:
+
+<!-- sample: samples/Links.cs task -->
+```csharp
+// A task that waits for another: items in a pool point at each other with
+// handles, which are plain structs too.
+public struct Job
+{
+    public int Id;
+    public Handle<Job> WaitsFor;
+}
+```
+
+<!-- sample: samples/Links.cs scratch-pool -->
+```csharp
+// Work in a scratch pool, then move the one result to keep into a
+// pool of yours; the rest goes with the scratch memory.
+var results = Pool<Job>.Create(arena);
+Handle<Job> best = Arena.Scratch(ref results,
+    static (scoped ScratchScope scratch, scoped ref Pool<Job> keep) =>
+    {
+        ScratchPool<Job> tries = scratch.Pool<Job>();
+        Handle<Job> top = default;
+        for (int id = 1; id <= 20; id++)
+        {
+            Handle<Job> next = tries.Add(new Job { Id = id * 7 % 20 });
+            if (top.IsNull || tries[next].Id > tries[top].Id)
+                top = next;
+        }
+        return tries.MoveTo(keep, ref top);
+    });
+```
+
+### Nested calls
+
+One rule is beyond the compiler. A state passed by `ref` to a nested `Arena.Scratch` can carry the
+outer scope, or a list or text it made, and anything they allocated in there would be freed with the
+inner call's memory. So they allocate only while their own callback is the innermost one running:
+inside the nested call they can still be read and written, but allocating from the outer scope,
+adding to the outer list or appending to the outer text stops the program with a message saying so.
+
+### Where scratch memory comes from
 
 Each thread, and each fiber, keeps the first block of its scratch arena until it ends: 16 KB, or 2 KB on
 a microcontroller or a C64. A callback that needs more gets it from malloc and gives it back when it
@@ -244,109 +417,6 @@ int sumOfSquares = Arena.ScratchOnStack(1024,
         return sum;
     });
 ```
-
-The price is the callback. Data goes in and out through a state passed by `ref` (it may be a
-`ref struct` holding spans of yours) and through the callback's return value, so the lambda can be
-`static` and allocates nothing after its first call.
-
-When the data only goes in, or is a span the callback fills, pass it by value instead: the callback
-gets a copy, which for a span still points at your items:
-
-<!-- sample: samples/Scratch.cs input -->
-```csharp
-// An input passed by value: the callback gets a copy of the span,
-// which points at the same items, so it can fill them.
-Span<int> squares = stackalloc int[4];
-Arena.Scratch(squares,
-    static (scoped ScratchScope scratch, Span<int> output) =>
-    {
-        ScratchList<int> work = scratch.List<int>();
-        for (int i = 1; i <= output.Length; i++)
-            work.Add(i * i);
-        work.AsSpan().CopyTo(output);
-    });
-```
-
-Besides spans, the scope makes lists and text that grow as needed, `ScratchList<T>` and
-`ScratchText`. They are `ref struct`s too, so the same rules keep them inside the callback, and a
-string to keep is copied out into an arena of yours:
-
-<!-- sample: samples/Scratch.cs lists -->
-```csharp
-// Lists and text from the scope grow as needed and go away with the
-// rest of the scratch memory. The string to keep is copied out into
-// an arena of yours.
-Arena keep = Arena.Create(4096);
-string report = Arena.Scratch(ref keep,
-    static (scoped ScratchScope scratch, scoped ref Arena target) =>
-    {
-        ScratchList<int> evens = scratch.List<int>(4);
-        for (int i = 18; i >= 0; i -= 2)
-            evens.Add(i);
-        evens.AsSpan().Sort();
-
-        ScratchText text = scratch.Text();
-        text.Append($"{evens.Count} evens:");
-        foreach (int even in evens)
-            text.Append($" {even}");
-        return text.ToArenaString(target);
-    });
-```
-
-`scratch.Dict<TKey, TValue>()` and `scratch.HashSet<T>()` are the dictionary and set for scratch
-work, compared as `Dict` and `HashSet` are. `Clone(arena)` copies one into an arena of yours, to keep
-after the callback:
-
-<!-- sample: samples/Scratch.cs dict -->
-```csharp
-// Count each roll and keep only the counts: the dictionary and the set
-// go with the scratch memory, the copy stays in an arena of yours.
-int[] rolls = { 3, 6, 3, 1, 6, 3 };
-var dice = new Job { Input = rolls };
-Arena results = Arena.Create(4096);
-int distinct = Arena.Scratch(ref dice,
-    static (scoped ScratchScope scratch, scoped ref Job state) =>
-    {
-        ScratchDict<int, int> counts = scratch.Dict<int, int>();
-        ScratchHashSet<int> seen = scratch.HashSet<int>();
-        foreach (int roll in state.Input)
-        {
-            counts.TryGet(roll, out int count);
-            counts.Set(roll, count + 1);
-            seen.Add(roll);
-        }
-        return seen.Count;
-    });
-```
-
-A `ScratchPool<T>` from `scratch.Pool<T>()` holds items found by handles, as a `Pool<T>` does. Its
-`MoveTo` moves an item into a pool of yours, which is how a result made in scratch memory is kept:
-
-<!-- sample: samples/Links.cs scratch-pool -->
-```csharp
-// Work in a scratch pool, then move the one result to keep into a
-// pool of yours; the rest goes with the scratch memory.
-var results = Pool<Job>.Create(arena);
-Handle<Job> best = Arena.Scratch(ref results,
-    static (scoped ScratchScope scratch, scoped ref Pool<Job> keep) =>
-    {
-        ScratchPool<Job> tries = scratch.Pool<Job>();
-        Handle<Job> top = default;
-        for (int id = 1; id <= 20; id++)
-        {
-            Handle<Job> next = tries.Add(new Job { Id = id * 7 % 20 });
-            if (top.IsNull || tries[next].Id > tries[top].Id)
-                top = next;
-        }
-        return tries.MoveTo(keep, ref top);
-    });
-```
-
-One rule is beyond the compiler. A state passed by `ref` to a nested `Arena.Scratch` can carry the
-outer scope, or a list or text it made, and anything they allocated in there would be freed with the
-inner call's memory. So they allocate only while their own callback is the innermost one running:
-inside the nested call they can still be read and written, but allocating from the outer scope,
-adding to the outer list or appending to the outer text stops the program with a message saying so.
 
 ### Types of your own
 
@@ -476,11 +546,20 @@ nothing may keep a reference to one. The compiler can break that rule for you in
   hidden static field. If that first time is inside the scope, the static field ends up pointing into
   the arena. Run such code once before opening a scope. With `Arena.DebugChecks` on when the arena
   was created, `Reset`, `Restore` and `Destroy` check every static field and stop the program if one
-  points into the memory they are about to free. Static constructors are safe: whatever one creates is allocated outside every scope, since
-  it's kept for the rest of the program.
+  points into the memory they are about to free. Static constructors are safe: whatever one creates
+  is allocated outside every scope, since it's kept for the rest of the program.
 - **Captured variables from outside.** A lambda that captures a variable declared outside the scope is
   cached in the object that holds that variable, which the check can't see. Declare what a lambda
-  captures inside the scope, or in a method called from it, as here:
+  captures inside the scope, or in a method called from it. `CountAbove` declares the variable its
+  lambda captures, `limit`, as a parameter, so the closure is made inside the scope on every call:
+
+<!-- sample: samples/Queries.cs capture-method -->
+```csharp
+// The trap: the lambda captures `limit`, so every call of CountAbove
+// allocates a closure to hold `limit`, and a delegate, never freed.
+static int CountAbove(int[] numbers, int limit)
+    => numbers.Where(x => x > limit).Count();
+```
 
 <!-- sample: samples/Queries.cs capture-in-scope -->
 ```csharp

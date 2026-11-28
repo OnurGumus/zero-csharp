@@ -187,9 +187,10 @@ let rec ask i a b =
 
 `int.Parse`, `double.TryParse` and the rest work as in .NET, on every integer type, `double`, `float`
 and `Half`, with every overload: a `string` or a `ReadOnlySpan<char>` (so the slice goes straight in),
-a `NumberStyles`, and an `IFormatProvider`, which is ignored. The culture is always the invariant one:
-the decimal point is `.` and the group separator `,`. In F#, `Int32.TryParse("12a")` returns the
-result and the value as a pair, `(false, 0)`, as it does in .NET.
+a `NumberStyles`, and an `IFormatProvider` such as `CultureInfo.InvariantCulture`. The culture is
+always the invariant one, the only one there is (see [Cultures](../concepts/strings.html#cultures)):
+the decimal point is `.` and the group separator `,`. In F#,
+`Int32.TryParse("12a")` returns the result and the value as a pair, `(false, 0)`, as it does in .NET.
 
 <!-- sample: samples/Parsing.cs integers -->
 ```csharp
