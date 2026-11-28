@@ -151,7 +151,8 @@
            Text="A library this project uses is built on ZeroCSharp.Dotnet(.Net), and this C# project has lib/ compiled in: it would get two of it. Build it with -p:ZeroDotnetTypes=Net (and the library too)." />
   </Target>
 
-  <Target Name="ZeroCheckDotnetTarget" BeforeTargets="Restore;_CheckForInvalidConfigurationAndPlatform;CoreCompile">
+  <!-- Before .NET's own check for a framework the SDK is too old for (NETSDK1045), so an old SDK gets this one, which says what to install. -->
+  <Target Name="ZeroCheckDotnetTarget" BeforeTargets="_CheckForUnsupportedNETCoreVersion;Restore;_CheckForInvalidConfigurationAndPlatform;CoreCompile">
     <Error Code="ZERO016" Condition="'$(NETCoreSdkVersion)' != '' and $([MSBuild]::VersionLessThan($([System.Text.RegularExpressions.Regex]::Replace('$(NETCoreSdkVersion)', '-.*', '')), '11.0.100'))"
            Text="ZeroTarget=dotnet needs the .NET SDK 11.0.100 or newer (the program targets $(ZeroDotnetFramework)); this build uses $(NETCoreSdkVersion)." />
     <Error Code="ZERO016" Condition="'$(ZeroDotnetTypes)' != 'Zero' and '$(ZeroDotnetTypes)' != 'Net'"
