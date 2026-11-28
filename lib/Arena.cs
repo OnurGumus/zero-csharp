@@ -1275,6 +1275,9 @@ public partial struct Arena
     /// past this point, Reset and Destroy free it. 0 for null, or if the arena
     /// isn't created.
     /// </summary>
+    // How many handles KeepObject has out (dotnet/'s checks).
+    internal int KeptHandleCount { get { unsafe { return _state == null ? 0 : _state->HandleCount; } } } // SAFETY: a created arena's state
+
     internal nint KeepObject(object value)
     {
         State* state = _state;

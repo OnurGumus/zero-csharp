@@ -47,6 +47,7 @@ public struct Dict<TKey, TValue, TComparer>
 #if ZERO_DOTNET
     // The arena the map lives in (RefDict's GC handles last as long as it holds them).
     internal Arena HomeArena { get { unsafe { return _header == null ? default : _header->Arena; } } } // SAFETY: a created map's header
+    internal int SlotCapacity { get { unsafe { return _header == null ? 0 : _header->Capacity; } } } // SAFETY: as above
 #endif
 
     /// <summary>Returns a new map in <paramref name="arena"/>, or a not-created map if it is out of memory.</summary>
@@ -527,6 +528,7 @@ public struct Dict<TKey, TValue>
 
 #if ZERO_DOTNET
     internal Arena HomeArena => _map.HomeArena;
+    internal int SlotCapacity => _map.SlotCapacity;
 #endif
 }
 
