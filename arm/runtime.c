@@ -127,6 +127,10 @@ int pthread_setspecific(unsigned key, void *value)
 
 int get_nprocs(void) { return 1; }
 
+// ---- random bytes: none to give (lib/CryptoRandom.cs throws) -------------------
+
+int getentropy(void *buffer, size_t length) { (void)buffer; (void)length; return -1; }
+
 // ---- flash is read-only ----------------------------------------------------------
 //
 // String literals stay in flash (zero-bitcode wasm2arm puts them in .rodata).

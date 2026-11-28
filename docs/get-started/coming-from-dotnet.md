@@ -195,10 +195,10 @@ static int ValueOrMinusOne(string text) => ParseNumber(text) switch
 
 ## Threads
 
-There is no `Thread` or `lock`. `Task` and `async`/`await` work, on fibers on one thread (see
+There is no `Thread`. `Task` and `async`/`await` work, on fibers on one thread (see
 [Use async and await](../how-to/use-fibers.html#use-async-and-await)). For work spread over processors,
-`Parallel.For` runs a loop on every processor and returns when it is done, with `Interlocked` and
-`Volatile` for shared state:
+`Parallel.For` runs a loop on every processor and returns when it is done, with `lock`, `Interlocked`
+and `Volatile` for shared state (see [Lock shared data](../how-to/run-in-parallel.html#lock-shared-data)):
 
 <!-- sample: samples/Threads.cs parallel-for -->
 ```csharp

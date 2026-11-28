@@ -815,10 +815,10 @@ namespace Microsoft.FSharp.Core
         [<CompilationRepresentation(CompilationRepresentationFlags.Instance)>]
         member x.Value = match x with Some x -> x | None -> raise (new InvalidOperationException("Option.Value"))
 
-        [<CompilationRepresentation(CompilationRepresentationFlags.Instance)>]
+        // Static, as FSharp.Core's (fsc makes them so): None is null, and an
+        // instance call on it crashes where fsc doesn't inline (Optimize false).
         member x.IsNone = match x with None -> true | _ -> false
 
-        [<CompilationRepresentation(CompilationRepresentationFlags.Instance)>]
         member x.IsSome = match x with Some _ -> true | _ -> false
 
         static member None : 'T option = None

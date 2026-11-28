@@ -37,7 +37,9 @@
 // Create allocates the program and the memory matching works in, in the arena
 // you pass; matching and Split allocate nothing. That working memory is shared, so use
 // a Regex from one thread at a time. An invalid pattern ends the program, as
-// .NET throws ArgumentException; TryCreate returns the reason instead.
+// .NET throws ArgumentException; TryCreate returns the reason instead. The
+// compiler works in temporary memory (Arena.Scratch), which ends the program
+// if it runs out: TryCreate's "the arena is full" is about the arena you pass.
 
 using System;
 using System.Runtime.CompilerServices;
@@ -131,27 +133,38 @@ public struct Regex
     public static bool TryCreate(Arena arena, ReadOnlySpan<char> pattern, RegexOptions options,
         out Regex regex, out string error, out int errorPosition)
     {
-        regex = default;
-        // The syntax tree and the program as it's built go in an arena of their
-        // own, freed at the end; only the finished program goes in the caller's.
-        Arena scratch = Arena.Create(4096, "Regex.Create");
-        var compiler = new RegexCompiler(scratch, pattern, options);
-        bool ok = compiler.Run(out error, out errorPosition);
-        if (ok)
+        // The syntax tree and the program as it's built are temporary memory
+        // (Arena.Scratch); only the finished program goes in the caller's arena.
+        var state = new CreateState { Arena = arena, Pattern = pattern, Options = options };
+        Arena.Scratch(ref state, static (scoped ScratchScope scratch, scoped ref CreateState s) =>
         {
-            regex = Store(arena, ref compiler);
-            if (!regex.IsCreated)
+            var compiler = new RegexCompiler(scratch, s.Pattern, s.Options);
+            if (!compiler.Run(out s.Error, out s.ErrorPosition))
+                return;
+            s.Regex = Store(s.Arena, ref compiler);
+            if (!s.Regex.IsCreated)
             {
-                ok = false;
-                error = "the arena is full";
-                errorPosition = -1;
+                s.Error = "the arena is full";
+                s.ErrorPosition = -1;
             }
-        }
-        unsafe { scratch.Destroy(); } // SAFETY: nothing allocated in scratch is used after this.
-        return ok;
+        });
+        regex = state.Regex;
+        error = state.Error;
+        errorPosition = state.ErrorPosition;
+        return error == null;
     }
 
-    static Regex Store(Arena arena, ref RegexCompiler compiler)
+    ref struct CreateState
+    {
+        public Arena Arena;
+        public ReadOnlySpan<char> Pattern;
+        public RegexOptions Options;
+        public Regex Regex;
+        public string Error;
+        public int ErrorPosition;
+    }
+
+    static Regex Store(Arena arena, scoped ref RegexCompiler compiler)
     {
         int length = compiler.Program.Count;
         int groups = compiler.Groups;
@@ -181,10 +194,8 @@ public struct Regex
         unsafe
         {
             // SAFETY: every array was just allocated with the length it is filled to.
-            for (int i = 0; i < length; i++)
-                program[i] = compiler.Program.Get(i);
-            for (int i = 0; i < compiler.Ranges.Count; i++)
-                ranges[i] = compiler.Ranges.Get(i);
+            compiler.Program.AsSpan().CopyTo(new Span<Inst>(program, length));
+            compiler.Ranges.AsSpan().CopyTo(new Span<CharRange>(ranges, compiler.Ranges.Count));
             header->Arena = arena;
             header->Program = program;
             header->Length = length;
@@ -477,7 +488,9 @@ public struct Regex
             // Length threads (a pc is added once per list), and the stack has
             // room for 4 entries per instruction, more than the closure pushes.
             Header* h = _header;
-            int slots = 2 * h->Groups;
+            // Only the slots the caller wants are tracked: which threads run,
+            // and in what order, doesn't depend on the others.
+            int slots = Math.Min(2 * h->Groups, captures.Length);
             int* pcs = h->Pcs0, nextPcs = h->Pcs1;
             int* caps = h->Caps0, nextCaps = h->Caps1;
             int count = 0, nextCount;
@@ -497,7 +510,7 @@ public struct Regex
                 {
                     for (int i = 0; i < slots; i++)
                         h->Work[i] = -1;
-                    AddThread(h, input, pos, 0, pcs, caps, ref count, listGeneration);
+                    AddThread(h, input, pos, 0, pcs, caps, slots, ref count, listGeneration);
                 }
                 if (count == 0)
                 {
@@ -517,7 +530,7 @@ public struct Regex
                     if (inst->Op == Op.Match)
                     {
                         matched = true;
-                        for (int i = 0; i < captures.Length && i < slots; i++)
+                        for (int i = 0; i < slots; i++)
                             captures[i] = threadCaps[i];
                         break; // threads after this one are lower in priority
                     }
@@ -525,7 +538,7 @@ public struct Regex
                     {
                         for (int i = 0; i < slots; i++)
                             h->Work[i] = threadCaps[i];
-                        AddThread(h, input, pos + 1, pc + 1, nextPcs, nextCaps, ref nextCount, nextGeneration);
+                        AddThread(h, input, pos + 1, pc + 1, nextPcs, nextCaps, slots, ref nextCount, nextGeneration);
                     }
                 }
 
@@ -597,13 +610,13 @@ public struct Regex
 
     // Adds the thread at pc to the list, after following every instruction
     // that consumes no input (jumps, splits, saves, anchors), in priority
-    // order. h->Work holds the thread's captures; it's restored on the way out.
+    // order. h->Work holds the thread's first slots captures; it's restored on
+    // the way out.
     static unsafe void AddThread(Header* h, ReadOnlySpan<char> input, int pos, int pc0,
-        int* pcs, int* caps, ref int count, int generation)
+        int* pcs, int* caps, int slots, ref int count, int generation)
     {
         unsafe
         {
-            int slots = 2 * h->Groups;
             int* stack = h->Stack;
             int top = 0;
             // Entries: (pc, 0, 0) to visit pc, or (-1, slot, value) to put a
@@ -927,7 +940,7 @@ public readonly ref struct RegexSplit
 }
 
 // The parser and code generator: pattern -> syntax tree -> program. Its
-// memory is a scratch arena that TryCreate frees afterwards.
+// memory comes from the Arena.Scratch call in TryCreate, freed when it returns.
 internal ref struct RegexCompiler
 {
     enum Kind : byte { Empty, Char, Any, Class, Concat, Alternate, Repeat, Group, Assert }
@@ -948,9 +961,9 @@ internal ref struct RegexCompiler
 
     readonly ReadOnlySpan<char> _pattern;
     int _pos;
-    List<Node> _nodes;
-    public List<Regex.Inst> Program;
-    public List<Regex.CharRange> Ranges;
+    ScratchList<Node> _nodes;
+    public ScratchList<Regex.Inst> Program;
+    public ScratchList<Regex.CharRange> Ranges;
     public int Groups;
     public RegexOptions Options;
     string _error;
@@ -960,19 +973,19 @@ internal ref struct RegexCompiler
     // name's index; once every unnamed group is counted, the names are
     // numbered after them, in order of first appearance, as .NET does.
     const int NamedBase = 1 << 20;
-    List<int> _names;      // start and length in the pattern, per name
+    ScratchList<int> _names; // start and length in the pattern, per name
     public int FirstNamed;  // the number of the first named group
     public int NameCount => _names.Count / 2;
-    public ReadOnlySpan<char> NameAt(int index) => _pattern.Slice(_names.Get(2 * index), _names.Get(2 * index + 1));
+    public ReadOnlySpan<char> NameAt(int index) => _pattern.Slice(_names[2 * index], _names[2 * index + 1]);
 
-    public RegexCompiler(Arena scratch, ReadOnlySpan<char> pattern, RegexOptions options)
+    public RegexCompiler(ScratchScope scratch, ReadOnlySpan<char> pattern, RegexOptions options)
     {
         _pattern = pattern;
         _pos = 0;
-        _nodes = List<Node>.Create(scratch, 64);
-        Program = List<Regex.Inst>.Create(scratch, 64);
-        Ranges = List<Regex.CharRange>.Create(scratch, 16);
-        _names = List<int>.Create(scratch, 8);
+        _nodes = scratch.List<Node>(64);
+        Program = scratch.List<Regex.Inst>(64);
+        Ranges = scratch.List<Regex.CharRange>(16);
+        _names = scratch.List<int>(8);
         FirstNamed = 0;
         Groups = 1;
         Options = options;
@@ -982,9 +995,7 @@ internal ref struct RegexCompiler
 
     public bool Run(out string error, out int position)
     {
-        if (!_nodes.IsCreated || !Program.IsCreated || !Ranges.IsCreated || !_names.IsCreated)
-            Fail("the arena is full", -1);
-        int root = _error == null ? ParseAlternation() : -1;
+        int root = ParseAlternation();
         if (_error == null && _pos < _pattern.Length)
             Fail("too many )'s", _pos);
         if (_error == null)
@@ -1011,18 +1022,11 @@ internal ref struct RegexCompiler
 
     int NewNode(Kind kind)
     {
-        if (!_nodes.Add(new Node { Kind = kind, Child = -1, Next = -1, Group = -1 }))
-        {
-            Fail("the arena is full", -1);
-            return 0;
-        }
+        _nodes.Add(new Node { Kind = kind, Child = -1, Next = -1, Group = -1 }); // scratch memory stops the program rather than fail
         return _nodes.Count - 1;
     }
 
-    ref Node At(int index)
-    {
-        unsafe { return ref *_nodes.GetPtr(index); } // SAFETY: index came from NewNode; nodes aren't added while the ref is used.
-    }
+    ref Node At(int index) => ref _nodes[index];
 
     // ---- parsing -------------------------------------------------------------
 
@@ -1272,11 +1276,8 @@ internal ref struct RegexCompiler
             Fail("too many capturing groups (15 at most)", open);
             return -1;
         }
-        if (!_names.Add(start) || !_names.Add(end - start))
-        {
-            Fail("the arena is full", -1);
-            return -1;
-        }
+        _names.Add(start);
+        _names.Add(end - start);
         return NamedBase + NameCount - 1;
     }
 
@@ -1462,11 +1463,7 @@ internal ref struct RegexCompiler
         return node;
     }
 
-    void AddRange(char low, char high)
-    {
-        if (!Ranges.Add(new Regex.CharRange { Low = low, High = high }))
-            Fail("the arena is full", -1);
-    }
+    void AddRange(char low, char high) => Ranges.Add(new Regex.CharRange { Low = low, High = high });
 
     // \d \w \s, or their negations as the ranges around them.
     void AddShorthand(char c)
@@ -1509,15 +1506,11 @@ internal ref struct RegexCompiler
             Fail("the pattern is too large", -1);
             return 0;
         }
-        if (!Program.Add(new Regex.Inst { Op = op, X = x, Y = y }))
-            Fail("the arena is full", -1);
+        Program.Add(new Regex.Inst { Op = op, X = x, Y = y });
         return Program.Count - 1;
     }
 
-    ref Regex.Inst Inst(int index)
-    {
-        unsafe { return ref *Program.GetPtr(index); } // SAFETY: index came from Emit; nothing is emitted while the ref is used.
-    }
+    ref Regex.Inst Inst(int index) => ref Program[index];
 
     void Compile(int index)
     {

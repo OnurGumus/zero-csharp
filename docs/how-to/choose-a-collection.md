@@ -142,9 +142,76 @@ static Ptr<TreeNode> Insert(Arena arena, Ptr<TreeNode> node, int key)
 
 ## Remove items one by one
 
-A `Ptr`'s item lives as long as its arena. When items come and go, a graph whose nodes are deleted or
-jobs that finish, use a `Pool<T>`: `Add` returns a `Handle<T>`, `pool[handle]` is a `ref` to the item,
-and `Remove` frees the slot for the next `Add`. Items can hold handles to each other, as with `Ptr`:
+Every member is in the [Pool reference](../reference/pool.html); this section explains what a pool
+is for.
+
+### The problem with removing
+
+An arena frees its memory all at once. That fits items that live and die together, a tree you
+build and then drop, but not items that come and go one at a time: jobs that finish, enemies in a
+game, towns taken off a map. Each removed item would keep its space until the whole arena goes,
+and a program that runs for long fills the arena with dead items:
+
+```text
+  arena:  [ build ][ test ][ ship ][ docs ][ lint ][ ...      ]
+            done     done            done     done
+          the dead jobs keep their space; only new space is used
+```
+
+So you want to free one item and give its space to the next. But items point at each other, and
+the space being reused doesn't tell those pointers. Here `ship` waits for `test`:
+
+```text
+                     memory at one address
+                    +----------+
+  ship waits for    |   test   |  <--  ship.WaitsFor
+  test is removed   |  (free)  |  <--  ship.WaitsFor   still points here
+  docs is added     |   docs   |  <--  ship.WaitsFor   now reads docs
+                    +----------+
+```
+
+`ship` now waits for `docs`, and nothing says so: no crash, no error, just a wrong answer, found
+much later and far away. Clearing every pointer to `test` when it goes would fix it, but nothing
+knows where all the copies are.
+
+### How a pool and handles help
+
+A `Pool<T>` keeps items in slots. `Remove` frees a slot and the next `Add` reuses it, so memory
+stays the size of the items alive at once. That solves the first problem.
+
+For the second, a pool gives you a `Handle<T>` instead of a pointer. A handle names the slot *and*
+a generation, a count the slot moves on with every `Add` and `Remove`. An old handle carries an
+old count, so it stops matching the moment its item goes, wherever its copies are:
+
+```text
+                     slot 1             ship.WaitsFor   finds
+                    +-----------------+
+  ship waits for    |  test     gen 1 |   slot 1/gen 1   test
+  test is removed   | (free)    gen 2 |   slot 1/gen 1   nothing, 1 != 2
+  docs is added     |  docs     gen 3 |   slot 1/gen 1   nothing, 1 != 3
+                    +-----------------+
+```
+
+Nothing has to find and clear the copies: they go stale by themselves. A handle also carries its
+pool's id, since every pool has a slot 1 and a handle must not find an item in another pool:
+
+```text
+  Handle<Job>, 12 bytes
+  +-----------+-----------+--------------+
+  |  pool id  |   slot    |  generation  |
+  +-----------+-----------+--------------+
+    which pool   where to    which item in
+                 look        that slot
+```
+
+Using a stale handle fails loudly, at the line that uses it, instead of reaching the wrong item:
+
+- `pool[handle]` stops the program with `Pool: the handle's item was removed or moved`.
+- `Contains(handle)` and `TryGet(handle, out item)` ask without stopping.
+
+### In code
+
+The examples store jobs:
 
 <!-- sample: samples/Links.cs task -->
 ```csharp
@@ -157,9 +224,23 @@ public struct Job
 }
 ```
 
-A handle remembers the slot's generation, which `Remove` changes, so a handle kept after its item was
-removed finds nothing, even once the slot holds a new item. `pool[handle]` then stops the program
-with `Pool: the handle's item was removed or moved`; `Contains` and `TryGet` ask without stopping:
+`Add` returns a handle, `pool[handle]` is a `ref` to the item, and `Remove` frees its slot:
+
+<!-- sample: samples/Links.cs pool-basics -->
+```csharp
+var jobs = Pool<Job>.Create(arena);
+Handle<Job> build = jobs.Add(new Job { Id = 1 });
+jobs[build].Id = 10;          // a ref: changes the job in place
+jobs.Remove(build);           // its slot is free again
+Handle<Job> lint = jobs.Add(new Job { Id = 5 });  // reuses it
+bool found = jobs.Contains(build);    // false: build is stale
+// jobs[build] here would stop the program.
+```
+
+### Items that point at each other
+
+A handle is a plain unmanaged struct, so items can hold handles to each other, as `Job`'s
+`WaitsFor` does. Here is the story from the top of this section in code:
 
 <!-- sample: samples/Links.cs pool -->
 ```csharp
@@ -168,14 +249,38 @@ Handle<Job> build = jobs.Add(new Job { Id = 1 });
 Handle<Job> test = jobs.Add(new Job { Id = 2, WaitsFor = build });
 Handle<Job> ship = jobs.Add(new Job { Id = 3, WaitsFor = test });
 jobs.Remove(test);
-// ship still holds the handle, but it no longer finds anything,
-// even once the slot is used again for another job.
-Handle<Job> docs = jobs.Add(new Job { Id = 4 });
+Handle<Job> docs = jobs.Add(new Job { Id = 4 });  // test's old slot
+// ship.WaitsFor is test's handle: it finds nothing, not docs.
 bool waiting = jobs.Contains(jobs[ship].WaitsFor);   // false
 ```
 
-`Move` hands an item to a new owner: the item stays where it is, but it gets a new handle and every
-copy of the old one is refused from then on. `MoveTo` does the same into another pool:
+`test` was in slot 1 and `docs` took it over, but `ship`'s handle still has `test`'s
+generation, so it finds nothing where a pointer would have found `docs`.
+
+### Rules
+
+- **A handle belongs to its pool.** A handle used with another pool is refused with
+  `Pool: the handle is from another pool`.
+- **Items don't move.** The pool grows by chunks and never copies items, so a `ref` from
+  `pool[handle]` stays good while it grows. After a `Remove`, though, the next `Add` may reuse the
+  slot: take the `ref` again rather than keep one across a `Remove`.
+- **Removing while walking is fine.** `foreach` gives the handles, and may `Remove` any item, the
+  current one included; an item added during the walk may or may not be visited:
+
+  <!-- sample: samples/Links.cs remove-while-walking -->
+  ```csharp
+  foreach (Handle<int> number in numbers)
+      if (numbers[number] % 2 == 1)
+          numbers.Remove(number);      // allowed while walking
+  ```
+- **Freed with the arena,** like every collection: a pool and all its items go when the arena is
+  reset, restored or destroyed.
+
+### Handing an item over
+
+`Move` gives an item a new handle and makes every copy of the old one stale, while the item stays
+where it is. Use it when one part of the program hands an item to another and must not touch it
+after: any copy it kept is refused.
 
 <!-- sample: samples/Links.cs move -->
 ```csharp
@@ -186,23 +291,13 @@ Handle<Job> theirs = jobs.Move(ref mine);
 // owner reaches the job.
 ```
 
-- **A handle belongs to its pool.** Each pool has an id of its own, and a handle used with another
-  pool is refused with `Pool: the handle is from another pool`.
-- **Items don't move.** The pool grows by chunks and never copies items, so a `ref` from
-  `pool[handle]` stays good while it grows. After a `Remove`, though, the next `Add` may reuse the
-  slot: take the `ref` again rather than keep one across a `Remove`.
-- **Removing while walking is fine.** `foreach` over a pool may `Remove` any item, the current one
-  included; an item added during the walk may or may not be visited.
+`MoveTo(other, ref handle)` does the same into another pool. Its main use is keeping one result
+from [a scratch pool](../concepts/memory.html#temporary-memory-the-compiler-checks), whose memory
+is gone when the scratch block ends.
 
-  <!-- sample: samples/Links.cs remove-while-walking -->
-  ```csharp
-  foreach (Handle<int> number in numbers)
-      if (numbers[number] % 2 == 1)
-          numbers.Remove(number);      // allowed while walking
-  ```
-- **A handle is 12 bytes:** the pool's id, the slot and its generation.
+### A linked list you can remove from
 
-`LinkedList<T>` is built on a pool, with .NET's names. Each `Add` returns the node's handle, so
+`LinkedList<T>` is a pool underneath, with .NET's names. Each `Add` returns the node's handle, so
 `AddAfter`, `AddBefore` and `Remove` take O(1), and a removed node's handle is refused rather than
 unlinking whatever took its slot. `list[node]` is the node: its `Value`, `Previous` and `Next`.
 
@@ -219,11 +314,87 @@ foreach (ref int item in list)
     item *= 10;                         // 10, 30, 40, 50
 ```
 
-### A graph whose nodes come and go
+`foreach` is the easy way through, but you can follow the links yourself. `list.First` is the
+first node's handle, and each node's `Next` is the handle of the one after it, which you look up
+in the list again. `Previous` goes the other way:
 
-Handles can link items in several pools, and an item can have as many links as it needs: here a
-town holds a handle to its first road, and each road one to the next, so the roads form a list per
-town:
+```text
+   list.First                                        list.Last
+       |                                                 |
+       v                                                 v
+  +----------+     +----------+     +----------+     +----------+
+  | Value 10 |     | Value 30 |     | Value 40 |     | Value 50 |
+  | Next ----+---> | Next ----+---> | Next ----+---> | Next     |--> null
+  | Previous | <---+ Previous | <---+ Previous | <---+ Previous |
+  +----------+     +----------+     +----------+     +----------+
+       |
+       +--> null
+```
+
+The walk stops at the null handle after the last node:
+
+<!-- sample: samples/Links.cs linked-list-walk -->
+```csharp
+// Each node's Next is the handle of the one after it; the last
+// node's Next is the null handle, which ends the walk.
+int total = 0;
+for (var node = list.First; !node.IsNull; node = list[node].Next)
+    total += list[node].Value;          // 10 + 30 + 40 + 50
+```
+
+A handle you walk with is checked like any other: if a node is removed while you hold its handle,
+`list[node]` stops the program instead of following whatever took its slot.
+
+## A larger example: a road map
+
+This example puts the pieces together: towns joined by roads, where a town can be removed and the
+shortest way is found around it. What it shows about pools is that a road left pointing at a removed
+town is harmless, because its handle is stale.
+
+The map, with distances in km:
+
+```text
+             230          150          150
+  harbor --------- mill -------- ford -------- lake
+     |                \                        /
+  260|                 +---------- 330 -------+
+     |
+   hill
+
+  harbor to lake:  530 through ford;  560 once ford is removed
+```
+
+Building it and asking for the shortest way, before and after `ford` is removed:
+
+<!-- sample: samples/Links.cs map-use -->
+```csharp
+Map map = Map.Create(arena);
+Handle<Town> harbor = map.AddTown(1), mill = map.AddTown(2);
+Handle<Town> ford = map.AddTown(3), hill = map.AddTown(4);
+Handle<Town> lake = map.AddTown(5);
+map.Join(harbor, mill, 230);
+map.Join(mill, ford, 150);
+map.Join(ford, lake, 150);
+map.Join(mill, lake, 330);
+map.Join(harbor, hill, 260);
+int before = Distance(map, harbor, lake);   // 530, through ford
+map.RemoveTown(ford);
+int after = Distance(map, harbor, lake);    // 560, mill to lake
+```
+
+### Towns and roads
+
+Towns and roads live in two pools. A town has any number of roads, so it holds a handle to its first
+road, and each road holds a handle to the next. Here are `mill`'s roads; every arrow is a handle:
+
+```text
+  Towns pool         Roads pool
+  +-------------+    +------------+    +------------+    +------------+
+  | mill        |    | To: lake   |    | To: ford   |    | To: harbor |
+  | FirstRoad --+--> | 330 km     |    | 150 km     |    | 230 km     |
+  +-------------+    | Next ------+--> | Next ------+--> | Next: null |
+                     +------------+    +------------+    +------------+
+```
 
 <!-- sample: samples/Links.cs map -->
 ```csharp
@@ -244,8 +415,40 @@ public struct Road
 }
 ```
 
-`Map` keeps the two pools and adds a road both ways. Removing a town removes it and its own roads,
-and leaves the roads that lead to it from other towns:
+`Map` keeps the two pools. Adding a road puts it in front of its town's list:
+
+<!-- sample: samples/Links.cs map-join -->
+```csharp
+public Pool<Town> Towns;
+public Pool<Road> Roads;
+
+public static Map Create(Arena arena) => new Map
+{
+    Towns = Pool<Town>.Create(arena),
+    Roads = Pool<Road>.Create(arena),
+};
+
+public Handle<Town> AddTown(int id) => Towns.Add(new Town { Id = id });
+
+// A road both ways.
+public void Join(Handle<Town> a, Handle<Town> b, int km)
+{
+    OneWay(a, b, km);
+    OneWay(b, a, km);
+}
+
+// The new road goes in front of the town's chain of roads.
+void OneWay(Handle<Town> from, Handle<Town> to, int km)
+{
+    ref Town town = ref Towns[from];
+    town.FirstRoad = Roads.Add(
+        new Road { To = to, Km = km, Next = town.FirstRoad });
+}
+```
+
+### Removing a town
+
+`RemoveTown` walks the town's own roads, removes each, then removes the town:
 
 <!-- sample: samples/Links.cs map-remove -->
 ```csharp
@@ -264,9 +467,28 @@ public void RemoveTown(Handle<Town> town)
 }
 ```
 
-Those roads are safe to keep: their `To` belongs to a removed town, so `Contains` says false, even
-after the slot holds a new town, where a pointer to the slot would read the new town as the old.
-A search skips them, and keeps its own tables in scratch memory, keyed by handle:
+It doesn't touch the roads *to* the town from other towns. After `RemoveTown(ford)`, `mill` still
+has its road to `ford`:
+
+```text
+  +-------------+    +------------+    +------------+    +------------+
+  | mill        |    | To: lake   |    | To: ford   |    | To: harbor |
+  | FirstRoad --+--> | 330 km     |    | 150 km     |    | 230 km     |
+  +-------------+    | Next ------+--> | Next ------+--> | Next: null |
+                     +------------+    +------------+    +------------+
+                                             |
+                                     a stale handle: ford was removed
+```
+
+That road is harmless. Its `To` is stale, so `Towns.Contains(road.To)` is false, even after a new
+town takes `ford`'s slot. Code that follows roads checks that and skips the road.
+
+### Finding the shortest way
+
+`Distance` does that check. The rest is an ordinary shortest-path search (Dijkstra's, with a scan
+instead of a priority queue), whose tables are [scratch memory](../concepts/memory.html#temporary-memory-the-compiler-checks)
+keyed by handle and gone when it returns. `Trip` is a struct carrying the map and both towns into
+the scratch block:
 
 <!-- sample: samples/Links.cs distance -->
 ```csharp
@@ -313,26 +535,23 @@ static int Distance(Map map, Handle<Town> from, Handle<Town> to)
 }
 ```
 
-<!-- sample: samples/Links.cs map-use -->
-```csharp
-Map map = Map.Create(arena);
-Handle<Town> harbor = map.AddTown(1), mill = map.AddTown(2);
-Handle<Town> ford = map.AddTown(3), hill = map.AddTown(4);
-Handle<Town> lake = map.AddTown(5);
-map.Join(harbor, mill, 230);
-map.Join(mill, ford, 150);
-map.Join(ford, lake, 150);
-map.Join(mill, lake, 330);
-map.Join(harbor, hill, 260);
-int before = Distance(map, harbor, lake);   // 530, through ford
-map.RemoveTown(ford);
-int after = Distance(map, harbor, lake);    // 560, mill to lake
-```
+### Sweeping out dead roads
 
-The roads left behind still take their slots in the pool. Where towns come and go often, sweep them
-out now and then. A dead road is still in its town's chain, so the sweep unlinks it before it
+The roads left behind still take slots in the `Roads` pool. Where towns come and go often, sweep
+them out now and then. A dead road is still in its town's list, so the sweep unlinks it before it
 removes it; `link` is a `ref` to the handle that leads to the road, the town's `FirstRoad` or the
 previous road's `Next`:
+
+```text
+  link refers to the Next that leads to the dead road:
+
+  FirstRoad --> [ To: lake | Next ] --> [ To: ford | Next ] --> [ To: harbor ]
+                             ^ link       (dead)
+
+  link = Roads[road].Next makes the chain skip it, then Roads.Remove(road):
+
+  FirstRoad --> [ To: lake | Next ] ------------------------> [ To: harbor ]
+```
 
 <!-- sample: samples/Links.cs map-prune -->
 ```csharp
@@ -362,9 +581,10 @@ public int Prune()
 }
 ```
 
-Removing the road without unlinking it would leave the chain leading to a removed road, and the next
-walk along it would stop the program at `Roads[road]`. With two-way roads, removing the roads back
-when the town goes, by following each of its roads to the other end, saves the sweep.
+Removing the road without unlinking it would leave the list leading to a removed road, and the next
+walk along it would stop the program at `Roads[road]`. Since roads here go both ways, `RemoveTown`
+could instead follow each of its roads to the other end and remove the road back, and no sweep
+would be needed.
 
 ## Key by an id, not by an object
 

@@ -30,6 +30,8 @@ the [tutorial](../tutorial/index.html) builds a quiz step by step.
   buffers of a size you choose, from an arena.
 - [Use the network](use-the-network.html): TCP and UDP sockets, `TcpListener`, `TcpClient` and
   `Dns`, as in .NET, with a fiber per connection.
+- [Use cryptography](use-cryptography.html): SHA-2, HMAC, HKDF, ChaCha20-Poly1305 and X25519 with
+  .NET's names, random bytes from the system, and an encrypted stream over a connection.
 - [Recover from errors](recover-from-errors.html): `Catch.Run` gets back what a `throw` threw, and
   closes the files and sockets left open, instead of the program ending.
 - [Work with dates and times](work-with-dates-and-times.html): `DateTime`, `DateTimeOffset`,

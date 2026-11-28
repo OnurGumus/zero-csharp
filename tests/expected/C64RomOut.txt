@@ -1,0 +1,2 @@
+Printed with the KERNAL ROM out.
+Type a word: All 9 checks passed.

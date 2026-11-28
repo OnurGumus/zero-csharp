@@ -180,7 +180,7 @@ namespace System.Threading.Tasks
     }
 
     /// <summary>An operation that completes later: await it, or Wait for it.</summary>
-    public class Task
+    public partial class Task
     {
         bool _completed;
         bool _canceled;
@@ -748,17 +748,21 @@ namespace System.Threading.Tasks
     {
         readonly Task _task = new Task();
 
+        // The thread that made it: only that one may complete it.
+        readonly nint _thread = OwnThread.Current;
+
         public Task Task => _task;
 
         /// <summary>Completes the task. Stops the program if it already was.</summary>
         public void SetResult()
         {
+            OwnThread.Check(_thread);
             if (!_task.Complete())
                 Environment.FailFast("TaskCompletionSource.SetResult: the task has already completed");
         }
 
         /// <summary>Completes the task. False if it already was.</summary>
-        public bool TrySetResult() => _task.Complete();
+        public bool TrySetResult() => OwnThread.Check(_thread) && _task.Complete();
 
         /// <summary>Cancels the task. Stops the program if it had already completed.</summary>
         public void SetCanceled() => SetCanceled(default);
@@ -766,15 +770,16 @@ namespace System.Threading.Tasks
         /// <summary>Cancels the task. Stops the program if it had already completed.</summary>
         public void SetCanceled(CancellationToken cancellationToken)
         {
+            OwnThread.Check(_thread);
             if (!_task.Complete(true))
                 Environment.FailFast("TaskCompletionSource.SetCanceled: the task has already completed");
         }
 
         /// <summary>Cancels the task. False if it had already completed.</summary>
-        public bool TrySetCanceled() => _task.Complete(true);
+        public bool TrySetCanceled() => OwnThread.Check(_thread) && _task.Complete(true);
 
         /// <summary>Cancels the task. False if it had already completed.</summary>
-        public bool TrySetCanceled(CancellationToken cancellationToken) => _task.Complete(true);
+        public bool TrySetCanceled(CancellationToken cancellationToken) => OwnThread.Check(_thread) && _task.Complete(true);
 
         /// <summary>Faults the task with <paramref name="exception"/> (an OperationCanceledException cancels it). Stops the program if it had already completed.</summary>
         public void SetException(Exception exception)
@@ -792,17 +797,21 @@ namespace System.Threading.Tasks
     {
         readonly Task<TResult> _task = new Task<TResult>();
 
+        // The thread that made it: only that one may complete it.
+        readonly nint _thread = OwnThread.Current;
+
         public Task<TResult> Task => _task;
 
         /// <summary>Completes the task with <paramref name="result"/>. Stops the program if it already was.</summary>
         public void SetResult(TResult result)
         {
+            OwnThread.Check(_thread);
             if (!_task.TrySetResult(result))
                 Environment.FailFast("TaskCompletionSource.SetResult: the task has already completed");
         }
 
         /// <summary>Completes the task with <paramref name="result"/>. False if it already was.</summary>
-        public bool TrySetResult(TResult result) => _task.TrySetResult(result);
+        public bool TrySetResult(TResult result) => OwnThread.Check(_thread) && _task.TrySetResult(result);
 
         /// <summary>Cancels the task. Stops the program if it had already completed.</summary>
         public void SetCanceled() => SetCanceled(default);
@@ -810,15 +819,16 @@ namespace System.Threading.Tasks
         /// <summary>Cancels the task. Stops the program if it had already completed.</summary>
         public void SetCanceled(CancellationToken cancellationToken)
         {
+            OwnThread.Check(_thread);
             if (!_task.Complete(true))
                 Environment.FailFast("TaskCompletionSource.SetCanceled: the task has already completed");
         }
 
         /// <summary>Cancels the task. False if it had already completed.</summary>
-        public bool TrySetCanceled() => _task.Complete(true);
+        public bool TrySetCanceled() => OwnThread.Check(_thread) && _task.Complete(true);
 
         /// <summary>Cancels the task. False if it had already completed.</summary>
-        public bool TrySetCanceled(CancellationToken cancellationToken) => _task.Complete(true);
+        public bool TrySetCanceled(CancellationToken cancellationToken) => OwnThread.Check(_thread) && _task.Complete(true);
 
         /// <summary>Faults the task with <paramref name="exception"/> (an OperationCanceledException cancels it). Stops the program if it had already completed.</summary>
         public void SetException(Exception exception)
@@ -829,6 +839,28 @@ namespace System.Threading.Tasks
 
         /// <summary>Faults the task. False if it had already completed.</summary>
         public bool TrySetException(Exception exception) => _task.Fail(exception ?? throw new ArgumentNullException(nameof(exception)));
+    }
+
+
+    // Which thread made a TaskCompletionSource. Tasks belong to their thread
+    // and nothing in them is locked, so completing one from another thread
+    // (a C library's callback thread, say) would corrupt it: stopped here.
+    static class OwnThread
+    {
+        [ThreadStatic] static byte t_marker;
+
+        // This thread, by an address only it has.
+        internal static nint Current
+        {
+            get { unsafe { return (nint)Unsafe.AsPointer(ref t_marker); } } // SAFETY: only compared, never read through
+        }
+
+        internal static bool Check(nint owner)
+        {
+            if (owner != Current)
+                Environment.FailFast("TaskCompletionSource: completed from another thread than the one that made it; use ThreadCompletionSource (lib/ThreadCompletion.cs), which any thread may complete");
+            return true;
+        }
     }
 
     /// <summary>What a task is doing (only the states a task here can be in).</summary>

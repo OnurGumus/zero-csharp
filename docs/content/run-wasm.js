@@ -72,6 +72,11 @@ export async function runWasm(module, { args = [], stdin = '' } = {}) {
       view().setBigUint64(timeOut, BigInt(Math.round(ms * 1e6)), true);
       return 0;
     },
+    // Random bytes (getentropy, lib/CryptoRandom.cs), from the browser's or Node's crypto.
+    random_get(pointer, length) {
+      globalThis.crypto.getRandomValues(bytesAt().subarray(pointer, pointer + length));
+      return 0;
+    },
     fd_close() { return 0; },
     // No environment variables.
     environ_sizes_get(countOut, sizeOut) {
