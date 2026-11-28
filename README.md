@@ -108,7 +108,9 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - Lambdas and delegates, `try`/`finally`, `using`
 - Static fields and static constructors, `Main(string[] args)`, top-level statements
 - P/Invoke and `[UnmanagedCallersOnly]` callbacks
-- Files, a monotonic clock and the date, and seeded random numbers, from `lib/`, on every target
+- `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, `TimeZoneInfo` and `Stopwatch`,
+  with local time from the system's zone
+- Files and seeded random numbers, from `lib/`, on every target
 - SIMD intrinsics (NEON, AVX2, FMA), `Interlocked`, `Volatile`, threads through `Parallel.For`, and green threads (fibers) with channels
 - `async`/`await` with `Task`, `ValueTask` and cancellation, on fibers; async sockets and files
 

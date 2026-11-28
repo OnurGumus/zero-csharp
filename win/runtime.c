@@ -435,6 +435,72 @@ int clock_gettime(int clock, i64 *timespec)
     return 0;
 }
 
+// struct tm's first nine fields: all zerocore's TimeZoneInfo reads.
+typedef struct { int sec, min, hour, mday, mon, year, wday, yday, isdst; } zero_tm;
+
+// A Unix time broken down as UTC, for any year (Howard Hinnant's
+// civil_from_days).
+static void civil_tm(i64 t, zero_tm *tm)
+{
+    i64 days = t / 86400, rest = t % 86400;
+    if (rest < 0) {
+        rest += 86400;
+        days--;
+    }
+    tm->hour = (int)(rest / 3600);
+    tm->min = (int)(rest / 60 % 60);
+    tm->sec = (int)(rest % 60);
+    tm->wday = (int)(((days % 7) + 11) % 7); // 1970-01-01 was a Thursday
+    i64 z = days + 719468;
+    i64 era = (z >= 0 ? z : z - 146096) / 146097;
+    i64 day_of_era = z - era * 146097;
+    i64 year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
+    i64 day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    i64 shifted = (5 * day_of_year + 2) / 153; // 0 is March
+    i64 month = shifted < 10 ? shifted + 3 : shifted - 9;
+    tm->mday = (int)(day_of_year - (153 * shifted + 2) / 5 + 1);
+    tm->mon = (int)(month - 1);
+    tm->year = (int)(year_of_era + era * 400 + (month <= 2) - 1900);
+    tm->yday = 0;
+    tm->isdst = 0;
+}
+
+static i64 days_from_civil(i64 year, int month, int day)
+{
+    year -= month <= 2;
+    i64 era = (year >= 0 ? year : year - 399) / 400;
+    i64 year_of_era = year - era * 400;
+    i64 day_of_year = (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
+    i64 day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    return era * 146097 + day_of_era - 719468;
+}
+
+int _localtime64_s(zero_tm *tm, const i64 *time);
+
+// Local time by the system's time zone settings, for zerocore's
+// TimeZoneInfo.Local. The Universal CRT's _localtime64_s takes 1970 to 3000:
+// outside that, the offset at the nearer end.
+zero_tm *localtime_r(const i64 *time, zero_tm *result)
+{
+    i64 t = *time;
+    i64 probe = t < 0 ? 0 : t > 32535215999ll ? 32535215999ll : t;
+    zero_tm local;
+    if (_localtime64_s(&local, &probe) != 0)
+        return 0;
+    if (probe == t) {
+        *result = local;
+        return result;
+    }
+    i64 offset = days_from_civil(local.year + 1900ll, local.mon + 1, local.mday) * 86400
+        + local.hour * 3600 + local.min * 60 + local.sec - probe;
+    civil_tm(t + offset, result);
+    return result;
+}
+
+// No symbolic link names the zone here; TimeZoneInfo.Local's Id is then TZ or
+// "Local".
+i64 readlink(const char *path, char *buffer, u64 size) { return -1; }
+
 // 64-bit file positions for lib/File.cs. POSIX calls these fseeko and ftello;
 // the Universal CRT has them as _fseeki64 and _ftelli64.
 int fseeko(void *stream, i64 offset, int origin) { return _fseeki64(stream, offset, origin); }

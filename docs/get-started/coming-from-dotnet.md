@@ -30,7 +30,7 @@ instead, and lists what compiles as usual but behaves differently.
 | `Task`, `async`/`await`, `CancellationToken`, `TimeProvider` | The same, on fibers: one thread runs them all, with no thread pool | [Use async and await](../how-to/use-fibers.html#use-async-and-await) |
 | `Thread`, `Parallel.For` | `Parallel.For`; fibers for work that waits | [Run a loop in parallel](../how-to/run-in-parallel.html) |
 | `File.ReadAllText`, `File.WriteAllText`, `FileStream` | `File`, with the same names for whole files (strings and bytes read go in an arena), and `FileStream`; their async methods run on an I/O thread | [Read and write files](../how-to/read-and-write-files.html) |
-| `Stopwatch`, `DateTime.UtcNow` | `Clock.Monotonic` (nanoseconds), `Clock.UtcNow` (a `CalendarTime`) | [Use the clock and random numbers](../how-to/use-the-clock-and-random-numbers.html) |
+| `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeZoneInfo`, `Stopwatch` | The same, in zerocore; local time from the system's zone, with no time zone database for other zones | [Work with dates and times](../how-to/work-with-dates-and-times.html) |
 | `Random` | `Random`, a struct with .NET's method names: pass it by `ref` | [Use the clock and random numbers](../how-to/use-the-clock-and-random-numbers.html) |
 | `Environment.Exit`, `GetEnvironmentVariable`, `ProcessorCount`, `TickCount64`, `NewLine` | The same, in zerocore; `NewLine` is `"\n"` on every target | [Read environment variables and exit](../how-to/use-the-environment.html) |
 | `Vector128.IsHardwareAccelerated`, `Avx2.IsSupported` at run time | Decided when building, by `ZeroInstructionSet` (`-m`) | [Use SIMD](../how-to/use-simd.html) |

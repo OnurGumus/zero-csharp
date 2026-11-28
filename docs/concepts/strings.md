@@ -276,8 +276,9 @@ Check("another culture throws", message == InvariantOnly
 `CurrentCulture` and `CurrentUICulture` can be set, to an invariant culture since there is no
 other, and each is one setting for the whole program rather than one per thread.
 `NumberFormatInfo` is read-only and has no public constructor, so code that sets its own decimal
-separator doesn't compile, rather than compiling and being ignored. `TextInfo`, `CompareInfo` and
-`DateTimeFormatInfo` aren't there yet.
+separator doesn't compile, rather than compiling and being ignored. `DateTimeFormatInfo` is the same
+for dates (see [Work with dates and times](../how-to/work-with-dates-and-times.html)). `TextInfo` and
+`CompareInfo` aren't there yet.
 
 ## What allocates
 
