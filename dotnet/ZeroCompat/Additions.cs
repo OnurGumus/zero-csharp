@@ -52,7 +52,6 @@ public static class ZeroStreamExtensions
 }
 #endif
 
-#if ZERO_DOTNET_BCL
 namespace System.Security.Cryptography
 {
     static class ZeroCryptoExtensions
@@ -77,7 +76,7 @@ namespace System.Security.Cryptography
         }
     }
 }
-#endif
+
 
 #if ZERO_DOTNET_BCL
 // lib/Catch.cs calls these on lib/'s own FileStream, Socket and Task.

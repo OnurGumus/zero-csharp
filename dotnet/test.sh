@@ -2,10 +2,11 @@
 # The samples of ../test.sh, built for real .NET (CoreCLR), run, and checked the
 # same way: exit code 0, and the output tests/expected holds.
 #
-# By default with all of lib/ compiled into the program (dotnet/Faithful): its
-# Task, timers, streams, sockets and Console take the place of the BCL's, so
-# the program behaves as in zero mode (Task.Run starts a fiber, a socket lets
-# the other fibers run). With --bcl-types those are .NET's own, for a program
+# By default with lib/ compiled into the program (dotnet/Faithful): its Task,
+# timers, streams, sockets and Console take the place of the BCL's, so the
+# program behaves as in zero mode (Task.Run starts a fiber, a socket lets the
+# other fibers run). Not its SHA-2, HMAC, HKDF, ChaCha20-Poly1305 and random
+# numbers: those are .NET's, which are the platform's. With --bcl-types those are .NET's own, for a program
 # that hands them to other .NET code: the samples then reference
 # dotnet/ZeroCompat, lib/ without what .NET has.
 #
