@@ -3,6 +3,8 @@
 // written every way NumberStyles allows, integer limits, and strings exactly
 // at (or a hair off) the halfway point between two doubles, floats or Halfs.
 // Usage: check-parsing.sh [iterations] [seed]
+using CultureInfo = System.Globalization.CultureInfo;
+using NumberFormatInfo = System.Globalization.NumberFormatInfo;
 using System;
 using System.Globalization;
 using System.Numerics;
@@ -118,10 +120,10 @@ static class Program
     {
         ulong mask = k.Bits == 64 ? ulong.MaxValue : (1UL << k.Bits) - 1;
         string expected = Outcome(() => k.Parse(s, style));
-        string actual = Outcome(() => Number.ParseInteger(s, style, k.Signed, k.Bits, k.MaxDigits, k.Overflow) & mask);
+        string actual = Outcome(() => Number.ParseInteger(s, style, k.Signed, k.Bits, k.MaxDigits, k.Overflow, null) & mask);
         Compare(k.Name, s, style, expected, actual);
         string expectedTry = TryOutcome(() => k.TryParse(s, style));
-        string actualTry = TryOutcome(() => { bool ok = Number.TryParseInteger(s, style, k.Signed, k.Bits, k.MaxDigits, out ulong raw); return (ok, raw & mask); });
+        string actualTry = TryOutcome(() => { bool ok = Number.TryParseInteger(s, style, k.Signed, k.Bits, k.MaxDigits, null, out ulong raw); return (ok, raw & mask); });
         Compare(k.Name + ".Try", s, style, expectedTry, actualTry);
         Compare(k.Name + ".Try/Parse", s, style, TryOf(expected), expectedTry);
     }
@@ -129,10 +131,10 @@ static class Program
     static void CheckFloat(FloatKind k, string s, NumberStyles style)
     {
         string expected = Outcome(() => k.Parse(s, style));
-        string actual = Outcome(() => Number.ParseFloat(s, style, k.Format()));
+        string actual = Outcome(() => Number.ParseFloat(s, style, k.Format(), null));
         Compare(k.Name, s, style, expected, actual);
         string expectedTry = TryOutcome(() => k.TryParse(s, style));
-        string actualTry = TryOutcome(() => { bool ok = Number.TryParseFloat(s, style, k.Format(), out ulong bits); return (ok, ok ? bits : 0); });
+        string actualTry = TryOutcome(() => { bool ok = Number.TryParseFloat(s, style, k.Format(), null, out ulong bits); return (ok, ok ? bits : 0); });
         Compare(k.Name + ".Try", s, style, expectedTry, actualTry);
     }
 
@@ -391,5 +393,15 @@ namespace ZeroTest
     {
         internal static string FromChars(char* chars, int length) => new string(chars, 0, length);
         internal static ReadOnlySpan<char> AsSpan(string text) => text;
+        // Number.cs isn't copied; only a current culture with symbols of its own uses this.
+        internal static string IntegerToString(ulong raw, bool signed, int bits, string format, IFormatProvider provider) => throw new NotSupportedException();
+    }
+
+    // What the copied files ask of CultureInfo: the invariant culture.
+    public class CultureInfo : IFormatProvider
+    {
+        public static CultureInfo CurrentCulture { get; } = new CultureInfo();
+        public ZeroTest.NumberFormatInfo NumberFormat => ZeroTest.NumberFormatInfo.InvariantInfo;
+        public object GetFormat(Type formatType) => null;
     }
 }

@@ -237,10 +237,10 @@ namespace System
 
         public override string ToString() => DateTimeFormat.Format(ClockDateTime, null, Offset);
         public string ToString(string format) => DateTimeFormat.Format(ClockDateTime, format, Offset);
-        public string ToString(IFormatProvider formatProvider) => DateTimeFormat.Format(ClockDateTime, null, Offset);
-        public string ToString(string format, IFormatProvider formatProvider) => DateTimeFormat.Format(ClockDateTime, format, Offset);
+        public string ToString(IFormatProvider formatProvider) => DateTimeFormat.Format(ClockDateTime, null, Offset, formatProvider);
+        public string ToString(string format, IFormatProvider formatProvider) => DateTimeFormat.Format(ClockDateTime, format, Offset, formatProvider);
 
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider formatProvider = null)
-            => DateTimeFormat.TryFormat(ClockDateTime, destination, out charsWritten, format, Offset);
+            => DateTimeFormat.TryFormat(ClockDateTime, destination, out charsWritten, format, Offset, formatProvider);
     }
 }

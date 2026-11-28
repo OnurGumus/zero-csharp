@@ -222,10 +222,11 @@ here). When it returns false, `chain.ChainStatus` says why, with .NET's flags: `
 `VerificationFlags` can overlook some of them, such as `IgnoreNotTimeValid` for a test machine
 whose clock is wrong.
 
-Leave `TrustMode` alone to trust the system's roots instead. They come from the PEM bundle Linux
-distributions and macOS keep (`/etc/ssl/certs/ca-certificates.crt`, `/etc/ssl/cert.pem`, or the file
-in `SSL_CERT_FILE`), and Android's `/system/etc/security/cacerts`. Windows, WebAssembly, DOS, UEFI
-and microcontrollers have no such file, so there give the roots yourself.
+Leave `TrustMode` alone to trust the system's roots instead. They come from Windows' ROOT
+certificate store, the PEM bundle Linux distributions and macOS keep
+(`/etc/ssl/certs/ca-certificates.crt`, `/etc/ssl/cert.pem`, or the file in `SSL_CERT_FILE`), and
+Android's `/system/etc/security/cacerts`. WebAssembly, DOS, UEFI and microcontrollers have none, so
+there give the roots yourself.
 
 | What | Supported |
 |---|---|

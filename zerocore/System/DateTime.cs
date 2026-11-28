@@ -555,11 +555,11 @@ namespace System
 
         public override string ToString() => DateTimeFormat.Format(this, null, DateTimeFormat.NullOffset);
         public string ToString(string format) => DateTimeFormat.Format(this, format, DateTimeFormat.NullOffset);
-        public string ToString(IFormatProvider provider) => DateTimeFormat.Format(this, null, DateTimeFormat.NullOffset);
-        public string ToString(string format, IFormatProvider provider) => DateTimeFormat.Format(this, format, DateTimeFormat.NullOffset);
+        public string ToString(IFormatProvider provider) => DateTimeFormat.Format(this, null, DateTimeFormat.NullOffset, provider);
+        public string ToString(string format, IFormatProvider provider) => DateTimeFormat.Format(this, format, DateTimeFormat.NullOffset, provider);
 
         public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format = default, IFormatProvider provider = null)
-            => DateTimeFormat.TryFormat(this, destination, out charsWritten, format, DateTimeFormat.NullOffset);
+            => DateTimeFormat.TryFormat(this, destination, out charsWritten, format, DateTimeFormat.NullOffset, provider);
 
         public string ToLongDateString() => DateTimeFormat.Format(this, "D", DateTimeFormat.NullOffset);
         public string ToLongTimeString() => DateTimeFormat.Format(this, "T", DateTimeFormat.NullOffset);
@@ -569,8 +569,8 @@ namespace System
         // The value in every standard format, as .NET lists them for the
         // invariant culture.
         public string[] GetDateTimeFormats() => DateTimeFormat.AllFormats(this, '\0');
-        public string[] GetDateTimeFormats(IFormatProvider provider) => DateTimeFormat.AllFormats(this, '\0');
+        public string[] GetDateTimeFormats(IFormatProvider provider) => DateTimeFormat.AllFormats(this, '\0', provider);
         public string[] GetDateTimeFormats(char format) => DateTimeFormat.AllFormats(this, format);
-        public string[] GetDateTimeFormats(char format, IFormatProvider provider) => DateTimeFormat.AllFormats(this, format);
+        public string[] GetDateTimeFormats(char format, IFormatProvider provider) => DateTimeFormat.AllFormats(this, format, provider);
     }
 }

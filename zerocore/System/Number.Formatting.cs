@@ -1,8 +1,8 @@
 // Numbers as text with .NET's standard format strings, in the invariant
 // culture: "D8", "X4", "B8", "F2", "N0", "E3", "G5", "P1", "C", "R" and the
 // default. The text is .NET's, character for character (scripts/format-check
-// compares the two over millions of values). An IFormatProvider is accepted
-// and ignored: there are no cultures here.
+// compares the two over millions of values). A NumberFormatInfo of your own
+// (in Sink.Info) hands the text over to Number.Culture.cs.
 //
 // What .NET does and this does too:
 // - double, float and Half print their exact binary value, rounded to the
@@ -20,6 +20,8 @@
 // This file uses nothing but Span and FormatException, so scripts/
 // format-check compiles it against real .NET as well.
 
+using System.Globalization;
+
 namespace System
 {
     internal static unsafe partial class Number
@@ -33,12 +35,15 @@ namespace System
             private readonly char* _chars;
             private readonly int _capacity;
             public int Length;
+            // Symbols of your own, or null for the invariant culture's.
+            public NumberFormatInfo Info;
 
             public Sink(char* chars, int capacity)
             {
                 _chars = chars;
                 _capacity = capacity;
                 Length = 0;
+                Info = null;
             }
 
             public bool Fits => Length <= _capacity;
@@ -194,6 +199,15 @@ namespace System
         // decimal exponent above which "G" switches to scientific notation.
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private static void Emit(ref Digits n, char format, int precision, int maxDigits, bool noScientific, ref Sink s)
+        {
+            if (s.Info == null)
+                InvariantEmit(ref n, format, precision, maxDigits, noScientific, ref s);
+            else
+                CultureEmit(ref n, format, precision, maxDigits, noScientific, ref s);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static void InvariantEmit(ref Digits n, char format, int precision, int maxDigits, bool noScientific, ref Sink s)
         {
             char upper = Upper(format);
             int decimals = precision < 0 ? 2 : precision;
@@ -391,10 +405,11 @@ namespace System
             for (int i = 0; i < length; i++)
                 d[i] = reversed[length - 1 - i];
 
-            if (upper == 'D' || upper == '\0' || upper == 'R' || (upper == 'G' && precision <= 0))
+            // "R" on an integer is "G": "R4" rounds to four digits, as in .NET.
+            if (upper == 'D' || upper == '\0' || ((upper == 'G' || upper == 'R') && precision <= 0))
             {
                 if (negative)
-                    s.Add('-');
+                    AddNegative(ref s);
                 if (upper == 'D')
                     s.Add('0', precision - length);
                 for (int i = 0; i < length; i++)
@@ -404,6 +419,11 @@ namespace System
             // Zero has no digits here.
             n.Count = d[0] == 0 ? 0 : length;
             n.Scale = n.Count;
+            if (upper == 'R')
+            {
+                format = format == 'r' ? 'g' : 'G';
+                upper = 'G';
+            }
             if (upper != 'G' && upper != 'F' && upper != 'N' && upper != 'E' && upper != 'P' && upper != 'C')
                 throw BadFormat();
             int cutoff = Cutoff(upper, precision, out bool significant);
@@ -418,6 +438,12 @@ namespace System
         internal static void FormatDecimal(ulong lo64, uint hi32, int scale, bool negative, char format, int precision, ref Sink s)
         {
             char upper = Upper(format);
+            // "R" on a decimal is "G", as in .NET.
+            if (upper == 'R')
+            {
+                format = format == 'r' ? 'g' : 'G';
+                upper = 'G';
+            }
             if (upper != '\0' && upper != 'G' && upper != 'R' && upper != 'F' && upper != 'N' && upper != 'E' && upper != 'P' && upper != 'C')
                 throw BadFormat();
 
@@ -560,7 +586,8 @@ namespace System
                 Dragon4(mantissa, exponent, unequalMargins, cutoff, significant, capacity, ref n);
             if (shortest)
             {
-                Emit(ref n, format == 'g' ? 'g' : 'G', -1, roundTripDigits, false, ref s);
+                // "g" and "r" write a lowercase e, as in .NET.
+                Emit(ref n, format == 'g' || format == 'r' ? 'g' : 'G', -1, roundTripDigits, false, ref s);
                 return;
             }
             Round(ref n, n.Count);
@@ -570,6 +597,11 @@ namespace System
         // NaN, Infinity and -Infinity, whatever the format.
         private static void FormatNonFinite(bool nan, bool negative, ref Sink s)
         {
+            if (s.Info != null)
+            {
+                s_culture.NonFinite(nan, negative, ref s);
+                return;
+            }
             if (nan)
                 s.Add("NaN");
             else

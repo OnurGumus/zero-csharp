@@ -225,6 +225,15 @@ _ZeroSystem:
     mov     w0, #3
     ret
 
+// ZeroRootCertificate(previous, data, length), for lib/CryptoX509Chain.cs:
+// the system's trusted roots one at a time. X509Chain reads macOS's
+// /etc/ssl/cert.pem itself, so here there are none: null.
+    .globl _ZeroRootCertificate
+    .p2align 2
+_ZeroRootCertificate:
+    mov     x0, #0
+    ret
+
 // fcntl(fd, command, argument), for lib/Sockets.cs. fcntl is variadic, and
 // macOS's arm64 passes a variadic function's extra arguments on the stack,
 // not in registers as a call from C# does: this moves the third there.

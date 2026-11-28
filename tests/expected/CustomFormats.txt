@@ -1,0 +1,5 @@
+PASS NumberFormatInfo (16 checks)
+PASS CultureInfo (4 checks)
+PASS DateTimeFormatInfo (10 checks)
+
+All checks passed.

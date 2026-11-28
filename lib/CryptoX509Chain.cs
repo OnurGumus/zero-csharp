@@ -27,10 +27,10 @@
 //
 // Trust comes from ChainPolicy.CustomTrustStore when TrustMode is
 // CustomRootTrust, else from the system's roots: the PEM bundle at
-// SSL_CERT_FILE, or the distribution's (/etc/ssl/certs/ca-certificates.crt
-// and the like), macOS's /etc/ssl/cert.pem, Android's
-// /system/etc/security/cacerts. Windows, WebAssembly, DOS, UEFI and the
-// microcontrollers have no such file here: use CustomRootTrust there.
+// SSL_CERT_FILE, or Windows' ROOT certificate store, or the distribution's
+// bundle (/etc/ssl/certs/ca-certificates.crt and the like), macOS's
+// /etc/ssl/cert.pem, Android's /system/etc/security/cacerts. WebAssembly,
+// DOS, UEFI and the microcontrollers have none: use CustomRootTrust there.
 //
 // Not done: revocation (CRLs, OCSP). With RevocationMode left at Online, as
 // .NET has it, Build reports RevocationStatusUnknown and refuses the chain
@@ -575,11 +575,33 @@ internal static class SystemRoots
         string fromEnvironment = Environment.GetEnvironmentVariable("SSL_CERT_FILE");
         if (!string.IsNullOrEmpty(fromEnvironment))
             AddFile(roots, fromEnvironment);
+        if (roots.Count == 0)
+            AddSystemStore(roots); // Windows' ROOT store; nothing elsewhere
         for (int i = 0; i < s_files.Length && roots.Count == 0; i++)
             AddFile(roots, s_files[i]);
         if (roots.Count == 0)
             AddDirectory(roots, "/system/etc/security/cacerts"); // Android: one PEM file per root
         return roots;
+    }
+
+    // The runtime's walk over the system's own store (win/runtime.c); the other
+    // targets' runtimes return null at once.
+    [System.Runtime.InteropServices.DllImport("*")]
+    static unsafe extern void* ZeroRootCertificate(void* previous, byte** data, int* length);
+
+    static void AddSystemStore(X509Certificate2Collection roots)
+    {
+        unsafe
+        {
+            void* certificate = null;
+            byte* data = null;
+            int length = 0;
+            // SAFETY: the runtime points data at the certificate's length bytes, which
+            // stay valid until the next call; TryLoad copies them.
+            while ((certificate = ZeroRootCertificate(certificate, &data, &length)) != null)
+                if (length > 0 && X509Certificate2.TryLoad(new ReadOnlySpan<byte>(data, length), out X509Certificate2 root))
+                    roots.Add(root);
+        }
     }
 
     static void AddFile(X509Certificate2Collection roots, string path)

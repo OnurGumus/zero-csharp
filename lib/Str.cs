@@ -159,6 +159,93 @@ namespace System
 
         public static bool Contains(this ReadOnlySpan<char> span, ReadOnlySpan<char> value) => span.IndexOf(value) >= 0;
 
+        // ---- comparing with a StringComparison, and casing ------------------
+        //
+        // As .NET's: the culture comparisons are the invariant culture's, which
+        // here is ordinal; ignoring case compares upper cases. The casing
+        // methods write into destination and return how many chars they wrote,
+        // or -1 if it is too short; nothing is allocated.
+
+        static CompareOptions Options(StringComparison comparisonType) => comparisonType switch
+        {
+            StringComparison.CurrentCulture or StringComparison.InvariantCulture => CompareOptions.None,
+            StringComparison.CurrentCultureIgnoreCase or StringComparison.InvariantCultureIgnoreCase => CompareOptions.IgnoreCase,
+            StringComparison.Ordinal => CompareOptions.Ordinal,
+            StringComparison.OrdinalIgnoreCase => CompareOptions.OrdinalIgnoreCase,
+            _ => throw new ArgumentException("The string comparison type passed in is currently not supported.", "comparisonType"),
+        };
+
+        static CompareInfo Invariant => CultureInfo.InvariantCulture.CompareInfo;
+
+        public static bool Equals(this ReadOnlySpan<char> span, ReadOnlySpan<char> other, StringComparison comparisonType)
+        {
+            CompareOptions options = Options(comparisonType);
+            return span.Length == other.Length && Invariant.Compare(span, other, options) == 0;
+        }
+
+        public static int CompareTo(this ReadOnlySpan<char> span, ReadOnlySpan<char> other, StringComparison comparisonType)
+            => Invariant.Compare(span, other, Options(comparisonType));
+
+        public static bool StartsWith(this ReadOnlySpan<char> span, ReadOnlySpan<char> value, StringComparison comparisonType)
+            => Invariant.IsPrefix(span, value, Options(comparisonType));
+
+        public static bool EndsWith(this ReadOnlySpan<char> span, ReadOnlySpan<char> value, StringComparison comparisonType)
+            => Invariant.IsSuffix(span, value, Options(comparisonType));
+
+        public static int IndexOf(this ReadOnlySpan<char> span, ReadOnlySpan<char> value, StringComparison comparisonType)
+            => Invariant.IndexOf(span, value, Options(comparisonType));
+
+        public static int LastIndexOf(this ReadOnlySpan<char> span, ReadOnlySpan<char> value, StringComparison comparisonType)
+            => Invariant.LastIndexOf(span, value, Options(comparisonType));
+
+        public static bool Contains(this ReadOnlySpan<char> span, ReadOnlySpan<char> value, StringComparison comparisonType)
+            => span.IndexOf(value, comparisonType) >= 0;
+
+        public static int ToUpperInvariant(this ReadOnlySpan<char> source, Span<char> destination) => ChangeCase(source, destination, true);
+        public static int ToLowerInvariant(this ReadOnlySpan<char> source, Span<char> destination) => ChangeCase(source, destination, false);
+        public static int ToUpper(this ReadOnlySpan<char> source, Span<char> destination, CultureInfo culture)
+            => ChangeCase(source, destination, true, (culture ?? CultureInfo.CurrentCulture).TextInfo);
+        public static int ToLower(this ReadOnlySpan<char> source, Span<char> destination, CultureInfo culture)
+            => ChangeCase(source, destination, false, (culture ?? CultureInfo.CurrentCulture).TextInfo);
+
+        // A culture's casing differs from the invariant one only in the BMP
+        // (Turkish i, İ and ı), so its TextInfo cases those chars.
+        static int ChangeCase(ReadOnlySpan<char> source, Span<char> destination, bool upper, TextInfo text = null)
+        {
+            unsafe
+            {
+                // SAFETY: only the addresses are compared, to refuse buffers
+                // that overlap, as .NET does.
+                fixed (char* s = source)
+                fixed (char* d = destination)
+                {
+                    if (source.Length > 0 && destination.Length > 0 && s < d + destination.Length && d < s + source.Length)
+                        throw new InvalidOperationException("This operation is invalid on overlapping buffers.");
+                }
+            }
+            if (destination.Length < source.Length)
+                return -1;
+            int i = 0;
+            while (i < source.Length)
+            {
+                if (System.Text.Rune.DecodeFromUtf16(source.Slice(i), out System.Text.Rune rune, out int used) != System.Buffers.OperationStatus.Done)
+                {
+                    destination[i] = source[i]; // a lone surrogate stays as it is
+                    i++;
+                    continue;
+                }
+                if (text != null && rune.IsBmp)
+                {
+                    destination[i] = upper ? text.ToUpper(source[i]) : text.ToLower(source[i]);
+                    i++;
+                    continue;
+                }
+                rune = upper ? System.Text.Rune.ToUpperInvariant(rune) : System.Text.Rune.ToLowerInvariant(rune);
+                i += rune.EncodeToUtf16(destination.Slice(i));
+            }
+            return source.Length;
+        }
+
         // ---- trimming (returns a slice, never copies) -----------------------
 
         public static ReadOnlySpan<char> Trim(this ReadOnlySpan<char> span) => span.TrimStart().TrimEnd();

@@ -59,12 +59,14 @@ static partial class Program
         Stream(Math.Max(100, iterations / 100));
         Rsa(Math.Max(200, iterations / 20));
         Ecdsa(Math.Max(200, iterations / 20));
+        P256(Math.Max(200, iterations / 20));
         KeysDamaged(iterations);
         X509Damaged(iterations);
         X509Chains();
         X509RootDates();
         X509SystemRoots();
         TlsReplay(Math.Max(500, iterations / 10));
+        TlsRetryReplay();
 
         int failed = 0;
         foreach (var r in s_results)

@@ -1,0 +1,6 @@
+PASS casing (12 checks)
+PASS comparing (16 checks)
+PASS spans (6 checks)
+PASS Rune (5 checks)
+
+All checks passed.

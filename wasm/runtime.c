@@ -160,6 +160,16 @@ void RhpInitialDynamicInterfaceDispatch(void) { abort(); }
 // Which system this is, for lib/FileSystem.cs: 6, WebAssembly.
 int ZeroSystem(void) { return 6; }
 
+// ZeroRootCertificate, for lib/CryptoX509Chain.cs: the system's trusted root
+// certificates one at a time. Only Windows keeps them where this can ask
+// (win/runtime.c); elsewhere there are none here, and X509Chain reads a PEM
+// bundle instead.
+const void *ZeroRootCertificate(const void *previous, const unsigned char **data, int *length)
+{
+    (void)previous; (void)data; (void)length;
+    return 0;
+}
+
 // lib/FileSystem.cs calls glibc's names, with glibc's layouts: these give
 // WASI's answers in them. glibc's struct stat as on arm64: the mode at 16,
 // the size at 48, the modification time at 88 (seconds) and 96 (nanoseconds),

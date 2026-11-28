@@ -16,8 +16,11 @@ trap 'rm -rf "$work"' EXIT
 
 cp "$here/Program.cs" "$work/"
 # In a namespace of its own, so it can't reach .NET's internals by name.
-perl -pe 'print "using System;\n" if $. == 1; s/^namespace System$/namespace ZeroTest/' \
-    "$root/zerocore/System/Number.Parsing.cs" > "$work/Parsing.cs"
+for f in Number.Formatting Number.Parsing Number.Culture Globalization/NumberFormatInfo Globalization/TextCasing Globalization/CharUnicodeInfo Globalization/UnicodeData; do
+    perl -pe 'print "using System;\nusing System.Globalization;\n" if $. == 1;
+              s/^namespace System(\.Globalization)?$/namespace ZeroTest/' \
+        "$root/zerocore/System/$f.cs" > "$work/$(basename "$f").cs"
+done
 cat > "$work/check.csproj" <<'EOT'
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
