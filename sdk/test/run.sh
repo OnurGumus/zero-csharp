@@ -2793,6 +2793,7 @@ FSHARP_DOC_SAMPLES=(
     Parsing
     Pipe
     Keys
+    Memory
 )
 test_fsharp_doc_samples() {
     local name="F# doc samples" s dir input out expected code
