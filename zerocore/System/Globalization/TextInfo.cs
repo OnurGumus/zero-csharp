@@ -51,7 +51,16 @@ namespace System.Globalization
             _isReadOnly = isReadOnly;
         }
 
-        internal static TextInfo Invariant => s_invariant ??= new TextInfo(true);
+        internal static TextInfo Invariant
+        {
+            get
+            {
+                if (s_invariant == null)
+                    using (System.Runtime.ObjectAllocator.Lasting())
+                        s_invariant = new TextInfo(true);
+                return s_invariant;
+            }
+        }
 
         public string CultureName => _cultureName;
         public int LCID => _lcid;

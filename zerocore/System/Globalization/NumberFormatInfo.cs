@@ -43,7 +43,16 @@ namespace System.Globalization
             Number.UseCultures();
         }
 
-        public static NumberFormatInfo InvariantInfo => s_invariant ??= new NumberFormatInfo(true);
+        public static NumberFormatInfo InvariantInfo
+        {
+            get
+            {
+                if (s_invariant == null)
+                    using (System.Runtime.ObjectAllocator.Lasting())
+                        s_invariant = new NumberFormatInfo(true);
+                return s_invariant;
+            }
+        }
 
         public static NumberFormatInfo CurrentInfo => CultureInfo.CurrentCulture.NumberFormat;
 

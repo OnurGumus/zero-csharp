@@ -46,10 +46,31 @@ namespace System
             _daylightName = daylightName;
         }
 
-        public static TimeZoneInfo Utc => s_utc ??= new TimeZoneInfo(ZoneKind.Fixed, UtcId, 0,
-            "(UTC) " + UtcName, UtcName, UtcName) { _supportsDst = 1 };
+        // Utc and Local, and the names a zone works out on first use, are kept
+        // for the rest of the program: made outside any object scope
+        // (Runtime/ObjectAllocator.cs, Lasting).
+        public static TimeZoneInfo Utc
+        {
+            get
+            {
+                if (s_utc == null)
+                    using (ObjectAllocator.Lasting())
+                        s_utc = new TimeZoneInfo(ZoneKind.Fixed, UtcId, 0,
+                            "(UTC) " + UtcName, UtcName, UtcName) { _supportsDst = 1 };
+                return s_utc;
+            }
+        }
 
-        public static TimeZoneInfo Local => s_local ??= MakeLocal();
+        public static TimeZoneInfo Local
+        {
+            get
+            {
+                if (s_local == null)
+                    using (ObjectAllocator.Lasting())
+                        s_local = MakeLocal();
+                return s_local;
+            }
+        }
 
         // Always an object of its own, even when it is UTC: converting
         // between zones gives local and UTC Kinds by which object it is, as
@@ -112,9 +133,37 @@ namespace System
         public bool HasIanaId => true;
         public TimeSpan BaseUtcOffset => new TimeSpan(_baseOffset);
 
-        public string DisplayName => _displayName ??= "(UTC" + OffsetText(_baseOffset) + ") " + _id;
-        public string StandardName => _standardName ??= LocalStandardName();
-        public string DaylightName { get { if (_daylightName == null) FindDaylight(); return _daylightName; } }
+        public string DisplayName
+        {
+            get
+            {
+                if (_displayName == null)
+                    using (ObjectAllocator.Lasting())
+                        _displayName = "(UTC" + OffsetText(_baseOffset) + ") " + _id;
+                return _displayName;
+            }
+        }
+
+        public string StandardName
+        {
+            get
+            {
+                if (_standardName == null)
+                    using (ObjectAllocator.Lasting())
+                        _standardName = LocalStandardName();
+                return _standardName;
+            }
+        }
+
+        public string DaylightName
+        {
+            get
+            {
+                if (_daylightName == null)
+                    FindDaylight();
+                return _daylightName;
+            }
+        }
 
         // As in .NET: whether the zone's offset ever changes, not only for
         // daylight saving time.
@@ -545,7 +594,14 @@ namespace System
 
         // The most recent daylight saving time's abbreviation, looking back
         // a week at a time to 1900, and whether the offset ever changed.
+        // Works out the daylight-time names and rules once; the zone keeps them.
         private void FindDaylight()
+        {
+            using (ObjectAllocator.Lasting())
+                FindDaylightOnce();
+        }
+
+        private void FindDaylightOnce()
         {
             if (_kind == ZoneKind.Fixed)
             {

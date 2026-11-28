@@ -95,6 +95,42 @@ namespace System.Runtime
                 System.Threading.Interlocked.Decrement(ref s_threadsWithSetting);
         }
 
+        // For the caches zerocore fills on first use (the invariant culture, a
+        // culture GetCultureInfo looked up, the collation tables): a static keeps
+        // what is made there for the rest of the program, so it mustn't land in
+        // an arena an object scope will free (lib/Arena.cs), which would leave
+        // the static pointing at freed memory. Between Lasting() and Dispose,
+        // this thread allocates with calloc, as a static constructor does:
+        //
+        //   if (s_cache == null)
+        //       using (ObjectAllocator.Lasting())
+        //           s_cache = new Thing();
+        internal static LastingScope Lasting()
+        {
+            LastingScope scope = default;
+            Setting* setting = (Setting*)CurrentSetting();
+            if (setting != null && setting->Allocate != null)
+            {
+                scope.Allocate = setting->Allocate;
+                scope.Context = setting->Context;
+                Set(null, null);
+            }
+            return scope;
+        }
+
+        internal ref struct LastingScope
+        {
+            internal delegate*<void*, nuint, void*> Allocate;
+            internal void* Context;
+
+            // Puts back the allocator that was in effect (an object scope's, if any).
+            public void Dispose()
+            {
+                if (Allocate != null)
+                    Set(Allocate, Context);
+            }
+        }
+
         // Runs a static constructor with this thread's allocations going to
         // calloc. What a static constructor creates is kept in static fields,
         // for the rest of the program, so it mustn't land in an arena an

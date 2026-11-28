@@ -194,7 +194,19 @@ namespace System.Globalization
             return row;
         }
 
-        public static CultureInfo InvariantCulture => s_invariant ??= new CultureInfo(isReadOnly: true);
+        // Every cache here (InvariantCulture, GetCultureInfo's, the current
+        // comparisons) is kept for the rest of the program, so it is made outside
+        // any object scope the program has open (Runtime/ObjectAllocator.cs, Lasting).
+        public static CultureInfo InvariantCulture
+        {
+            get
+            {
+                if (s_invariant == null)
+                    using (System.Runtime.ObjectAllocator.Lasting())
+                        s_invariant = new CultureInfo(isReadOnly: true);
+                return s_invariant;
+            }
+        }
 
         public static CultureInfo CurrentCulture
         {
@@ -212,7 +224,9 @@ namespace System.Globalization
         private static unsafe void UseCurrentCasing()
         {
             TextCasing.s_currentMode = &CurrentCasingMode;
-            StringOps.s_current ??= new CurrentComparisons();
+            if (StringOps.s_current == null)
+                using (System.Runtime.ObjectAllocator.Lasting())
+                    StringOps.s_current = new CurrentComparisons();
         }
 
         private sealed class CurrentComparisons : StringOps.CultureComparisons
@@ -264,8 +278,16 @@ namespace System.Globalization
 
         private static CultureInfo Cached(int row)
         {
-            CultureInfo[] cultures = s_cultures ??= new CultureInfo[CultureData.Count];
-            return cultures[row] ??= new CultureInfo(row, true, false);
+            CultureInfo[] cultures = s_cultures;
+            if (cultures == null || cultures[row] == null)
+            {
+                using (System.Runtime.ObjectAllocator.Lasting())
+                {
+                    cultures = s_cultures ??= new CultureInfo[CultureData.Count];
+                    cultures[row] ??= new CultureInfo(row, true, false);
+                }
+            }
+            return cultures[row];
         }
 
         // The invariant culture (with the neutral ones) and the table's.
