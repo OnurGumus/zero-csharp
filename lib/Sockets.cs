@@ -1085,7 +1085,20 @@ static class SocketNative
     [DllImport("libc")] static unsafe extern int pthread_join(nint thread, void** result);
     [DllImport("libc")] static unsafe extern void* calloc(nuint count, nuint size);
     [DllImport("libc")] static unsafe extern void free(void* memory);
+#if ZERO_DOTNET
+    // Real .NET on Linux: fcntl itself, whose third argument travels as any
+    // other there. macOS's goes on the stack, which only C can do
+    // (dotnet/native's ZeroFcntl).
+    [DllImport("libc", EntryPoint = "fcntl")] static unsafe extern int LinuxFcntl(int fd, int command, int argument);
+    [DllImport("*", EntryPoint = "ZeroFcntl")] static unsafe extern int NativeFcntl(int fd, int command, int argument);
+
+    static unsafe int ZeroFcntl(int fd, int command, int argument)
+    {
+        unsafe { return OperatingSystem.IsLinux() ? LinuxFcntl(fd, command, argument) : NativeFcntl(fd, command, argument); } // SAFETY: plain numbers
+    }
+#else
     [DllImport("*")] static unsafe extern int ZeroFcntl(int fd, int command, int argument);
+#endif
 
     static bool Mac => FileSystem.System == SystemKind.MacOS;
     // Android's C library takes the BSD side in getaddrinfo (struct addrinfo

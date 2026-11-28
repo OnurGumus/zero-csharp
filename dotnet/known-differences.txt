@@ -21,3 +21,5 @@ Tasks|SendAsync loop: *|as above
 Tasks|a file opened in the step that threw is closed|on .NET the catch block the compiler puts in every async method takes the exception before the step's Catch.Run sees it, so that Catch.Run closes nothing; zero mode jumps over the catch block
 Network|a round trip allocates nothing *|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
 Strings|scratch: only the result is kept|an arena string takes one more word on .NET: the header every .NET object has in front, which zero mode's objects don't
+Numerics|?Cbrt|.NET's Math.Cbrt is the C library's cbrt: glibc's answer isn't the one the check expects, macOS's is
+SmallNative|?AlignedAlloc, AlignedFree|as Core: the check expects NativeMemory.AlignedAlloc's memory zeroed, which .NET doesn't promise

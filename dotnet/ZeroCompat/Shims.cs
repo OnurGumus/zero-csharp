@@ -277,9 +277,12 @@ namespace System.Runtime.Intrinsics.Mos
 
 // lib/'s DllImport("*") names functions bflat links in (zerocore/native's
 // assembly, the target's runtime file), and ("libc") and ("libm.so.6") are
-// glibc's names, some only Linux has: all go to libzerocompat
-// (dotnet/native), which has the functions bflat would link and passes the
-// rest on to the system's C library.
+// glibc's names.
+// - Linux has glibc itself: all three go to it (what bflat would link is
+//   managed code here, behind ZERO_DOTNET in lib/).
+// - macOS has other names and layouts for some of glibc's functions: there
+//   they go to libzerocompat (dotnet/native: mac/runtime.c, as a zero-mode
+//   macOS program links), which passes the rest on to the system's library.
 public static class NativeResolver
 {
     [System.Runtime.CompilerServices.ModuleInitializer]
@@ -292,8 +295,11 @@ public static class NativeResolver
         {
             if (name is not ("*" or "libc" or "libm.so.6"))
                 return 0;
-            string file = OperatingSystem.IsMacOS() ? "libzerocompat.dylib" : "libzerocompat.so";
-            return NativeLibrary.Load(System.IO.Path.Combine(AppContext.BaseDirectory, file));
+            if (OperatingSystem.IsMacOS())
+                return NativeLibrary.Load(System.IO.Path.Combine(AppContext.BaseDirectory, "libzerocompat.dylib"));
+            if (OperatingSystem.IsLinux())
+                return NativeLibrary.Load(name == "libm.so.6" ? "libm.so.6" : "libc.so.6");
+            throw new PlatformNotSupportedException("Zero C# programs run on .NET on macOS and Linux for now.");
         });
     }
 }
