@@ -7,6 +7,8 @@ index: 19
 
 `lib/Clock.cs` measures durations and tells the date and time, and `lib/Random.cs` makes random numbers
 with .NET's method names. Both work on every target. `samples/Dice.cs` runs the examples below.
+.NET's own `Stopwatch`, `DateTime.UtcNow` and the other date types are in zerocore too: see
+[Work with dates and times](work-with-dates-and-times.html).
 
 ## Measure how long something takes
 

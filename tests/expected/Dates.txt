@@ -1,0 +1,10 @@
+PASS DateTime (18 checks)
+PASS formats (25 checks)
+PASS DateTimeOffset (12 checks)
+PASS DateOnly and TimeOnly (12 checks)
+PASS TimeSpan (11 checks)
+PASS time zones (9 checks)
+PASS ISO weeks and names (4 checks)
+PASS Stopwatch (4 checks)
+
+All checks passed.
