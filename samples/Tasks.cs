@@ -14,14 +14,16 @@
 // first must be reported when Main returns, the second not, and the exit
 // code stays 0; `Tasks unobserved-exit` does the same but ends with
 // Environment.Exit(3), which must report it too. `Tasks full` releases a
-// semaphore past its maximum and must end the program with a message.
-// test.sh checks them.
+// semaphore past its maximum, and `Tasks crossthread` completes a plain
+// TaskCompletionSource on another thread (where there are threads): each
+// must end the program with a message. test.sh checks them.
 // Build: ./build.sh Tasks
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -220,6 +222,79 @@ public static class Program
     }
     // docs:end
 
+    // Another system thread, as a C library's callback thread would be: it
+    // completes sources made on the fibers' thread.
+    [DllImport("libc")]
+    static unsafe extern int pthread_create(nint* thread, void* attributes, delegate* unmanaged<void*, void*> start, void* argument);
+
+    static ThreadCompletionSource<int>? s_one;
+    static ThreadCompletionSource<int>[]? s_many;
+    static ThreadCompletionSource? s_canceled;
+    static ThreadCompletionSource<int>? s_raced;
+    static int s_wins, s_tried;
+    static TaskCompletionSource<int>? s_plain;
+
+    static void BusyFor(int ms)
+    {
+        long end = Clock.Monotonic + ms * 1_000_000L;
+        while (Clock.Monotonic < end) { }
+    }
+
+    // docs:thread-completion
+    // Runs on another thread: completes the source made on this one.
+    static void CompleteElsewhere()
+    {
+        BusyFor(20);
+        s_one!.SetResult(42);
+    }
+    // docs:end
+
+    static void CompleteMany()
+    {
+        for (int i = 0; i < s_many!.Length; i++)
+            s_many[i].SetResult(i * 2);
+        s_canceled!.SetCanceled();
+    }
+
+    static void Race()
+    {
+        if (s_raced!.TrySetResult(1))
+            Interlocked.Increment(ref s_wins);
+        Interlocked.Increment(ref s_tried);
+    }
+
+    [UnmanagedCallersOnly]
+    static unsafe void* OnThread(void* which)
+    {
+        switch ((int)(nint)which)
+        {
+            case 0: CompleteElsewhere(); break;
+            case 1: CompleteMany(); break;
+            case 3: s_plain!.SetResult(1); break;
+            default: Race(); break;
+        }
+        return null;
+    }
+
+    // Starts `which` on a new thread, or runs it here where there are none.
+    static void StartThread(int which)
+    {
+        unsafe
+        {
+            // SAFETY: the thread gets a number, not a pointer.
+            nint thread = 0;
+            if (pthread_create(&thread, null, &OnThread, (void*)which) == 0)
+                return;
+        }
+        switch (which)
+        {
+            case 0: CompleteElsewhere(); break;
+            case 1: CompleteMany(); break;
+            case 3: s_plain!.SetResult(1); break;
+            default: Race(); break;
+        }
+    }
+
     // docs:channel-async
     // Sends 1..10 and closes; the reader's await foreach ends there.
     static async Task Produce(Channel<int> channel)
@@ -366,6 +441,14 @@ public static class Program
         if (args.Length > 0 && args[0] == "full")
         {
             new SemaphoreSlim(1, 1).Release();
+            return 0;
+        }
+        if (args.Length > 0 && args[0] == "crossthread")
+        {
+            // A plain TaskCompletionSource completed on another thread.
+            s_plain = new TaskCompletionSource<int>();
+            StartThread(3);
+            BusyFor(5000); // the other thread stops the program meanwhile
             return 0;
         }
         if (args.Length > 0 && args[0] == "throw")
@@ -1041,6 +1124,59 @@ public static class Program
             Check("waits for the call", await stillOut == 5);
         }
         End("RunOnThread");
+        // ThreadCompletionSource (lib/ThreadCompletion.cs): completed on
+        // another thread, awaited here.
+        {
+            var others = new Ticker();
+            Task ticking = others.RunAsync();
+            // docs:thread-completion-await
+            s_one = new ThreadCompletionSource<int>();
+            StartThread(0); // calls CompleteElsewhere there
+            int answer = await s_one.Task;
+            // docs:end
+            others.Stop = true;
+            await ticking;
+            Check("result from the other thread", answer == 42);
+            if (Parallel.ProcessorCount > 1 && !small)
+                Check($"others ran meanwhile: {others.Ticks} ticks", others.Ticks > 0);
+
+            int count = small ? 10 : 200;
+            s_many = new ThreadCompletionSource<int>[count];
+            var manyTasks = new Task<int>[count];
+            for (int i = 0; i < count; i++)
+            {
+                s_many[i] = new ThreadCompletionSource<int>();
+                manyTasks[i] = s_many[i].Task;
+            }
+            s_canceled = new ThreadCompletionSource();
+            StartThread(1);
+            int[] results = await Task.WhenAll(manyTasks);
+            bool inOrder = true;
+            for (int i = 0; i < count; i++)
+                inOrder &= results[i] == i * 2;
+            Check($"{count} completed by one thread", inOrder);
+            await s_canceled.Task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            Check("canceled from the other thread", s_canceled.Task.IsCanceled);
+            Check("only once", !s_many[0].TrySetResult(7) && !s_canceled.TrySetCanceled());
+
+            // Two threads and this one try: exactly one wins.
+            s_raced = new ThreadCompletionSource<int>();
+            s_wins = s_tried = 0;
+            StartThread(2);
+            StartThread(2);
+            if (s_raced.TrySetResult(1))
+                Interlocked.Increment(ref s_wins);
+            Check("raced value", await s_raced.Task == 1);
+            while (Volatile.Read(ref s_tried) < 2)
+                await Task.Delay(1); // the other two have tried
+            Check($"one winner of three: {Volatile.Read(ref s_wins)}", Volatile.Read(ref s_wins) == 1);
+
+            // Set on this thread: also delivered (by Fiber.Run here).
+            var own = new ThreadCompletionSource<string>();
+            own.SetResult("here");
+            Check("set on its own thread", await own.Task == "here");
+        }
+        End("ThreadCompletionSource");
 
         // Cost: awaits that wait, and ones that don't.
         start = Clock.Monotonic;

@@ -278,6 +278,13 @@ R4_SAMPLES=(
 EXPECTED=tests/expected
 failures=0
 
+# Each program run gets this many seconds (ZERO_TEST_TIMEOUT; 0 for no
+# limit), so a hung one fails with its name instead of running until CI's
+# six-hour job limit. Generous, for the emulators (Bochs, VICE, QEMU).
+# perl's alarm, because macOS has no timeout(1); a stopped run exits with
+# 142 (SIGALRM).
+TEST_TIMEOUT=${ZERO_TEST_TIMEOUT:-900}
+
 # $1: a label for the report; $2: "native", "wasm", "dos", ...; $3: "check" or "update"
 run_all() {
     local label=$1 target=$2 mode=$3 name out status expected argument input line missing i
@@ -326,6 +333,9 @@ run_all() {
         run+=(--r4)
         samples=("${R4_SAMPLES[@]}")
     fi
+    if [ "$TEST_TIMEOUT" != 0 ]; then
+        run=(perl -e 'alarm shift; exec @ARGV or die "$ARGV[0]: $!\n"' "$TEST_TIMEOUT" "${run[@]}")
+    fi
 
     echo
     echo "== $label"
@@ -341,7 +351,11 @@ run_all() {
         [ "$target" = win ] && out=${out//$'\r'/}
         expected=$EXPECTED/$name.txt
 
-        if [ "$status" != 0 ]; then
+        if [ "$status" = 142 ]; then
+            echo "FAIL $name: still running after ${TEST_TIMEOUT}s, stopped (ZERO_TEST_TIMEOUT)"
+            echo "$out" | tail -5 | sed 's/^/       /'
+            failures=$((failures + 1))
+        elif [ "$status" != 0 ]; then
             echo "FAIL $name: exit code $status"
             # The checks that failed, wherever in the output they are (the
             # test samples print "failed: <check>" and "FAIL <section>"),
@@ -473,7 +487,10 @@ run_all() {
     # async Main after an await, and releasing a full semaphore must end the
     # program with a message.
     if [[ " ${samples[*]} " == *" Tasks "* ]] && [ "$target" != c64 ]; then
-        for case in "canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main" "full|would exceed the maximum"; do
+        cases=("canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main" "full|would exceed the maximum")
+        # Only where there are threads to complete it from.
+        case $target in dos|uefi|pico2|r4|c64|wasm|page) ;; *) cases+=("crossthread|completed from another thread") ;; esac
+        for case in "${cases[@]}"; do
             arg=${case%%|*}
             message=${case#*|}
             status=0

@@ -760,18 +760,52 @@ int poll(void *fds, unsigned long long count, int timeout)
 // sockets (blocking ones: the I/O thread waits in read, and Fiber.Run reads
 // only once poll says there's something). read and write above send and
 // receive on them.
-#define WAKE_SOCKETS 64
-static int wake_sockets[WAKE_SOCKETS];
+//
+// The wake sockets are listed in chunks of 64, added as needed and never
+// freed: every thread's read and write looks here, while any thread may make
+// a pipe (lib/ThreadTasks.cs takes one per worker, lib/ThreadCompletion.cs
+// one per thread that makes sources). Adding is under a spin lock; the count
+// is published after the entries, so a reader sees only filled ones.
+#define WAKE_CHUNK 64
+#define WAKE_CHUNKS 256
+static int *wake_chunks[WAKE_CHUNKS];
 static int wake_count;
+static int wake_lock;
 
 static int is_wake_socket(int fd)
 {
     if (fd <= 2)
         return 0;
-    for (int i = 0; i < wake_count; i++)
-        if (wake_sockets[i] == fd)
+    int count = __atomic_load_n(&wake_count, __ATOMIC_ACQUIRE);
+    for (int i = 0; i < count; i++)
+        if (wake_chunks[i / WAKE_CHUNK][i % WAKE_CHUNK] == fd)
             return 1;
     return 0;
+}
+
+// Lists a pipe's two sockets; 0 when out of room or memory.
+static int add_wake_sockets(int reader, int writer)
+{
+    while (__atomic_exchange_n(&wake_lock, 1, __ATOMIC_ACQUIRE))
+        Sleep(0);
+    int count = wake_count, added = 0;
+    if (count + 2 <= WAKE_CHUNK * WAKE_CHUNKS) {
+        added = 1;
+        // count is even and WAKE_CHUNK too: both land in the same chunk.
+        int *chunk = wake_chunks[count / WAKE_CHUNK];
+        if (!chunk) {
+            chunk = HeapAlloc(GetProcessHeap(), 0, WAKE_CHUNK * sizeof(int));
+            wake_chunks[count / WAKE_CHUNK] = chunk;
+            added = chunk != 0;
+        }
+        if (added) {
+            chunk[count % WAKE_CHUNK] = reader;
+            chunk[count % WAKE_CHUNK + 1] = writer;
+            __atomic_store_n(&wake_count, count + 2, __ATOMIC_RELEASE);
+        }
+    }
+    __atomic_store_n(&wake_lock, 0, __ATOMIC_RELEASE);
+    return added;
 }
 
 static i64 wake_send(int fd, const void *buffer, u64 count)
@@ -798,10 +832,6 @@ int pipe(int fds[2])
     WINSOCK(int, connect, (Socket, const void *, int));
     WINSOCK(Socket, accept, (Socket, void *, int *));
     WINSOCK(int, closesocket, (Socket));
-    if (wake_count + 2 > WAKE_SOCKETS) {
-        *_errno() = 24; // EMFILE
-        return -1;
-    }
     // sockaddr_in for 127.0.0.1, port 0 (the system chooses).
     unsigned char address[16] = { 2, 0, 0, 0, 127, 0, 0, 1 };
     int length = sizeof address;
@@ -819,10 +849,14 @@ int pipe(int fds[2])
     if (reader == none)
         goto failed;
     closesocket(listener);
+    if (!add_wake_sockets((int)reader, (int)writer)) {
+        closesocket(reader);
+        closesocket(writer);
+        *_errno() = 24; // EMFILE
+        return -1;
+    }
     fds[0] = (int)reader;
     fds[1] = (int)writer;
-    wake_sockets[wake_count++] = fds[0];
-    wake_sockets[wake_count++] = fds[1];
     return 0;
 failed:
     set_errno_from_winsock();
