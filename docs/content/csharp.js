@@ -1,7 +1,119 @@
-// Colours the code on every page. FsLiveDocs highlights F# only, so C#, shell and C
-// blocks are coloured here with highlight.js (vendored, 11.9). Adapted from FCQRS's
-// language-tabs.js, without its F#/C# tabs.
+// Colours the code on every page, and pairs C# examples with their F# twins as tabs.
+// FsLiveDocs highlights F# only, so C#, shell and C blocks are coloured here with
+// highlight.js (vendored, 11.9). Adapted from FCQRS's language-tabs.js, with C# first.
 (() => {
+  // A page pairs a C# example with its F# twin by putting <div class="fs-alt"></div>
+  // between the two fences. Both stay readable without JavaScript or localStorage.
+  const key = 'zero-lang';
+  let language = 'csharp';
+  try { language = localStorage.getItem(key) === 'fsharp' ? 'fsharp' : 'csharp'; } catch (_) {}
+  // ?lang=fsharp (or fs) and ?lang=csharp (or cs) choose the language, so a link can open a
+  // page in F#. Choosing a tab writes the choice into the address, ready to copy.
+  const names = { csharp: 'csharp', cs: 'csharp', 'c#': 'csharp', fsharp: 'fsharp', fs: 'fsharp', 'f#': 'fsharp' };
+  try {
+    const requested = names[(new URLSearchParams(location.search).get('lang') || '').toLowerCase()];
+    if (requested) language = requested;
+  } catch (_) {}
+  const order = ['csharp', 'fsharp'];
+  const labels = { csharp: 'C#', fsharp: 'F#' };
+
+  function choose(value) {
+    apply(value);
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set('lang', value);
+      history.replaceState(history.state, '', url);
+    } catch (_) {}
+  }
+
+  function apply(value) {
+    language = value;
+    try { localStorage.setItem(key, value); } catch (_) {}
+    document.querySelectorAll('.lang-tab').forEach(tab => {
+      tab.setAttribute('aria-selected', String(tab.dataset.lang === value));
+      tab.tabIndex = tab.dataset.lang === value ? 0 : -1;
+    });
+    document.querySelectorAll('.lang-pane').forEach(pane => {
+      pane.hidden = pane.dataset.lang !== value;
+    });
+  }
+
+  function pairExamples() {
+    const blocks = [...document.querySelectorAll('pre code')]
+      .filter(code => !code.closest('.livedocs-shared-setup'));
+    const matches = (code, lang) => code.classList.contains(`language-${lang}`);
+    // FsLiveDocs renders an example's compiler setup as collapsed sibling <details>.
+    // Keep that setup in the example's pane so it is hidden with its language.
+    const isSetup = el => el?.matches('details.livedocs-shared-setup');
+    function withSetup(example) {
+      const members = [example];
+      for (let el = example.previousElementSibling; isSetup(el); el = el.previousElementSibling) members.unshift(el);
+      for (let el = example.nextElementSibling; isSetup(el); el = el.nextElementSibling) members.push(el);
+      if (members.length === 1) return example;
+      const pane = document.createElement('div');
+      members[0].before(pane);
+      pane.append(...members);
+      return pane;
+    }
+    document.querySelectorAll('.fs-alt').forEach((marker, index) => {
+      const cs = [...blocks].reverse().find(code => matches(code, 'csharp') &&
+        marker.compareDocumentPosition(code) & Node.DOCUMENT_POSITION_PRECEDING);
+      const fs = blocks.find(code => matches(code, 'fsharp') &&
+        marker.compareDocumentPosition(code) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (!cs || !fs) return;
+      const panes = [cs, fs].map(code => {
+        const paired = code.closest('.lang-pane');
+        if (paired) return paired;
+        const managed = code.closest('.livedocs-code');
+        if (managed) return withSetup(managed);
+        // Keep tab state on a wrapper: highlighters replace the pre's class list.
+        const pre = code.closest('pre');
+        const pane = document.createElement('div');
+        pre.before(pane);
+        pane.appendChild(pre);
+        return pane;
+      });
+      if (panes.some(pane => pane.classList.contains('lang-pane'))) return;
+      const bar = document.createElement('div');
+      bar.className = 'lang-tabbar';
+      bar.setAttribute('role', 'tablist');
+      bar.setAttribute('aria-label', 'Example language');
+      order.forEach((lang, side) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'lang-tab';
+        button.dataset.lang = lang;
+        button.textContent = labels[lang];
+        button.id = `example-${index}-${lang}-tab`;
+        button.setAttribute('role', 'tab');
+        button.setAttribute('aria-controls', `example-${index}-${lang}`);
+        button.addEventListener('click', () => choose(lang));
+        button.addEventListener('keydown', event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === 'Home' ? order[0] : event.key === 'End' ? order[1] :
+            order[1 - order.indexOf(lang)];
+          choose(next);
+          bar.querySelector(`[data-lang="${next}"]`).focus();
+        });
+        bar.appendChild(button);
+        const pane = panes[side];
+        pane.classList.add('lang-pane');
+        pane.dataset.lang = lang;
+        pane.id = `example-${index}-${lang}`;
+        pane.setAttribute('role', 'tabpanel');
+        pane.setAttribute('aria-labelledby', button.id);
+      });
+      panes[0].before(bar);
+      marker.remove();
+    });
+    // Prose that differs by language: <span class="lang-text" data-lang="fsharp">.
+    document.querySelectorAll('.lang-text').forEach(el => el.classList.add('lang-pane'));
+    apply(language);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pairExamples);
+  else pairExamples();
+
   // highlight.js colours a C# type name only where it is declared. Find the other places a type
   // name stands, from the text around it: before a variable or member name, with type arguments,
   // after new/is/as/or/and/not/case, in a pattern, in a base list, or before a static member.

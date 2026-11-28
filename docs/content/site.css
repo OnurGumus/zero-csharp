@@ -7,6 +7,32 @@
   src: url('../fonts/inter-latin-wght-normal.woff2') format('woff2');
 }
 
+/* C# and F# tabs over a pair of examples (content/csharp.js). The marker between the two
+   fences only says where a pair is. */
+.fs-alt { display: none; }
+.lang-tabbar { display: flex; gap: .25rem; margin-top: 1.5rem; }
+.lang-tab {
+  padding: .375rem .875rem;
+  border: 1px solid currentColor;
+  border-bottom: none;
+  border-radius: .5rem .5rem 0 0;
+  font-size: .8125rem;
+  opacity: .6;
+}
+.lang-tab[aria-selected="true"] { opacity: 1; font-weight: 700; }
+.lang-pane { margin-top: 0 !important; }
+.lang-pane[hidden] { display: none !important; }
+main.prose .lang-pane > pre { margin-top: 0 !important; }
+/* A paired C# example takes the F# frame's width and padding (FsLiveDocs's .code-frame sets
+   them with !important), so switching tabs leaves the code in place. */
+main.prose .lang-pane > pre:has(> code.language-csharp) { margin-inline: -1.5rem !important; }
+@media (min-width: 768px) {
+  main.prose .lang-pane > pre:has(> code.language-csharp) {
+    margin-inline: -2rem !important;
+    padding-inline: 2rem !important;
+  }
+}
+
 /* Guide text size. Prose sizes headings, spacing, and inline code relative to it. */
 main.prose { font-size: 0.9375rem; }
 

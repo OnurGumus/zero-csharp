@@ -10,10 +10,11 @@ reads the answers, and lists the mistakes at the end. It is small, but it meets 
 zero-mode program meets: how to format output without building strings, how to read input without
 allocating, what to do with text that has to outlive the buffer it was read into.
 
-Each step is a complete program, and each adds one idea:
+Each step is a complete program, and each adds one idea. Every step is written in C# and in F#: the
+tabs over the code switch between them, and both programs print the same.
 
-1. [Print the questions](print-questions.html): `Console.WriteLine` and `$"..."` formatting.
-2. [Read the answers](read-answers.html): `In.ReadLine` and a buffer on the stack.
+1. [Print the questions](print-questions.html): `$"..."` formatting in C#, `printfn` in F#.
+2. [Read the answers](read-answers.html): `In.ReadLine` and a buffer made once.
 3. [Handle bad input](handle-bad-input.html): lines that are too long, not numbers, or empty.
 4. [Keep the mistakes](keep-the-mistakes.html): an arena and a list of strings that last until the end.
 
@@ -28,8 +29,12 @@ dotnet new zero -o Quiz
 cd Quiz
 ```
 
+For F#, make it with `dotnet new zero -lang F# -o Quiz` instead ([Write a program in
+F#](../how-to/write-fsharp.html)).
+
 Each step's page shows the parts that matter; the whole program is in the repository's `samples/`
-folder, linked from each page. Put it in `Program.cs` in place of what's there, then build and run:
+folder, linked from each page. Put it in `Program.cs` (or `Program.fs`) in place of what's there, then
+build and run:
 
 ```bash
 dotnet build
@@ -51,4 +56,5 @@ cmd /c "bin\Debug\zero03\Quiz.exe < answers.txt"
 
 With the [repository](../get-started/install.html) instead, each step is a sample: `./build.sh
 QuizStep1` and `./run.sh QuizStep1`. There every step also runs on WebAssembly and on DOS: add
-`--wasm` or `--dos` to both.
+`--wasm` or `--dos` to both. The F# steps are built by the SDK's tests, which check that each prints
+what its C# twin prints.

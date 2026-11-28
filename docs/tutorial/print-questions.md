@@ -22,12 +22,27 @@ static int Next(int limit)
 }
 ```
 
-`s_seed` is a static field, and statics work as usual. So does the arithmetic: `uint` overflow wraps,
-as it does in any C# program.
+<div class="fs-alt"></div>
 
-## Formatting without strings
+<!-- sample: samples/QuizStep1.fs numbers -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+[<Literal>]
+let Questions = 6
 
-`Main` prints a line per question:
+let mutable seed = 2026u
+
+// The same questions every run, so a file of answers fits them.
+let next limit =
+    seed <- seed * 1103515245u + 12345u
+    int ((seed >>> 16) % uint limit)
+```
+
+The seed is a static field in C#, and a module-level `let mutable` in F#: both work as usual. So
+does the arithmetic: `uint` overflow wraps, as it does in any .NET program.
+
+## Format the lines
+
+The program prints a line per question:
 
 <!-- sample: samples/QuizStep1.cs main -->
 ```csharp
@@ -45,6 +60,20 @@ public static int Main()
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/QuizStep1.fs main -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+printfn "%d questions:" Questions
+for i in 1 .. Questions do
+    let a = next 50
+    let b = next 50
+    // %2d pads to two characters, so the columns line up.
+    printfn "Q%d: %2d + %2d = %3d" i a b (a + b)
+```
+
+<div class="lang-text" data-lang="csharp">
+
 `Console.WriteLine($"...")` reads as it does in .NET, but no string is built. In .NET, `$"..."`
 makes a string on the heap, and the garbage collector frees it later. Zero mode has no garbage
 collector: a string made with `new` is never freed. So `Console.WriteLine` takes the interpolated
@@ -56,9 +85,27 @@ the 256-byte buffer).
 Holes take numbers, `bool`, `char`, strings and spans, with an alignment (`{x,5}`, `{x,-5}`) and a
 format (`{x:D4}`, `{x:X}`, `{price:F2}`). [Format text](../how-to/format-text.html) lists them.
 
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+`printfn` reads as it does in .NET, and it costs what it costs there: it builds each line as a string
+on the heap, about 2 KB of work for a line like these. In .NET the garbage collector frees that
+later. Zero mode has no garbage collector, so here it is never freed: this step leaves about 13 KB
+behind. That's nothing for a program that prints a few lines and ends, and it adds up in one that
+prints for hours.
+
+When it matters, print the pieces with `Console.Write`, which takes numbers, `char`s, strings and
+spans and writes each straight into the output buffer, building nothing: `Console.Write "Q"`, then
+`Console.Write i`, and so on, ending with `Console.WriteLine`. Or free what `printfn` builds with an arena scope ([Write a program in
+F#](../how-to/write-fsharp.html#watch-the-memory)). `%2d` pads to two characters, as `{a,2}` does in
+C#, and the other `printf` formats work too.
+
+</div>
+
 ## Run it
 
-Put [`samples/QuizStep1.cs`](https://github.com/OnurGumus/zero-csharp/blob/master/samples/QuizStep1.cs) in `Program.cs`, then:
+Put [`samples/QuizStep1.cs`](https://github.com/OnurGumus/zero-csharp/blob/master/samples/QuizStep1.cs) in `Program.cs`, or [`samples/QuizStep1.fs`](https://github.com/OnurGumus/zero-csharp/blob/master/samples/QuizStep1.fs) in `Program.fs`, then:
 
 ```bash
 dotnet build
@@ -75,8 +122,9 @@ Q5: 27 +  8 =  35
 Q6: 38 + 36 =  74
 ```
 
-`Console` comes from `lib/`, which every zero project compiles against (the SDK carries it, and
-`build.sh` uses it in the repository). It's in the `System` namespace, as in .NET. `lib/`'s own types,
+Both programs print the same. `Console` comes from `lib/`, which every zero project compiles against,
+C# or F# (the SDK carries it, and `build.sh` uses it in the repository). It's in the `System`
+namespace, as in .NET. `lib/`'s own types,
 such as `In` in the next step, are in the global namespace and need no `using`.
 
 Next: [read the answers](read-answers.html).

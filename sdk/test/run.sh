@@ -2289,7 +2289,7 @@ ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old
     mac_target mac_target_links_libm_and_threads mac_target_path_with_spaces mac_target_undefined_import
     ios_simulator_target ios_simulator_errors
     trim_macos_layout mac_host_builds_all_targets mac_target_common_libc mac_target_user_tbd mac_target_newer_dylib
-    tutorial_steps simd_instruction_set static_constructor_threads failure_keeps_output
+    tutorial_steps fsharp_tutorial_steps simd_instruction_set static_constructor_threads failure_keeps_output
     native_library_dotnet native_library_exports native_library_two native_library_errors
     native_library_not_packable native_library_publish native_library_incremental native_library_clean
     native_library_path_with_spaces native_library_with_zero_reference native_library_dotted_name
@@ -2750,6 +2750,25 @@ test_tutorial_steps() {
         if [ "$out" != "$(tr -d '\r' < "$ROOT/tests/expected/$s.txt")" ]; then
             echo "$out" >> "$LOG"
             fail "$name" "$s printed something else"; return
+        fi
+    done
+    pass "$name"
+}
+
+# The tutorial's F# tabs: each step's samples/*.fs is the Program.fs of an F# zero
+# project, and prints what its C# twin prints (tests/expected/).
+test_fsharp_tutorial_steps() {
+    local name="F# tutorial steps" s dir input out
+    can_build "$name" || return
+    for s in QuizStep1 QuizStep2 QuizStep3 Quiz; do
+        dir=$(fixture fstoplevel "fs-tutorial-$s")
+        cp "$ROOT/samples/$s.fs" "$dir/Program.fs"
+        input=/dev/null; [ -f "$ROOT/tests/input/$s.txt" ] && input=$ROOT/tests/input/$s.txt
+        if ! run_in "$dir" "fs-tutorial-$s" build; then fail "$name" "$s didn't build"; return; fi
+        out=$("$(exe "$dir/bin/Debug/$TFM/fstoplevel")" < "$input" | tr -d '\r')
+        if [ "$out" != "$(tr -d '\r' < "$ROOT/tests/expected/$s.txt")" ]; then
+            echo "$out" >> "$LOG"
+            fail "$name" "$s printed something else than $s.cs"; return
         fi
     done
     pass "$name"

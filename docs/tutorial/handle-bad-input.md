@@ -6,8 +6,9 @@ index: 3
 # Step 3: handle bad input
 
 Step 2 treats anything that isn't the right number as a wrong answer, including a typo. This step asks
-again instead, and lets an empty answer skip the question. The question's body becomes a loop that
-ends when the answer has been dealt with:
+again instead, and lets an empty answer skip the question. In C#, the question's body becomes a loop
+that ends when the answer has been dealt with. In F#, `read` says what one answer was, and `ask`
+calls it again until the answer is one the quiz can count:
 
 <!-- sample: samples/QuizStep3.cs loop -->
 ```csharp
@@ -56,18 +57,85 @@ while (true)
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/QuizStep3.fs loop -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+type Outcome =
+    | Right
+    | Wrong
+    | Skipped
+    | EndOfInput
+    | AskAgain
+
+// Reads one answer and says what it was.
+let read i a b =
+    printf "Q%d: %d + %d = " i a b
+    let length = In.ReadLine(Span<char>(buffer))
+    if length < 0 then
+        printfn ""
+        printfn "(end of input)"
+        EndOfInput
+    // A line longer than the buffer returns its full length; the buffer
+    // holds only its start, so ask again.
+    elif length > buffer.Length then
+        printf "that's %d characters; " length
+        printfn "answers are at most %d" buffer.Length
+        AskAgain
+    else
+        let answer = ReadOnlySpan<char>(buffer, 0, length).Trim()
+        let mutable value = 0L
+        if answer.Length = 0 then
+            printfn "skipped"
+            Skipped
+        elif not (Str.TryParse(answer, &value)) then
+            // A span isn't a printf argument; Console writes it as it is.
+            Console.Write('"')
+            Console.Write(answer)
+            Console.WriteLine("\" isn't a number")
+            AskAgain
+        elif value = int64 (a + b) then
+            printfn "right"
+            Right
+        else
+            printfn "no, it's %d" (a + b)
+            Wrong
+
+// Asks until the answer is a number, empty, or the input ends.
+let rec ask i a b =
+    match read i a b with
+    | AskAgain -> ask i a b
+    | outcome -> outcome
+```
+
 Three cases are new:
 
 - **Too long.** `In.ReadLine` returns the line's full length even when the buffer can't hold it, and
   skips the rest of the line, so the next read starts on the next line. `length > buffer.Length` is how
   the program knows. Returning the length instead of failing lets the caller decide: here, ask again.
 - **Empty.** After `Trim()`, an empty span means the answer was blank: skip the question.
-- **Not a number.** `Str.TryParse` returns false. The message quotes the answer with `{answer}`: a span
-  can be a hole in `$"..."`, so the text goes from the input buffer to the output buffer without a
-  string in between.
+- **Not a number.** `Str.TryParse` returns false, and the message quotes the answer.
+
+<div class="lang-text" data-lang="csharp">
+
+The message quotes the answer with `{answer}`: a span can be a hole in `$"..."`, so the text goes from
+the input buffer to the output buffer without a string in between.
 
 `goto Done` leaves both loops at the end of input. C#'s `goto` is as unfashionable as ever, but it is
 the plainest way out of two loops.
+
+</div>
+
+<div class="lang-text" data-lang="fsharp">
+
+A span can't be a `printf` argument, so the message is written in pieces: `Console.Write` takes the
+span and writes it from the input buffer to the output buffer without a string in between.
+
+F# has no `continue` or `goto`, so `read` handles one answer and returns `AskAgain` when the quiz
+should ask once more; `ask` repeats it until it doesn't. `quiz` stops at `EndOfInput`, which leaves
+both loops at once.
+
+</div>
 
 ## Run it
 
@@ -75,7 +143,7 @@ The test suite feeds this step a file with every kind of bad input: letters, cha
 bytes that aren't valid UTF-8, a 40-character line, a Windows line ending, an empty line, and a last
 line without a line ending.
 
-Put [`samples/QuizStep3.cs`](https://github.com/OnurGumus/zero-csharp/blob/master/samples/QuizStep3.cs) in `Program.cs`, build, and give it the awkward
+Put [`samples/QuizStep3.cs`](https://github.com/OnurGumus/zero-csharp/blob/master/samples/QuizStep3.cs) in `Program.cs`, or [`samples/QuizStep3.fs`](https://github.com/OnurGumus/zero-csharp/blob/master/samples/QuizStep3.fs) in `Program.fs`, build, and give it the awkward
 answers: spaces around a number, an emoji, bytes that aren't UTF-8, a 40-character line, a Windows
 line ending and an empty line:
 
