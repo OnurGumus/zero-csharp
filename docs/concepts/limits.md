@@ -26,6 +26,9 @@ With zerocore, as `build.sh` builds it:
   with .NET's standard format strings (`"X4"`, `"F2"`, `"N0"`, `"{0,8:E2}"`), `Parse` and `TryParse`
   on every number type, with `NumberStyles`, plus `lib/` for the rest (see
   [Strings without a GC](strings.html)).
+- **Cultures**: `CultureInfo` and `NumberFormatInfo`, with the invariant culture as the only one, as
+  in .NET with `InvariantGlobalization` set: any other culture throws `CultureNotFoundException` (see
+  [Cultures](strings.html#cultures)).
 - **Records and anonymous types**: value equality, `with`, deconstruction and the generated `ToString`;
   `typeof` and `GetType()` for comparing types. With no reflection, a `Type` has no name, and a class
   without its own `ToString` prints `object`.
@@ -292,7 +295,7 @@ They differ from .NET in three ways:
   (where its results are off in the fourth digit) and for `Atan` of small values; zerocore's don't,
   and agree with a 40-digit reference. Elsewhere the results agree with .NET's to within a few units
   in the last place. At infinity `Atan` gives the limit, (±π/2, 0), where .NET 10 gives NaN.
-- **`ToString` ignores the culture**, as everything in zero mode does: `<1, 2.5>`, never `<1; 2,5>`.
+- **`ToString` uses the invariant culture**, as everything in zero mode does: `<1, 2.5>`, never `<1; 2,5>`.
 
 `Math` also gained `Asin`, `Acos`, `Atan`, the hyperbolic functions and their inverses, `Cbrt`,
 `Log(a, newBase)`, `IEEERemainder`, `Sign` and `CopySign`. They are built on the C math functions
