@@ -265,3 +265,56 @@ bflat and [the fork](https://github.com/OnurGumus/bflat) are AGPL-3.0, and so ar
 `ZeroCSharp.Bflat.*` packages that carry it. They are used as a compiler, and nothing from them is
 linked into the programs. Each program does link the C library of its target system, under that
 library's license.
+
+### How can this be MIT if bflat is AGPL?
+
+The fork isn't MIT: it stays AGPL-3.0, and its source is public. What's MIT is this repository, which
+uses the fork the way you'd use any compiler. The AGPL covers the compiler's own code, not the programs
+it compiles, unless its code ends up inside them.
+
+In bflat's zero mode, some of its code would end up inside them: its core library, zerolib, is
+AGPL and gets linked into every program. So this project doesn't use zerolib. It brings its own core
+library, [`zerocore/`](zerocore/README.md), written for this repository from MIT sources (.NET's
+NativeAOT libraries) and the compiler's requirements, and builds with `--stdlib:none` so bflat adds no
+library of its own.
+
+What a program contains, then:
+
+```
+your program  ──  your code                       yours
+              ──  zerocore, lib/                  MIT (with .NET's MIT notices)
+              ──  target runtime (win/, dos/, …)  MIT
+              ──  C library and start files       the target system's license
+              ──  shcrt.lib (Windows only)        MIT, from bflattened/runtime
+```
+
+On Linux, bflat with `--stdlib:none` adds nothing but the system's start files and C library. On
+Windows it also adds `shcrt.lib`, built from bflattened/runtime (a fork of dotnet/runtime, MIT).
+zerocore was compared with zerolib mechanically; [its README](zerocore/README.md#where-the-code-comes-from-and-the-license)
+says how and what matched.
+
+### Can I ship a closed-source app built with this?
+
+Yes. Nothing linked into a program is AGPL or GPL, so you never have to publish your source. What
+you owe is the usual courtesy of permissive licenses: ship their notices with the program, in a file
+next to it, its documentation or an about box.
+
+Every program needs zerocore's [`LICENSE`](zerocore/LICENSE) and
+[`THIRD-PARTY-NOTICES.txt`](zerocore/THIRD-PARTY-NOTICES.txt) (.NET's MIT notice, and AMD's BSD notice if
+you use the tensor functions `SinPi`, `CosPi` or `TanPi`). `lib/` and the target runtimes are under the
+same MIT license. Beyond that, it depends on the target:
+
+| Target | Also in the program | What you do |
+|---|---|---|
+| Linux | glibc, linked dynamically (LGPL); gcc's start files (GCC Runtime Library Exception) | nothing |
+| Windows, macOS, iOS, Android | the system's C library | nothing |
+| WebAssembly | wasi-libc (MIT, Apache 2.0, BSD) | include its notice |
+| UEFI | musl's math functions in `efi/libm` (MIT) | include [`efi/libm/COPYRIGHT`](efi/libm/COPYRIGHT) |
+| Pico 2, Uno R4 | picolibc (BSD-style) | include its notices |
+| Commodore 64 | llvm-mos's C library (Apache 2.0 with LLVM exception) | nothing |
+| DOS | the HX DOS extender's runtime, needed next to the program | nothing: HX's license lets it be "freely distributed with any application" |
+
+Libraries you add yourself keep their own licenses (SDL3's zlib license asks for nothing in a binary).
+
+The bflat compiler and the `ZeroCSharp.Bflat.*` packages stay on your machine as tools, so their
+AGPL doesn't reach your program. This isn't legal advice.
