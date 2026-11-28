@@ -20,6 +20,26 @@ namespace System.Globalization
         internal string[] _monthNames, _abbreviatedMonthNames, _monthGenitiveNames, _abbreviatedMonthGenitiveNames;
         private DayOfWeek _firstDayOfWeek = DayOfWeek.Sunday;
         private CalendarWeekRule _calendarWeekRule = CalendarWeekRule.FirstDay;
+        internal string _eraName = "A.D.", _abbreviatedEraName = "AD", _nativeCalendarName = "Gregorian Calendar";
+        // A culture's own lists of patterns (null: the invariant culture's).
+        private string[] _shortDatePatterns, _longDatePatterns, _shortTimePatterns, _longTimePatterns, _yearMonthPatterns;
+
+        // A culture's own values (CultureData), and whether they may change.
+        internal void SetData(DayOfWeek firstDayOfWeek, CalendarWeekRule rule, string eraName, string abbreviatedEraName, string nativeCalendarName,
+            string[] shortDates, string[] longDates, string[] shortTimes, string[] longTimes, string[] yearMonths, bool readOnly)
+        {
+            _firstDayOfWeek = firstDayOfWeek;
+            _calendarWeekRule = rule;
+            _eraName = eraName;
+            _abbreviatedEraName = abbreviatedEraName;
+            _nativeCalendarName = nativeCalendarName;
+            _shortDatePatterns = shortDates;
+            _longDatePatterns = longDates;
+            _shortTimePatterns = shortTimes;
+            _longTimePatterns = longTimes;
+            _yearMonthPatterns = yearMonths;
+            _isReadOnly = readOnly;
+        }
 
         // The invariant one keeps no name arrays: the formatting code has its
         // names built in, and the getters make the arrays when asked.
@@ -104,6 +124,14 @@ namespace System.Globalization
             copy._abbreviatedMonthGenitiveNames = _abbreviatedMonthGenitiveNames;
             copy._firstDayOfWeek = _firstDayOfWeek;
             copy._calendarWeekRule = _calendarWeekRule;
+            copy._eraName = _eraName;
+            copy._abbreviatedEraName = _abbreviatedEraName;
+            copy._nativeCalendarName = _nativeCalendarName;
+            copy._shortDatePatterns = _shortDatePatterns;
+            copy._longDatePatterns = _longDatePatterns;
+            copy._shortTimePatterns = _shortTimePatterns;
+            copy._longTimePatterns = _longTimePatterns;
+            copy._yearMonthPatterns = _yearMonthPatterns;
             return copy;
         }
 
@@ -238,7 +266,7 @@ namespace System.Globalization
             }
         }
 
-        public string NativeCalendarName => "Gregorian Calendar";
+        public string NativeCalendarName => _nativeCalendarName;
         public string RFC1123Pattern => DateTimeFormat.Rfc1123;
         public string SortableDateTimePattern => DateTimeFormat.Sortable;
         public string UniversalSortableDateTimePattern => DateTimeFormat.UniversalSortable;
@@ -264,14 +292,14 @@ namespace System.Globalization
         public string GetEraName(int era)
         {
             if (era == 0 || era == 1)
-                return "A.D.";
+                return _eraName;
             throw new ArgumentOutOfRangeException("era", "Era value was not valid.");
         }
 
         public string GetAbbreviatedEraName(int era)
         {
             if (era == 0 || era == 1)
-                return "AD";
+                return _abbreviatedEraName;
             throw new ArgumentOutOfRangeException("era", "Era value was not valid.");
         }
 
@@ -279,7 +307,8 @@ namespace System.Globalization
         {
             if (eraName == null)
                 throw new ArgumentNullException("eraName");
-            return TextCasing.EqualsIgnoreCase(Number.AsSpan(eraName), Number.AsSpan("A.D.")) || TextCasing.EqualsIgnoreCase(Number.AsSpan(eraName), Number.AsSpan("AD")) ? 1 : -1;
+            return TextCasing.EqualsIgnoreCase(Number.AsSpan(eraName), Number.AsSpan(_eraName))
+                || TextCasing.EqualsIgnoreCase(Number.AsSpan(eraName), Number.AsSpan(_abbreviatedEraName)) ? 1 : -1;
         }
 
         // The patterns each standard format may use, the one it formats with
@@ -289,15 +318,15 @@ namespace System.Globalization
         {
             switch (format)
             {
-                case 'd': return Merged(_shortDatePattern, DateTimeFormat.ShortDate, "yyyy-MM-dd");
-                case 'D': return Merged(_longDatePattern, DateTimeFormat.LongDate);
+                case 'd': return ShortDates();
+                case 'D': return LongDates();
                 case 't': return ShortTimes();
-                case 'T': return Merged(_longTimePattern, DateTimeFormat.LongTime);
-                case 'y': case 'Y': return Merged(_yearMonthPattern, DateTimeFormat.YearMonth);
-                case 'f': return Combined(Merged(_longDatePattern, DateTimeFormat.LongDate), ShortTimes());
-                case 'F': case 'U': return Combined(Merged(_longDatePattern, DateTimeFormat.LongDate), Merged(_longTimePattern, DateTimeFormat.LongTime));
-                case 'g': return Combined(Merged(_shortDatePattern, DateTimeFormat.ShortDate, "yyyy-MM-dd"), ShortTimes());
-                case 'G': return Combined(Merged(_shortDatePattern, DateTimeFormat.ShortDate, "yyyy-MM-dd"), Merged(_longTimePattern, DateTimeFormat.LongTime));
+                case 'T': return LongTimes();
+                case 'y': case 'Y': return Merged(_yearMonthPattern, _yearMonthPatterns ?? new[] { DateTimeFormat.YearMonth });
+                case 'f': return Combined(LongDates(), ShortTimes());
+                case 'F': case 'U': return Combined(LongDates(), LongTimes());
+                case 'g': return Combined(ShortDates(), ShortTimes());
+                case 'G': return Combined(ShortDates(), LongTimes());
                 case 'm': case 'M': return new[] { _monthDayPattern };
                 case 'o': case 'O': return new[] { DateTimeFormat.RoundTripPattern };
                 case 'r': case 'R': return new[] { DateTimeFormat.Rfc1123 };
@@ -324,7 +353,10 @@ namespace System.Globalization
             return all;
         }
 
-        private string[] ShortTimes() => Merged(_shortTimePattern, DateTimeFormat.ShortTime, "hh:mm tt", "H:mm", "h:mm tt");
+        private string[] ShortDates() => Merged(_shortDatePattern, _shortDatePatterns ?? new[] { DateTimeFormat.ShortDate, "yyyy-MM-dd" });
+        private string[] LongDates() => Merged(_longDatePattern, _longDatePatterns ?? new[] { DateTimeFormat.LongDate });
+        private string[] ShortTimes() => Merged(_shortTimePattern, _shortTimePatterns ?? new[] { DateTimeFormat.ShortTime, "hh:mm tt", "H:mm", "h:mm tt" });
+        private string[] LongTimes() => Merged(_longTimePattern, _longTimePatterns ?? new[] { DateTimeFormat.LongTime });
 
         // The current pattern first, as .NET merges them: found among the
         // defaults, it swaps places with the first; else it goes in front.

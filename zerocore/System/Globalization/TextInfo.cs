@@ -2,48 +2,85 @@ using System.Text;
 
 namespace System.Globalization
 {
-    // The invariant culture's casing: one char (or surrogate pair) to one,
-    // by the simple Unicode mapping, as in .NET's invariant mode, and
-    // ToTitleCase with .NET's rules (after dotnet/runtime's TextInfo.cs, MIT):
-    // words in capitals stay so, and an apostrophe doesn't start a word.
+    // A culture's casing: one char (or surrogate pair) to one, by the simple
+    // Unicode mapping, as .NET does. The invariant culture's is .NET's
+    // invariant mode; a named culture's also maps İ down to i and ı up to I,
+    // and Turkish and Azerbaijani map i up to İ and I down to ı, as .NET's
+    // ICU casing does. ToTitleCase has .NET's rules (after dotnet/runtime's
+    // TextInfo.cs, MIT): words in capitals stay so, an apostrophe doesn't
+    // start a word, and Dutch cultures write "IJ" for "ij" at a word's start.
     public sealed class TextInfo
     {
         private static TextInfo s_invariant;
 
-        private readonly bool _isReadOnly;
+        private bool _isReadOnly;
+        private readonly string _cultureName = "", _listSeparator = ",";
+        private readonly int _lcid = CultureInfo.LocaleInvariant, _ansi = 1252, _oem = 437, _mac = 10000, _ebcdic = 37;
+        private readonly bool _rightToLeft, _dutch;
+        internal readonly int _mode; // TextCasing.Invariant, Culture or Turkish
 
         private TextInfo(bool isReadOnly) => _isReadOnly = isReadOnly;
 
+        internal TextInfo(string cultureName, string twoLetterName, int lcid, string listSeparator, int ansi, int oem, int mac, int ebcdic, bool rightToLeft, bool isReadOnly)
+        {
+            _cultureName = cultureName;
+            _lcid = lcid;
+            _listSeparator = listSeparator;
+            _ansi = ansi;
+            _oem = oem;
+            _mac = mac;
+            _ebcdic = ebcdic;
+            _rightToLeft = rightToLeft;
+            _isReadOnly = isReadOnly;
+            _mode = twoLetterName == "tr" || twoLetterName == "az" ? TextCasing.Turkish : TextCasing.Culture;
+            _dutch = cultureName.Length > 3 && (cultureName[0] | 0x20) == 'n' && (cultureName[1] | 0x20) == 'l' && cultureName[2] == '-';
+        }
+
+        private TextInfo(TextInfo other, bool isReadOnly)
+        {
+            _cultureName = other._cultureName;
+            _lcid = other._lcid;
+            _listSeparator = other._listSeparator;
+            _ansi = other._ansi;
+            _oem = other._oem;
+            _mac = other._mac;
+            _ebcdic = other._ebcdic;
+            _rightToLeft = other._rightToLeft;
+            _mode = other._mode;
+            _dutch = other._dutch;
+            _isReadOnly = isReadOnly;
+        }
+
         internal static TextInfo Invariant => s_invariant ??= new TextInfo(true);
 
-        public string CultureName => "";
-        public int LCID => CultureInfo.LocaleInvariant;
-        public int ANSICodePage => 1252;
-        public int OEMCodePage => 437;
-        public int MacCodePage => 10000;
-        public int EBCDICCodePage => 37;
-        public bool IsRightToLeft => false;
+        public string CultureName => _cultureName;
+        public int LCID => _lcid;
+        public int ANSICodePage => _ansi;
+        public int OEMCodePage => _oem;
+        public int MacCodePage => _mac;
+        public int EBCDICCodePage => _ebcdic;
+        public bool IsRightToLeft => _rightToLeft;
         public bool IsReadOnly => _isReadOnly;
-        public string ListSeparator => ",";
+        public string ListSeparator => _listSeparator;
 
-        public object Clone() => new TextInfo(false);
+        public object Clone() => new TextInfo(this, false);
 
         public static TextInfo ReadOnly(TextInfo textInfo)
         {
             if (textInfo == null)
                 throw new ArgumentNullException("textInfo");
-            return textInfo._isReadOnly ? textInfo : new TextInfo(true);
+            return textInfo._isReadOnly ? textInfo : new TextInfo(textInfo, true);
         }
 
-        public override bool Equals(object obj) => obj is TextInfo;
-        public override int GetHashCode() => 0;
-        public override string ToString() => "TextInfo - ";
+        public override bool Equals(object obj) => obj is TextInfo other && other._cultureName == _cultureName;
+        public override int GetHashCode() => _cultureName.GetHashCode();
+        public override string ToString() => "TextInfo - " + _cultureName;
 
-        public char ToUpper(char c) => char.ToUpperInvariant(c);
-        public char ToLower(char c) => char.ToLowerInvariant(c);
+        public char ToUpper(char c) => _mode == TextCasing.Invariant ? char.ToUpperInvariant(c) : (char)TextCasing.Change(c, true, _mode);
+        public char ToLower(char c) => _mode == TextCasing.Invariant ? char.ToLowerInvariant(c) : (char)TextCasing.Change(c, false, _mode);
 
-        public string ToUpper(string str) => TextCasing.Change(str ?? throw new ArgumentNullException("str"), true);
-        public string ToLower(string str) => TextCasing.Change(str ?? throw new ArgumentNullException("str"), false);
+        public string ToUpper(string str) => TextCasing.Change(str ?? throw new ArgumentNullException("str"), true, _mode);
+        public string ToLower(string str) => TextCasing.Change(str ?? throw new ArgumentNullException("str"), false, _mode);
 
         public string ToTitleCase(string str)
         {
@@ -58,8 +95,17 @@ namespace System.Globalization
                 UnicodeCategory category = Category(str, i, out int length);
                 if (IsLetter(category))
                 {
-                    // The word's first letter in title case.
-                    i = AddTitleCase(result, str, i, length) + 1;
+                    // Dutch writes "IJ" for a word's "ij"; otherwise the word's
+                    // first letter in title case.
+                    if (_dutch && i < str.Length - 1 && (str[i] == 'i' || str[i] == 'I') && (str[i + 1] == 'j' || str[i + 1] == 'J'))
+                    {
+                        result.Append("IJ");
+                        i += 2;
+                    }
+                    else
+                    {
+                        i = AddTitleCase(result, str, i, length) + 1;
+                    }
                     // The rest of the word in lower case, unless it has no
                     // lower case letters (an acronym such as "USA").
                     int lowercaseStart = i;
@@ -156,7 +202,7 @@ namespace System.Globalization
         {
             if (length == 2)
             {
-                int cp = TextCasing.Change(char.ConvertToUtf32(input[index], input[index + 1]), true) - 0x10000;
+                int cp = TextCasing.Change(char.ConvertToUtf32(input[index], input[index + 1]), true, _mode) - 0x10000;
                 result.Append((char)(0xD800 + (cp >> 10)));
                 result.Append((char)(0xDC00 + (cp & 0x3FF)));
                 return index + 1;

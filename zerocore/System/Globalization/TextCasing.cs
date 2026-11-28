@@ -26,13 +26,48 @@ namespace System.Globalization
         internal static int Change(int codePoint, bool upper)
             => upper ? UnicodeData.ToUpper(codePoint) : UnicodeData.ToLower(codePoint);
 
+        // Casing modes: the invariant culture's; a named culture's, which (as
+        // .NET's ICU casing) also maps İ down to i and ı up to I; and Turkish
+        // and Azerbaijani, which also map i up to İ and I down to ı.
+        internal const int Invariant = 0, Culture = 1, Turkish = 2;
+
+        // The current culture's casing mode, for char.ToUpper(c) and
+        // string.ToUpper(): set (by CultureInfo's CurrentCulture setters) only
+        // once a culture is made current, so programs that never do that
+        // don't link CultureInfo for them.
+        internal static delegate*<int> s_currentMode;
+
+        internal static int CurrentMode => s_currentMode == null ? Invariant : s_currentMode();
+
+        internal static int Change(int codePoint, bool upper, int mode)
+        {
+            if (mode != Invariant)
+            {
+                if (upper)
+                {
+                    if (codePoint == 'i' && mode == Turkish)
+                        return 0x0130;
+                    if (codePoint == 0x0131)
+                        return 'I';
+                }
+                else
+                {
+                    if (codePoint == 'I' && mode == Turkish)
+                        return 0x0131;
+                    if (codePoint == 0x0130)
+                        return 'i';
+                }
+            }
+            return Change(codePoint, upper);
+        }
+
         // The first index whose casing changes, or -1.
-        private static int FirstChange(ReadOnlySpan<char> source, bool upper)
+        private static int FirstChange(ReadOnlySpan<char> source, bool upper, int mode)
         {
             for (int i = 0; i < source.Length; )
             {
                 int cp = CodePointAt(source, i, out int length);
-                if (Change(cp, upper) != cp)
+                if (Change(cp, upper, mode) != cp)
                     return i;
                 i += length;
             }
@@ -41,11 +76,11 @@ namespace System.Globalization
 
         // Writes source's upper or lower case into destination, which must be
         // at least as long (casing never changes the length).
-        internal static void Change(ReadOnlySpan<char> source, Span<char> destination, bool upper)
+        internal static void Change(ReadOnlySpan<char> source, Span<char> destination, bool upper, int mode = Invariant)
         {
             for (int i = 0; i < source.Length; )
             {
-                int cp = Change(CodePointAt(source, i, out int length), upper);
+                int cp = Change(CodePointAt(source, i, out int length), upper, mode);
                 if (length == 1)
                 {
                     destination[i] = (char)cp;
@@ -62,21 +97,22 @@ namespace System.Globalization
 
         // The string's upper or lower case: the same string when nothing
         // changes, as in .NET.
-        internal static string Change(string text, bool upper)
+        internal static string Change(string text, bool upper, int mode = Invariant)
         {
             ReadOnlySpan<char> source = Number.AsSpan(text);
-            if (FirstChange(source, upper) < 0)
+            if (FirstChange(source, upper, mode) < 0)
                 return text;
             if (source.Length <= 256)
             {
-                char* buffer = stackalloc char[source.Length];
-                Change(source, new Span<char>(buffer, source.Length), upper);
+                // A fixed size: a variable stackalloc needs __alloca, which DOS lacks.
+                char* buffer = stackalloc char[256];
+                Change(source, new Span<char>(buffer, source.Length), upper, mode);
                 return Number.FromChars(buffer, source.Length);
             }
             char[] chars = new char[source.Length];
             fixed (char* p = chars)
             {
-                Change(source, new Span<char>(p, source.Length), upper);
+                Change(source, new Span<char>(p, source.Length), upper, mode);
                 return Number.FromChars(p, source.Length);
             }
         }

@@ -199,14 +199,14 @@ namespace System.Text
         {
             if (culture == null)
                 throw new ArgumentNullException("culture");
-            return ToUpperInvariant(value);
+            return new Rune((uint)TextCasing.Change((int)value._value, true, culture.TextInfo._mode), false);
         }
 
         public static Rune ToLower(Rune value, CultureInfo culture)
         {
             if (culture == null)
                 throw new ArgumentNullException("culture");
-            return ToLowerInvariant(value);
+            return new Rune((uint)TextCasing.Change((int)value._value, false, culture.TextInfo._mode), false);
         }
 
         public static UnicodeCategory GetUnicodeCategory(Rune value) => CharUnicodeInfo.GetUnicodeCategory((int)value._value);

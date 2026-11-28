@@ -237,5 +237,6 @@ namespace ZeroTest
         public static CultureInfo GetCultureInfo(string name) => new CultureInfo();
         public static CultureInfo GetCultureInfo(int culture) => new CultureInfo();
         public CompareInfo CompareInfo => CompareInfo.Invariant;
+        public TextInfo TextInfo => TextInfo.Invariant;
     }
 }

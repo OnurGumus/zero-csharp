@@ -24,6 +24,15 @@ namespace System.Globalization
             _percentPositivePattern, _percentNegativePattern;
         internal int[] _numberGroupSizes = { 3 }, _currencyGroupSizes = { 3 }, _percentGroupSizes = { 3 };
         private DigitShapes _digitSubstitution = DigitShapes.None;
+        private string[] _nativeDigits;
+
+        // A culture's own values (CultureData), and whether they may change.
+        internal void SetData(DigitShapes digitSubstitution, string[] nativeDigits, bool readOnly)
+        {
+            _digitSubstitution = digitSubstitution;
+            _nativeDigits = nativeDigits;
+            _isReadOnly = readOnly;
+        }
 
         // The invariant one: read-only, and the formatting code knows its
         // symbols without reading them.
@@ -93,6 +102,7 @@ namespace System.Globalization
             copy._currencyGroupSizes = _currencyGroupSizes;
             copy._percentGroupSizes = _percentGroupSizes;
             copy._digitSubstitution = _digitSubstitution;
+            copy._nativeDigits = _nativeDigits;
             return copy;
         }
 
@@ -196,7 +206,18 @@ namespace System.Globalization
             }
         }
 
-        public string[] NativeDigits => new string[] { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+        public string[] NativeDigits
+        {
+            get
+            {
+                if (_nativeDigits == null)
+                    return new string[] { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+                string[] copy = new string[_nativeDigits.Length];
+                for (int i = 0; i < copy.Length; i++)
+                    copy[i] = _nativeDigits[i];
+                return copy;
+            }
+        }
 
         // .NET also takes '-' for a negative sign that is another dash.
         internal bool AllowHyphenDuringParsing

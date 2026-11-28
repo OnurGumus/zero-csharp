@@ -186,8 +186,8 @@ Check("categories",
     && char.IsWhiteSpace('\u00A0'));
 ```
 
-There is only the invariant culture (see [Cultures](#cultures)), so `ToUpper` and `ToLower` are
-`ToUpperInvariant` and `ToLowerInvariant`: each char maps to one char, as in .NET's invariant mode. The tables are linked only into programs that use
+`char.ToUpper` and `ToLower` follow the current culture (see [Cultures](#cultures)), which is the
+invariant one unless you set it: each char maps to one char, as in .NET. The tables are linked only into programs that use
 them: categories take about 16 KB, casing 1.6 KB and numeric values 3 KB. `IsAsciiDigit`, `IsAsciiLetter`
 and the other ASCII methods, `IsWhiteSpace` and `IsControl` are plain comparisons and need none, which
 matters on a Commodore 64. `CharUnicodeInfo` (in `System.Globalization`) answers for code points above
@@ -306,12 +306,11 @@ compares all of this with .NET's over every code point and millions of strings.
 
 A program that formats a number for a person and the same number for a file has to know which rules
 each one uses: in German, 1234.5 is written `1.234,5`. .NET handles this with cultures, and code
-that must not depend on where it runs passes `CultureInfo.InvariantCulture` everywhere. Carrying
-every culture's data would cost far more than most zero-mode programs are, so zero mode does what
-.NET does with `InvariantGlobalization` set: **there is one culture, the invariant one**.
+that must not depend on where it runs passes `CultureInfo.InvariantCulture` everywhere. Zero mode has
+both: the invariant culture, which costs nothing, and about 80 common cultures built from .NET's own
+data, which a program carries only if it asks for one by name.
 
-`CultureInfo` and `NumberFormatInfo` are there, so code written that way compiles unchanged and gets
-.NET's invariant results. `CurrentCulture` is the invariant culture too:
+The invariant culture works as in .NET, and `CurrentCulture` starts as the invariant culture:
 
 <!-- sample: samples/Cultures.cs invariant -->
 ```csharp
@@ -328,38 +327,98 @@ Check("its numbers",
     && invariant.NumberFormat.NumberGroupSeparator == ",");
 ```
 
-Asking for any other culture throws `CultureNotFoundException`, with the message .NET gives in that
-mode, so the program stops at the line that wanted German rules instead of quietly getting English
-ones:
+### Built-in cultures
+
+`new CultureInfo("de-DE")` and `CultureInfo.GetCultureInfo("de-DE")` give the culture's numbers,
+dates, names and casing, as .NET gives them with ICU:
+
+<!-- sample: samples/Locales.cs numbers -->
+```csharp
+var german = CultureInfo.GetCultureInfo("de-DE");
+var hindi = CultureInfo.GetCultureInfo("hi-IN");
+Is("German", 1234567.891.ToString("N2", german), "1.234.567,89");
+Is("German euros", 1234.5m.ToString("C", german), "1.234,50 €");
+Is("Indian grouping", 12345678.ToString("N0", hindi), "1,23,45,678");
+Check("parse German", double.Parse("1.234,5", german) == 1234.5);
+```
+
+<!-- sample: samples/Locales.cs dates -->
+```csharp
+Is("German date", day.ToString("D", german), "Donnerstag, 5. März 2026");
+Is("Japanese date", day.ToString("D", japanese), "2026年3月5日 木曜日");
+Is("French short", day.ToString("d", french), "05/03/2026");
+var american = CultureInfo.GetCultureInfo("en-US");
+Is("US", day.ToString("g", american), "3/5/2026 2:07\u202FPM");
+```
+
+The table has about 80 cultures: English, German, French, Spanish, Italian, Portuguese, Dutch, the
+Nordic languages, Polish, Czech, Slovak, Hungarian, Romanian, Bulgarian, Greek, Turkish,
+Azerbaijani, Russian, Ukrainian, Hebrew, Arabic (Egypt), Hindi, Japanese, Korean, Chinese,
+Indonesian, Vietnamese and Malay, in their main countries, and their neutral cultures (`de`,
+`zh-Hans`). `CultureInfo.GetCultures` lists them. A name that isn't in the table throws
+`CultureNotFoundException`:
 
 <!-- sample: samples/Cultures.cs other -->
 ```csharp
-string message = Thrown(() => new CultureInfo("de-DE"));
-Check("another culture throws", message == InvariantOnly
-    + " (Parameter 'name')\nde-DE is an invalid culture identifier.");
+CultureInfo german = new CultureInfo("de-DE");
+Check("a culture from the table", german.EnglishName == "German (Germany)"
+    && 1234.5.ToString("N1", german) == "1.234,5");
+string message = Thrown(() => new CultureInfo("@@"));
+Check("a name it doesn't know throws", message == "Culture is not supported."
+    + " (Parameter 'name')\n@@ is an invalid culture identifier.");
+```
+
+Turkish and Azerbaijani have their own casing: the dotted and dotless i are separate letters, so
+`i` becomes `İ`. Code that lowercases a keyword with the current culture breaks in Turkey for that
+reason, which is why `ToUpperInvariant` exists:
+
+<!-- sample: samples/Locales.cs turkish -->
+```csharp
+var turkish = CultureInfo.GetCultureInfo("tr-TR");
+Is("Turkish upper case", "istanbul".ToUpper(turkish), "İSTANBUL");
+Is("Turkish lower case", "ISPARTA".ToLower(turkish), "ısparta");
+Is("invariant upper case", "istanbul".ToUpperInvariant(), "ISTANBUL");
+```
+
+Making a culture current makes it the default for `ToString()`, `Parse` and `ToUpper()`, on that
+thread:
+
+<!-- sample: samples/Locales.cs current -->
+```csharp
+CultureInfo.CurrentCulture = turkish;
+Is("ToUpper() follows the current culture", "i".ToUpper(), "İ");
+Is("so does char.ToUpper", char.ToUpper('i').ToString(), "İ");
+Is("and number text", 1.5.ToString(), "1,5");
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 ```
 
 ```text
   what you write                      what zero mode does
   ----------------------------------  ---------------------------------------
   CultureInfo.InvariantCulture        the invariant culture
-  CultureInfo.CurrentCulture          the invariant culture
-  new CultureInfo("") / (127)         an invariant culture (writable copy)
-  new CultureInfo("de-DE")            CultureNotFoundException, as .NET's
-  x.ToString(provider)                the provider's formats: invariant, or
-                                      a NumberFormatInfo of your own
-  string.CompareTo, Sort()            by character code, as .NET's invariant
-                                      mode does
+  CultureInfo.CurrentCulture          the invariant culture, until you set it
+                                      (not the system's, as .NET would)
+  new CultureInfo("de-DE")            German, from the table (writable)
+  CultureInfo.GetCultureInfo("de-DE") German, read-only, the same object
+                                      each time
+  new CultureInfo("sw-KE")            CultureNotFoundException: not in the
+                                      table (.NET with ICU knows it)
+  x.ToString(provider)                the provider's formats
+  "i".ToUpper(turkish)                "İ"
+  string.Compare(a, b, culture)       by character code, for every culture
 ```
 
-`TextInfo` and `CompareInfo` are the invariant culture's (see
-[Change case and compare](#change-case-and-compare)).
+What zero mode doesn't have is collation: comparing and sorting are ordinal for every culture, as in
+.NET's invariant mode, so `string.Compare("a", "B", german)` puts `"B"` first. Only the Gregorian
+calendar exists, so cultures whose default calendar is another one (Saudi Arabia, Thailand, Iran)
+aren't in the table. `scripts/cultures-check/check-cultures.sh` compares every culture in the table
+with .NET's, and `scripts/gen-cultures` regenerates it.
 
 ### Formats of your own
 
-There is no German culture, but there can be German numbers. A `NumberFormatInfo` you make starts as
-a copy of the invariant one, and every property can be set: separators, signs, group sizes, the
-currency and percent symbols and patterns. `ToString`, `TryFormat` and `Parse` given it use them,
+Any culture's formats can also be your own. A `NumberFormatInfo` you make starts as a copy of the
+invariant one, and every property can be set: separators, signs, group sizes, the currency and
+percent symbols and patterns. `ToString`, `TryFormat` and `Parse` given it use them,
 with .NET's results:
 
 <!-- sample: samples/CustomFormats.cs numbers -->
