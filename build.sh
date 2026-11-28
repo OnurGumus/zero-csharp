@@ -188,8 +188,9 @@ DOS_SAMPLES=(
 )
 # A C64 program has about 50 KB for its code, data, heap and stack together,
 # and the default is the samples that fit. Any sample can be asked for by
-# name; the linker says by how much it is too big. C64Demo and Paddles are for
-# the C64 only (lib/C64.cs: the screen, the video chip, the keyboard).
+# name; the linker says by how much it is too big. C64Demo, Paddles and C64Reu
+# are for the C64 only (lib/C64.cs: the screen, the video chip, the keyboard,
+# an REU).
 C64_SAMPLES=(
     Tiny
     Minimal
@@ -201,6 +202,7 @@ C64_SAMPLES=(
     "${SMALL_SAMPLES[@]}"
     C64Demo
     Paddles
+    C64Reu
 )
 # A microcontroller has no SIMD to benchmark, and Vga is a PC game. Blink is
 # for microcontrollers only (lib/Board.cs: the LED, registers, a timer). The Uno R4

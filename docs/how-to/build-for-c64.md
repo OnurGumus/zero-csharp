@@ -290,6 +290,43 @@ at about a tenth of the processor's time. A game that reads keys with `KeyHeld` 
 it plays, `C64.KernalInterrupt = false`; `ReadKey` then gets nothing and `Ticks` stands still. The
 program's end switches it back on.
 
+`Clock`, `Stopwatch`, `Environment.TickCount64`, `Fiber.Sleep` and the timers count the same sixtieths,
+and go on while the interrupt is off, a tenth of a second at a time: they then read CIA 2's time-of-day
+clock, which counts the mains' cycles and needs no interrupt. Switching the interrupt off the first time
+starts that clock at 0. CIA 2's timers are left alone, for RS-232 and for NMI routines. The code that
+reads the time-of-day clock is only in programs that switch the interrupt off.
+
+## Memory beyond 64 KB: an REU
+
+A RAM Expansion Unit adds memory the 6502 can't address: the 1700 (128 KB), 1764 (256 KB), 1750 (512
+KB) or the C64 Ultimate's, up to 16 MB. `C64.Reu.Read` and `C64.Reu.Write` copy between it and the
+C64's own memory, by DMA, a byte a cycle (a KB in about a millisecond), so a program can keep far more
+data than fits in 50 KB and bring in what it needs, a piece at a time:
+
+<!-- sample: samples/C64Reu.cs reu -->
+```csharp
+Span<byte> bytes = stackalloc byte[300];
+for (int i = 0; i < bytes.Length; i++)
+    bytes[i] = (byte)(i * 7);
+// Across the boundary between the first and the second 64 KB.
+C64.Reu.Write(0xFF80, bytes);
+
+Span<byte> back = stackalloc byte[300];
+C64.Reu.Read(0xFF80, back);
+```
+
+`C64.Reu.Size` is the size in bytes, 0 without an REU. Measuring it writes a byte at nine addresses and
+puts back what was there. An address past the end of a smaller REU wraps around to 0.
+
+In VICE, `-reu -reusize 512` adds one, and `-reuimage file` fills it from a file first;
+`c64/run.sh` passes them on from `C64_VICE_OPTIONS`:
+
+```bash
+C64_VICE_OPTIONS="-reu -reusize 512" ./run.sh --c64 C64Reu
+```
+
+On a C64 Ultimate, switch the REU on in its menu, and load a file into it from the file browser.
+
 ## A game
 
 `Paddles` is a paddle-and-ball game: you against the computer, first to 7 points, with W and S or
