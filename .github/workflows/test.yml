@@ -121,6 +121,14 @@ jobs:
       - name: Cryptography and TLS against .NET and RFC 8448
         working-directory: zero-csharp
         run: scripts/crypto-fuzz/fuzz-crypto.sh 3000
+      # Statics zerocore and lib/ fill on first use, outside a static
+      # constructor and ObjectAllocator.Lasting(): filled for the first time
+      # inside an object scope, they'd point into memory the scope frees.
+      # Reads the IL ./test.sh built (scripts/static-stores).
+      - name: Statics filled on first use
+        if: matrix.arch == 'x64'
+        working-directory: zero-csharp
+        run: scripts/static-stores/check.sh
       - name: TLS against OpenSSL
         working-directory: zero-csharp
         env:

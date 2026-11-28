@@ -95,8 +95,9 @@ namespace System.Runtime
                 System.Threading.Interlocked.Decrement(ref s_threadsWithSetting);
         }
 
-        // For the caches zerocore fills on first use (the invariant culture, a
-        // culture GetCultureInfo looked up, the collation tables): a static keeps
+        // For the caches zerocore and lib/ fill on first use (the invariant
+        // culture, a culture GetCultureInfo looked up, the collation tables,
+        // lib/'s worker threads): a static keeps
         // what is made there for the rest of the program, so it mustn't land in
         // an arena an object scope will free (lib/Arena.cs), which would leave
         // the static pointing at freed memory. Between Lasting() and Dispose,
@@ -105,7 +106,9 @@ namespace System.Runtime
         //   if (s_cache == null)
         //       using (ObjectAllocator.Lasting())
         //           s_cache = new Thing();
-        internal static LastingScope Lasting()
+        // scripts/static-stores finds statics filled outside a static
+        // constructor without this.
+        public static LastingScope Lasting()
         {
             LastingScope scope = default;
             Setting* setting = (Setting*)CurrentSetting();
@@ -118,7 +121,7 @@ namespace System.Runtime
             return scope;
         }
 
-        internal ref struct LastingScope
+        public ref struct LastingScope
         {
             internal delegate*<void*, nuint, void*> Allocate;
             internal void* Context;

@@ -163,7 +163,10 @@ sealed class FileThread : Fiber.IoWaiter
             }
             if (Fiber.Poll == null)
                 Fiber.Poll = &Poll;
-            return t_thread = new FileThread(shared);
+            // Kept for the thread's life: made outside any object scope the
+            // program has open now (scripts/static-stores).
+            using (System.Runtime.ObjectAllocator.Lasting())
+                return t_thread = new FileThread(shared);
         }
     }
 

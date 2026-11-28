@@ -478,6 +478,9 @@ namespace System.Threading.Tasks
         /// <summary>A task that completes after <paramref name="delay"/> (rounded up to milliseconds).</summary>
         public static Task Delay(TimeSpan delay) => Delay(DelayTimer.Milliseconds(delay));
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly Action<object?> s_cancelDelay = static t => DelayTimer.Cancel((DelayTimer)t!);
+
         /// <summary>
         /// A task that completes after <paramref name="millisecondsDelay"/>, or
         /// is canceled when <paramref name="cancellationToken"/> is, whichever
@@ -494,7 +497,7 @@ namespace System.Threading.Tasks
             if (!cancellationToken.CanBeCanceled)
                 return millisecondsDelay == -1 ? new Task() : DelayTimer.Add(millisecondsDelay);
             DelayTimer task = millisecondsDelay == -1 ? new DelayTimer() : DelayTimer.Add(millisecondsDelay);
-            task.Registration = cancellationToken.Register(static t => DelayTimer.Cancel((DelayTimer)t!), task);
+            task.Registration = cancellationToken.Register(s_cancelDelay, task);
             return task;
         }
 
@@ -530,6 +533,24 @@ namespace System.Threading.Tasks
         /// <summary>Runs <paramref name="action"/> on a new fiber.</summary>
         public static Task Run(Action action) => Run(action, default);
 
+        // As above: made by the static constructor (scripts/static-stores).
+        static readonly CatchAction<RunState<Action, Task>> s_runBody = static (ref RunState<Action, Task> s) => s.Body();
+
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly Action<RunState<Action, Task>> s_runAction = static r =>
+        {
+            if (r.Token.IsCancellationRequested)
+            {
+                r.Task.Complete(true);
+                return;
+            }
+            Exception? thrown = Catch.Run(ref r, s_runBody);
+            if (thrown != null)
+                r.Task.Fail(thrown);
+            else
+                r.Task.Complete();
+        };
+
         /// <summary>
         /// Runs <paramref name="action"/> on a new fiber, unless
         /// <paramref name="cancellationToken"/> is canceled before the fiber
@@ -538,30 +559,17 @@ namespace System.Threading.Tasks
         public static Task Run(Action action, CancellationToken cancellationToken)
         {
             Task task = new Task();
-            Fiber.Spawn(new RunState<Action, Task>(action, task, cancellationToken), static r =>
-            {
-                if (r.Token.IsCancellationRequested)
-                {
-                    r.Task.Complete(true);
-                    return;
-                }
-                Exception? thrown = Catch.Run(ref r, static (ref RunState<Action, Task> s) => s.Body());
-                if (thrown != null)
-                    r.Task.Fail(thrown);
-                else
-                    r.Task.Complete();
-            });
+            Fiber.Spawn(new RunState<Action, Task>(action, task, cancellationToken), s_runAction);
             return task;
         }
 
         /// <summary>Runs <paramref name="function"/> on a new fiber: the task has its result.</summary>
         public static Task<TResult> Run<TResult>(Func<TResult> function) => Run(function, default);
 
-        /// <summary>Run, canceled instead if <paramref name="cancellationToken"/> is before the fiber starts.</summary>
-        public static Task<TResult> Run<TResult>(Func<TResult> function, CancellationToken cancellationToken)
+        // As above, in a class of its own for the method's type parameter (scripts/static-stores).
+        static class RunValue<TResult>
         {
-            Task<TResult> task = new Task<TResult>();
-            Fiber.Spawn(new RunState<Func<TResult>, Task<TResult>>(function, task, cancellationToken), static r =>
+            internal static readonly Action<RunState<Func<TResult>, Task<TResult>>> Body = static r =>
             {
                 if (r.Token.IsCancellationRequested)
                 {
@@ -573,45 +581,54 @@ namespace System.Threading.Tasks
                     r.Task.Fail(thrown);
                 else
                     r.Task.TrySetResult(result);
-            });
+            };
+        }
+
+        /// <summary>Run, canceled instead if <paramref name="cancellationToken"/> is before the fiber starts.</summary>
+        public static Task<TResult> Run<TResult>(Func<TResult> function, CancellationToken cancellationToken)
+        {
+            Task<TResult> task = new Task<TResult>();
+            Fiber.Spawn(new RunState<Func<TResult>, Task<TResult>>(function, task, cancellationToken), RunValue<TResult>.Body);
             return task;
         }
 
         /// <summary>Runs <paramref name="function"/> (an async lambda) on a new fiber, and completes (or is canceled) when its task does.</summary>
         public static Task Run(Func<Task> function) => Run(function, default);
 
+        // As above: made by the static constructor (scripts/static-stores).
+        static readonly Action<RunState<Func<Task>, Task>> s_runAsync = static r =>
+        {
+            if (r.Token.IsCancellationRequested)
+            {
+                r.Task.Complete(true);
+                return;
+            }
+            // A lambda that isn't async can throw here, before it has a task.
+            Exception? thrown = Catch.Run(r.Body, out Task inner);
+            if (thrown != null)
+            {
+                r.Task.Fail(thrown);
+                return;
+            }
+            inner.WaitDone();
+            r.Task.CompleteAs(inner);
+        };
+
         /// <summary>Run, canceled instead if <paramref name="cancellationToken"/> is before the fiber starts.</summary>
         public static Task Run(Func<Task> function, CancellationToken cancellationToken)
         {
             Task task = new Task();
-            Fiber.Spawn(new RunState<Func<Task>, Task>(function, task, cancellationToken), static r =>
-            {
-                if (r.Token.IsCancellationRequested)
-                {
-                    r.Task.Complete(true);
-                    return;
-                }
-                // A lambda that isn't async can throw here, before it has a task.
-                Exception? thrown = Catch.Run(r.Body, out Task inner);
-                if (thrown != null)
-                {
-                    r.Task.Fail(thrown);
-                    return;
-                }
-                inner.WaitDone();
-                r.Task.CompleteAs(inner);
-            });
+            Fiber.Spawn(new RunState<Func<Task>, Task>(function, task, cancellationToken), s_runAsync);
             return task;
         }
 
         /// <summary>Runs <paramref name="function"/> (an async lambda) on a new fiber: the task has its task's result.</summary>
         public static Task<TResult> Run<TResult>(Func<Task<TResult>> function) => Run(function, default);
 
-        /// <summary>Run, canceled instead if <paramref name="cancellationToken"/> is before the fiber starts.</summary>
-        public static Task<TResult> Run<TResult>(Func<Task<TResult>> function, CancellationToken cancellationToken)
+        // As above, in a class of its own for the method's type parameter (scripts/static-stores).
+        static class RunAsync<TResult>
         {
-            Task<TResult> task = new Task<TResult>();
-            Fiber.Spawn(new RunState<Func<Task<TResult>>, Task<TResult>>(function, task, cancellationToken), static r =>
+            internal static readonly Action<RunState<Func<Task<TResult>>, Task<TResult>>> Body = static r =>
             {
                 if (r.Token.IsCancellationRequested)
                 {
@@ -629,7 +646,14 @@ namespace System.Threading.Tasks
                     r.Task.TrySetResult(inner._result);
                 else
                     r.Task.CompleteAs(inner);
-            });
+            };
+        }
+
+        /// <summary>Run, canceled instead if <paramref name="cancellationToken"/> is before the fiber starts.</summary>
+        public static Task<TResult> Run<TResult>(Func<Task<TResult>> function, CancellationToken cancellationToken)
+        {
+            Task<TResult> task = new Task<TResult>();
+            Fiber.Spawn(new RunState<Func<Task<TResult>>, Task<TResult>>(function, task, cancellationToken), RunAsync<TResult>.Body);
             return task;
         }
 
@@ -931,6 +955,9 @@ namespace System.Threading.Tasks
         // What the timer fiber does when the delay is over: completes the task.
         internal virtual void Due() => Complete();
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly Action<int> s_run = static _ => Run();
+
         // Puts this delay on the list, due in `milliseconds`. Not while it's on it.
         internal void Schedule(int milliseconds)
         {
@@ -967,7 +994,7 @@ namespace System.Threading.Tasks
                 if (!t_fiber)
                 {
                     t_fiber = true;
-                    Fiber.Spawn(0, static _ => Run(), Fiber.MinStackSize);
+                    Fiber.Spawn(0, s_run, Fiber.MinStackSize);
                 }
                 else
                 {
@@ -1045,12 +1072,18 @@ namespace System.Threading.Tasks
         ITimer? _timer;
         CancellationTokenRegistration _registration;
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly Action<object?> s_canceled = static d => ((ProviderDelay)d!).Finish(true);
+
+        // As above: made by the static constructor (scripts/static-stores).
+        static readonly TimerCallback s_due = static d => ((ProviderDelay)d!).Finish(false);
+
         internal void Start(TimeSpan delay, TimeProvider provider, CancellationToken token)
         {
             if (token.CanBeCanceled)
-                _registration = token.Register(static d => ((ProviderDelay)d!).Finish(true), this);
+                _registration = token.Register(s_canceled, this);
             if (delay != Timeout.InfiniteTimeSpan)
-                _timer = provider.CreateTimer(static d => ((ProviderDelay)d!).Finish(false), this, delay, Timeout.InfiniteTimeSpan);
+                _timer = provider.CreateTimer(s_due, this, delay, Timeout.InfiniteTimeSpan);
             if (IsCompleted)
                 _timer?.Dispose(); // the timer fired, or was canceled, as it was made
         }
@@ -1074,10 +1107,13 @@ namespace System.Threading.Tasks
     {
         CancellationTokenRegistration _registration;
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly Action<object?> s_canceled = static w => ((WaitAsyncTask<TResult>)w!).Complete(true);
+
         internal void Start(CancellationToken token)
         {
             task.AddObserver(new Forward(this));
-            _registration = token.Register(static w => ((WaitAsyncTask<TResult>)w!).Complete(true), this);
+            _registration = token.Register(s_canceled, this);
         }
 
         public void Completed(Task done)
@@ -1496,7 +1532,10 @@ namespace System.Runtime.CompilerServices
 
             public bool IsCompleted => false;
             public void GetResult() { }
-            public void OnCompleted(Action continuation) => Fiber.Spawn(continuation, static c => { Fiber.Yield(); c(); });
+            // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+            static readonly Action<Action> s_yieldThenRun = static c => { Fiber.Yield(); c(); };
+
+            public void OnCompleted(Action continuation) => Fiber.Spawn(continuation, s_yieldThenRun);
             public void UnsafeOnCompleted(Action continuation) => OnCompleted(continuation);
         }
     }
@@ -1669,6 +1708,9 @@ namespace System.Runtime.CompilerServices
         // elsewhere the default (32 KB and up) has room.
         static int DispatcherStackSize => Fiber.DefaultStackSize == 4 * 1024 ? 8 * 1024 : 0;
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly Action<int> s_dispatch = static _ => Dispatch();
+
         static void EnsureDispatcher()
         {
             bool running;
@@ -1676,7 +1718,7 @@ namespace System.Runtime.CompilerServices
             if (running || t_starting)
                 return;
             t_starting = true;
-            Fiber.Spawn(0, static _ => Dispatch(), DispatcherStackSize);
+            Fiber.Spawn(0, s_dispatch, DispatcherStackSize);
         }
 
         // The dispatcher gave its role up to wait in a blocking call: the
@@ -1739,6 +1781,12 @@ namespace System.Runtime.CompilerServices
             }
         }
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores). In a class of its own for the method's type parameter.
+        static class Resume<TStateMachine> where TStateMachine : IAsyncStateMachine
+        {
+            internal static readonly Action<Resumer<TStateMachine>> Body = static r => r.Run();
+        }
+
         // OwnFiberMethodBuilder's await. The first time, on the caller's
         // stack, the state machine is copied onto a new fiber, which waits and
         // calls it again; later awaits happen on that fiber and only say what
@@ -1751,7 +1799,7 @@ namespace System.Runtime.CompilerServices
             if (task.HasFiber)
                 return;
             task.HasFiber = true;
-            Fiber.Spawn(new Resumer<TStateMachine>(stateMachine, task), static r => r.Run());
+            Fiber.Spawn(new Resumer<TStateMachine>(stateMachine, task), Resume<TStateMachine>.Body);
         }
 
         // The task to wait for. An awaiter from this file holds it; any other

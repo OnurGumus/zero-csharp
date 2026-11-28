@@ -344,6 +344,23 @@ public static class Program
         }
         unsafe { checkedFrame.Destroy(); } // SAFETY: as above.
         Console.WriteLine($"Comparers and encodings first made inside a scope: {cachesWork}");
+
+        // The same for lib/'s own code: Regex.Create runs a C# lambda, which
+        // the compiler caches in a static the first time. Made in a static
+        // constructor instead, it lives outside the scope, and DebugChecks
+        // finds no static pointing in. (scripts/static-stores checks lib/
+        // and zerocore for caches like it.)
+        Arena.DebugChecks = true;
+        Arena libFrame = Arena.Create(1024, "lib caches");
+        Arena patterns = Arena.Create(4096);
+        Arena.DebugChecks = false;
+        bool libWorks;
+        Arena.ObjectScope fourth;
+        unsafe { fourth = libFrame.OpenObjectScope(); } // SAFETY: nothing made inside is kept.
+        using (fourth)
+            libWorks = Regex.Create(patterns, "a+b").IsMatch("caab");
+        unsafe { libFrame.Destroy(); patterns.Destroy(); } // SAFETY: as above.
+        Console.WriteLine($"lib's caches first made inside a scope: {libWorks}");
     }
 
     // Shared generic code, where the compiler can't tell T: it reads Default itself.

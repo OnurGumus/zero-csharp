@@ -122,6 +122,9 @@ namespace System.Threading
             return Task.CompletedTask;
         }
 
+        // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+        static readonly TimerCallback s_cancelOnTimer = static s => ((CancellationTokenSource)s!).Cancel();
+
         /// <summary>
         /// Cancels after <paramref name="millisecondsDelay"/>, counting from now
         /// in place of any earlier CancelAfter: 0 cancels now, -1 (Timeout.Infinite)
@@ -144,7 +147,7 @@ namespace System.Threading
             }
             if (_provider != null)
             {
-                _providerTimer ??= _provider.CreateTimer(static s => ((CancellationTokenSource)s!).Cancel(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                _providerTimer ??= _provider.CreateTimer(s_cancelOnTimer, this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
                 _providerTimer.Change(TimeSpan.FromMilliseconds(millisecondsDelay), Timeout.InfiniteTimeSpan);
                 return;
             }
@@ -191,13 +194,16 @@ namespace System.Threading
             internal override void Due() => source.Cancel();
         }
 
+        // As above: made by the static constructor (scripts/static-stores).
+        static readonly Action<object?> s_cancelLinked = static s => ((CancellationTokenSource)s!).Cancel();
+
         /// <summary>A source canceled when any of <paramref name="tokens"/> is (or Cancel is called).</summary>
         public static CancellationTokenSource CreateLinkedTokenSource(params CancellationToken[] tokens)
         {
             var linked = new CancellationTokenSource();
             var links = new CancellationTokenRegistration[tokens.Length];
             for (int i = 0; i < tokens.Length; i++)
-                links[i] = tokens[i].Register(static s => ((CancellationTokenSource)s!).Cancel(), linked);
+                links[i] = tokens[i].Register(s_cancelLinked, linked);
             linked._links = links;
             return linked;
         }

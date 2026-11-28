@@ -125,6 +125,20 @@ public struct Regex
         return regex;
     }
 
+    // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+    static readonly ScratchAction<CreateState> s_create = static (scoped ScratchScope scratch, scoped ref CreateState s) =>
+    {
+        var compiler = new RegexCompiler(scratch, s.Pattern, s.Options);
+        if (!compiler.Run(out s.Error, out s.ErrorPosition))
+            return;
+        s.Regex = Store(s.Arena, ref compiler);
+        if (!s.Regex.IsCreated)
+        {
+            s.Error = "the arena is full";
+            s.ErrorPosition = -1;
+        }
+    };
+
     /// <summary>
     /// Compiles <paramref name="pattern"/> into <paramref name="arena"/>, or
     /// returns false with the reason and the position in the pattern it was
@@ -136,18 +150,7 @@ public struct Regex
         // The syntax tree and the program as it's built are temporary memory
         // (Arena.Scratch); only the finished program goes in the caller's arena.
         var state = new CreateState { Arena = arena, Pattern = pattern, Options = options };
-        Arena.Scratch(ref state, static (scoped ScratchScope scratch, scoped ref CreateState s) =>
-        {
-            var compiler = new RegexCompiler(scratch, s.Pattern, s.Options);
-            if (!compiler.Run(out s.Error, out s.ErrorPosition))
-                return;
-            s.Regex = Store(s.Arena, ref compiler);
-            if (!s.Regex.IsCreated)
-            {
-                s.Error = "the arena is full";
-                s.ErrorPosition = -1;
-            }
-        });
+        Arena.Scratch(ref state, s_create);
         regex = state.Regex;
         error = state.Error;
         errorPosition = state.ErrorPosition;

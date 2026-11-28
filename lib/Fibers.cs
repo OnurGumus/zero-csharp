@@ -686,6 +686,9 @@ public static class Fiber
         SwitchToScheduler(s, current);
     }
 
+    // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+    static readonly Action<object?> s_wakeEarly = static w => ((Waker)w!).WakeEarly();
+
     /// <summary>
     /// Sleep, ending early if <paramref name="cancellationToken"/> is canceled:
     /// true if it slept the whole time, false if canceled (before or during).
@@ -704,7 +707,7 @@ public static class Fiber
             return true;
         }
         var waker = new Waker(current);
-        using (cancellationToken.Register(static w => ((Waker)w!).WakeEarly(), waker))
+        using (cancellationToken.Register(s_wakeEarly, waker))
             Sleep(milliseconds);
         return !cancellationToken.IsCancellationRequested;
     }
@@ -1018,6 +1021,9 @@ public sealed partial class Channel<T>
         }
     }
 
+    // Made by the static constructor, outside any object scope: a lambda the compiler caches on first use could be made inside one (scripts/static-stores).
+    static readonly Action<object?> s_cancelReceive = static w => ((CanceledReceiver)w!).Cancel();
+
     /// <summary>
     /// Receive, giving up when <paramref name="cancellationToken"/> is
     /// canceled: false, with the default value, if canceled (before or while
@@ -1047,7 +1053,7 @@ public sealed partial class Channel<T>
             Append(ref _receivers, current);
             var waiter = new CanceledReceiver(this, current);
             bool received;
-            using (cancellationToken.Register(static w => ((CanceledReceiver)w!).Cancel(), waiter))
+            using (cancellationToken.Register(s_cancelReceive, waiter))
                 received = Fiber.Park("Channel.Receive: the channel is empty, and only a fiber can wait");
             return received;
         }
