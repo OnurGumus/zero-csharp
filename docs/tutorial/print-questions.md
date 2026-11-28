@@ -89,17 +89,18 @@ format (`{x:D4}`, `{x:X}`, `{price:F2}`). [Format text](../how-to/format-text.ht
 
 <div class="lang-text" data-lang="fsharp">
 
-`printfn` reads as it does in .NET, and it costs what it costs there: it builds each line as a string
-on the heap, about 2 KB of work for a line like these. In .NET the garbage collector frees that
-later. Zero mode has no garbage collector, so here it is never freed: this step leaves about 13 KB
-behind. That's nothing for a program that prints a few lines and ends, and it adds up in one that
-prints for hours.
+`printfn` reads as it does in .NET. In .NET it builds each line as a string, and the garbage
+collector frees it later. Zero mode has no garbage collector, so `printfn` does its work in the
+thread's scratch arena instead, and frees it all as it returns: the values, the text and everything
+in between. What stays on the heap is what the F# compiler makes where `printfn` is called: the
+format, and a closure per value from the fourth on, about 200 bytes for these lines. This step
+leaves 1.4 KB behind, where building each line as a string would leave 13 KB.
 
-When it matters, print the pieces with `Console.Write`, which takes numbers, `char`s, strings and
-spans and writes each straight into the output buffer, building nothing: `Console.Write "Q"`, then
-`Console.Write i`, and so on, ending with `Console.WriteLine`. Or free what `printfn` builds with an arena scope ([Write a program in
-F#](../how-to/write-fsharp.html#watch-the-memory)). `%2d` pads to two characters, as `{a,2}` does in
-C#, and the other `printf` formats work too.
+That's nothing for a program that prints a few lines and ends, and it adds up in one that prints for
+hours. There, print the pieces with `Console.Write`, which takes numbers, `char`s, strings and spans
+and writes each straight into the output buffer, leaving nothing: `Console.Write "Q"`, then
+`Console.Write i`, and so on, ending with `Console.WriteLine`. `%2d` pads to two characters, as
+`{a,2}` does in C#, and the other `printf` formats work too.
 
 </div>
 

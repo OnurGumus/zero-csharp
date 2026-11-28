@@ -33,6 +33,9 @@ if (!mistakes.IsCreated)
 // Lives until the end: the mistakes are kept here, the list and its strings.
 let keep = Arena.Create(4096un)
 let mistakes = RefList<string>.Create(keep)
+if not mistakes.IsCreated then
+    printfn "Arena.Create failed"
+    exit 1
 ```
 
 `Arena.Create` makes the arena, with a first block of 4 KB that grows if needed.
@@ -40,7 +43,7 @@ let mistakes = RefList<string>.Create(keep)
 `List<T>` can't: `List<T>` stores items by value and only takes types without references.
 
 If the arena couldn't be created, nothing built on it can be either, so checking the list is enough.
-The F# program checks `mistakes.IsCreated` before it asks the first question.
+C# returns 1 from `Main`; F# calls `exit 1`.
 
 ## Record a mistake
 
@@ -59,19 +62,11 @@ else
 
 <!-- sample: samples/Quiz.fs record -->
 ```fsharp no-check reason="a zero program: the SDK tests build and run it"
-// Kept until the end, so the line is built in `keep`, not in the buffer
-// the next answer overwrites. sprintf would put it on the heap, never freed.
-let remember (a: int) (b: int) (answer: int64) =
-    let mutable line = StrBuilder.Create(keep)
-    line.Append("  ") |> ignore
-    line.Append(a) |> ignore
-    line.Append(" + ") |> ignore
-    line.Append(b) |> ignore
-    line.Append(" = ") |> ignore
-    line.Append(a + b) |> ignore
-    line.Append(", not ") |> ignore
-    line.Append(answer) |> ignore
-    mistakes.Add(line.ToArenaString()) |> ignore
+// Kept until the end, so the line is made in `keep`, not on the heap for
+// good (sprintf's) or in the buffer the next answer overwrites.
+let remember a b (answer: int64) =
+    let line = keep.Sprintf "  %d + %d = %d, not %d" a b (a + b) answer
+    mistakes.Add(line) |> ignore
 ```
 
 <div class="lang-text" data-lang="csharp">
@@ -84,12 +79,11 @@ and the list holds a reference to it.
 
 <div class="lang-text" data-lang="fsharp">
 
-`remember` is the one place in the program that keeps a string. `sprintf` would build it on the
-heap, where it would never be freed, and C#'s `Str.Format` takes its text through a C# interpolated
-string handler, which F# can't call. So the F# program builds the line with a `StrBuilder` in
-`keep`: each `Append` writes a piece into the arena, and `ToArenaString` makes the string there.
-`line` is `let mutable` because `StrBuilder` is a struct that `Append` changes. The string lives as
-long as the arena, and the list holds a reference to it.
+`keep.Sprintf "..."` is the one place in the program that keeps a string. It formats the line, as
+`sprintf` would, into a new string allocated in `keep`, where `sprintf`'s would go on the heap for
+good. The string lives as long as the arena, and the list holds a reference to it. (C#'s
+`Str.Format` takes its text through a C# interpolated string handler, which F# can't call, hence a
+method of its own.)
 
 </div>
 
@@ -114,12 +108,11 @@ if (mistakes.Count > 0)
 
 <!-- sample: samples/Quiz.fs report -->
 ```fsharp no-check reason="a zero program: the SDK tests build and run it"
-let report (right: int) (asked: int) =
-    printfn "%d of %d right" right asked
-    if mistakes.Count > 0 then
-        printfn "Mistakes:"
-        for mistake in mistakes do
-            printfn "%s" mistake
+printfn "%d of %d right" right asked
+if mistakes.Count > 0 then
+    printfn "Mistakes:"
+    for mistake in mistakes do
+        printfn "%s" mistake
 ```
 
 `foreach` (F#'s `for ... in`) works on `RefList`, as it does on `Dict`, `StrDict` and `RefDict`; a

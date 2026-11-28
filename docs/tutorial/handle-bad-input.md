@@ -7,8 +7,8 @@ index: 3
 
 Step 2 treats anything that isn't the right number as a wrong answer, including a typo. This step asks
 again instead, and lets an empty answer skip the question. In C#, the question's body becomes a loop
-that ends when the answer has been dealt with. In F#, `read` says what one answer was, and `ask`
-calls it again until the answer is one the quiz can count:
+that ends when the answer has been dealt with. In F#, `ask` calls itself until the answer is one the
+quiz can count, and says what it was:
 
 <!-- sample: samples/QuizStep3.cs loop -->
 ```csharp
@@ -66,10 +66,9 @@ type Outcome =
     | Wrong
     | Skipped
     | EndOfInput
-    | AskAgain
 
-// Reads one answer and says what it was.
-let read i a b =
+// Asks until the answer is a number, empty, or the input ends.
+let rec ask i a b =
     printf "Q%d: %d + %d = " i a b
     let length = In.ReadLine(Span<char>(buffer))
     if length < 0 then
@@ -81,7 +80,7 @@ let read i a b =
     elif length > buffer.Length then
         printf "that's %d characters; " length
         printfn "answers are at most %d" buffer.Length
-        AskAgain
+        ask i a b
     else
         let answer = ReadOnlySpan<char>(buffer, 0, length).Trim()
         let mutable value = 0L
@@ -89,23 +88,14 @@ let read i a b =
             printfn "skipped"
             Skipped
         elif not (Str.TryParse(answer, &value)) then
-            // A span isn't a printf argument; Console writes it as it is.
-            Console.Write('"')
-            Console.Write(answer)
-            Console.WriteLine("\" isn't a number")
-            AskAgain
+            printfn "\"%s\" isn't a number" (answer.ToString())
+            ask i a b
         elif value = int64 (a + b) then
             printfn "right"
             Right
         else
             printfn "no, it's %d" (a + b)
             Wrong
-
-// Asks until the answer is a number, empty, or the input ends.
-let rec ask i a b =
-    match read i a b with
-    | AskAgain -> ask i a b
-    | outcome -> outcome
 ```
 
 Three cases are new:
@@ -128,12 +118,12 @@ the plainest way out of two loops.
 
 <div class="lang-text" data-lang="fsharp">
 
-A span can't be a `printf` argument, so the message is written in pieces: `Console.Write` takes the
-span and writes it from the input buffer to the output buffer without a string in between.
+A span can't be a `printf` argument, so the message quotes `answer.ToString()`: a new string with the
+span's characters, as in .NET. It stays on the heap, which is fine for the odd bad answer; `Console.Write`
+takes the span itself, when a program must leave nothing behind.
 
-F# has no `continue` or `goto`, so `read` handles one answer and returns `AskAgain` when the quiz
-should ask once more; `ask` repeats it until it doesn't. `quiz` stops at `EndOfInput`, which leaves
-both loops at once.
+F# has no `continue` or `goto`: `ask` calls itself to ask again, and `quiz` stops at `EndOfInput`,
+which leaves both loops at once.
 
 </div>
 

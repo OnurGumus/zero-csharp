@@ -38,9 +38,20 @@ foreach (ReadOnlySpan<char> part in "x,y,z".Split(','))
 Check("Split count", parts == 3);
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Strings.fs split -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let mutable parts = 0
+for part in "x,y,z".Split(',') do
+    parts <- parts + 1
+check "Split count" (parts = 3)
+```
+
 Defining `AsSpan(string)` also switches on C# 14's implicit conversion from `string` to
 `ReadOnlySpan<char>`. So every string converts to a span, and any span parameter takes a string. A
-null string acts as an empty one.
+null string acts as an empty one. F# converts a string to a span where a method takes one, through
+the same conversion (`op_Implicit`), and `for part in text.Split(',')` loops over the parts there too.
 
 Parsing works on spans too. `int.Parse`, `double.TryParse` and the other numbers' `Parse` and
 `TryParse` take a `ReadOnlySpan<char>` as well as a string, and read what .NET reads in the invariant
@@ -64,13 +75,42 @@ else
 }
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/QuizStep2.fs check -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Whether the answer in the buffer is a + b. Says which, as it checks.
+let check length a b =
+    let answer = ReadOnlySpan<char>(buffer, 0, length)
+    let mutable value = 0L
+    if Str.TryParse(answer.Trim(), &value) && value = int64 (a + b) then
+        printfn "right"
+        true
+    else
+        printfn "no, it's %d" (a + b)
+        false
+
+let rec quiz i right asked =
+    if i > Questions then
+        right, asked
+    else
+        let a = next 50
+        let b = next 50
+        match ask i a b with
+        | None -> right, asked
+        | Some length ->
+            let gained = if check length a b then 1 else 0
+            quiz (i + 1) (right + gained) (asked + 1)
+```
+
 ## Console: formatting straight to stdout
 
 `Console.Write` and `Console.WriteLine` write through `lib/Out.cs`, a buffered writer that encodes text
 as UTF-8 and hands each line to `write()` in one call (`Console.Write` shows what it has at once, as in
-.NET). `Console.WriteLine($"...")` uses a custom
-interpolated string handler, so every hole is formatted straight into the output buffer and no string
-is built:
+.NET). In C#, `Console.WriteLine($"...")` uses a custom interpolated string handler, so every hole is
+formatted straight into the output buffer and no string is built. F#'s `printf` formats in a small
+buffer of its own that it takes back as it returns ([what printf leaves
+behind](../how-to/write-fsharp.html#what-printf-leaves-behind)):
 
 <!-- sample: samples/Strings.cs table -->
 ```csharp
@@ -79,18 +119,31 @@ Console.WriteLine($"{"apple",-8}|{3,5}|{1.25,9:F2}");
 Console.WriteLine($"{"melon",-8}|{12,5}|{0.5,9:F2}");
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Strings.fs table -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+printfn "%-8s|%5s|%9s" "item" "qty" "price"
+printfn "%-8s|%5d|%9.2f" "apple" 3 1.25
+printfn "%-8s|%5d|%9.2f" "melon" 12 0.5
+```
+
 Holes take every number type, `bool`, `char`, strings and spans, with an optional alignment
 (`{x,8}`, `{x,-8}`) and one of .NET's format strings (`{x:X4}`, `{x:F2}`, `{x:N0}`), with .NET's
-output. [Format text](../how-to/format-text.html) covers the details.
+output. [Format text](../how-to/format-text.html) covers the details. `printf`'s specifiers take
+the same widths: `%-8s`, `%5d`, `%9.2f`.
 
 ## Strings in an arena
 
 When you do need a string object, to store it or to pass it to something that takes `string`, build it
 in an arena. `Str.Format(arena, $"...")` formats into the arena with the same holes as `Console.WriteLine`, and
-`Str.Concat(arena, a, b)` joins spans. Both return null if the arena isn't created or is full.
+`Str.Concat(arena, a, b)` joins spans. Both return null if the arena isn't created or is full. In F#,
+`arena.Sprintf "n=%d" 5` formats into the arena as `sprintf` would: C#'s handler isn't one F# can
+call.
 
 These are real strings. A zero-mode string object is a method-table pointer, a length and the
-characters, and `Str.Format` lays one out in arena memory, followed by a terminator like a literal's.
+characters, and `Str.Format` (or `Sprintf`) lays one out in arena memory, followed by a terminator
+like a literal's.
 The result works anywhere a string does:
 
 <!-- sample: samples/Strings.cs real-string -->
@@ -104,6 +157,16 @@ unsafe
     fixed (char* p = s)
         Check("null-terminated like a literal", p[3] == '\0');
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Strings.fs real-string -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let s = arena.Sprintf "n=%d" 5
+check "Length" (s.Length = 3)
+check "indexer" (s[0] = 'n' && s[2] = '5')
+check "null-terminated like a literal" (terminator s = '\000')
 ```
 
 For text built up in pieces, `StrBuilder.Create(arena)` is the counterpart of `StringBuilder`, with
@@ -141,7 +204,25 @@ string kept = Arena.Scratch(ref s_arena,
     });
 ```
 
-The draft is freed when the callback returns, and `kept` still holds the text, in `s_arena`.
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Strings.fs scratch -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Build in scratch memory and copy only the result out: the draft goes
+// when the callback returns, the copy stays in `arena`.
+let numbersInto =
+    ScratchFuncIn<Arena, string>(fun scratch keep ->
+        let draft = scratch.Text()
+        for i in 0 .. 49 do
+            draft.Append(i)
+            draft.Append(' ')
+        draft.ToArenaString(keep))
+let kept = Arena.Scratch(arena, numbersInto)
+```
+
+The draft is freed when the callback returns, and `kept` still holds the text, in `s_arena`. The F#
+version takes the arena by value (`ScratchFuncIn`): an `Arena` is a handle, so the copy allocates in
+the same arena. Its callback is a module-level value, made once, as the C# one is a `static` lambda.
 
 Collections of strings follow the same rule. `RefList<string>` and `RefDict` hold references, not
 copies, so the strings they hold must live in an arena that outlives the collection's use of them. The
@@ -156,6 +237,17 @@ else
     // the buffer the next answer overwrites.
     mistakes.Add(Str.Format(keep, $"  {a} + {b} = {a + b}, not {value}"));
 }
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Quiz.fs record -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// Kept until the end, so the line is made in `keep`, not on the heap for
+// good (sprintf's) or in the buffer the next answer overwrites.
+let remember a b (answer: int64) =
+    let line = keep.Sprintf "  %d + %d = %d, not %d" a b (a + b) answer
+    mistakes.Add(line) |> ignore
 ```
 
 `StrDict` is the exception: it copies each new key into its own arena, so it doesn't depend on where its
@@ -184,6 +276,27 @@ Check("categories",
     char.GetUnicodeCategory('€') == UnicodeCategory.CurrencySymbol
     && char.IsPunctuation('¿') && char.IsSymbol('+')
     && char.IsWhiteSpace('\u00A0'));
+```
+
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Unicode.fs char-methods -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+check "letters in any script"
+    (Char.IsLetter 'é' && Char.IsLetter 'ж' && Char.IsLetter '中')
+check "digits in any script"
+    (Char.IsDigit '٣' && Char.GetNumericValue '٣' = 3.0)
+check "numbers that aren't digits"
+    (Char.IsNumber '½' && not (Char.IsDigit '½')
+     && Char.GetNumericValue '½' = 0.5 && Char.GetNumericValue 'Ⅻ' = 12.0)
+check "case"
+    (Char.ToUpper 'ж' = 'Ж' && Char.ToLower 'Σ' = 'σ' && Char.IsUpper 'Σ')
+check "invariant case: one char to one"
+    (Char.ToUpper 'ß' = 'ß' && Char.ToUpper 'ı' = 'ı')
+check "categories"
+    (Char.GetUnicodeCategory '€' = UnicodeCategory.CurrencySymbol
+     && Char.IsPunctuation '¿' && Char.IsSymbol '+'
+     && Char.IsWhiteSpace ' ')
 ```
 
 There are no cultures, so `ToUpper` and `ToLower` are `ToUpperInvariant` and `ToLowerInvariant`: each
@@ -220,6 +333,33 @@ byte[] latin1 = Encoding.Latin1.GetBytes("Āb");
 Check("Latin-1", Encoding.Latin1.GetString(latin1) == "Ab");
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Unicode.fs encoding -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let text = "naïve ☕ 😀"
+let utf8 = Encoding.UTF8.GetBytes(text) // allocated
+check "UTF-8 bytes"
+    (utf8.Length = 15 && Encoding.UTF8.GetString(utf8) = text)
+
+// Into buffers made once: the span overloads allocate nothing.
+let bytes: byte[] = Array.zeroCreate 64
+let chars: char[] = Array.zeroCreate 64
+let written = Encoding.UTF8.GetBytes(text, Span<byte>(bytes))
+let read =
+    Encoding.UTF8.GetChars(
+        ReadOnlySpan<byte>(bytes, 0, written), Span<char>(chars))
+check "into a span and back"
+    (written = 15 && read = text.Length
+     && Encoding.UTF8.GetByteCount(text) = 15)
+
+// What doesn't fit becomes '?' in ASCII, a close letter in Latin-1.
+let ascii = Encoding.ASCII.GetBytes("naïve")
+check "ASCII" (Encoding.ASCII.GetString(ascii) = "na?ve")
+let latin1 = Encoding.Latin1.GetBytes("Āb")
+check "Latin-1" (Encoding.Latin1.GetString(latin1) = "Ab")
+```
+
 There are no `Encoder` or `Decoder` objects, no fallback objects and no other code pages.
 `new UTF8Encoding(false, throwOnInvalidBytes: true)` ends the program at invalid input, which is what
 an exception does here.
@@ -230,4 +370,5 @@ There is nothing culture-aware. `"n=" + 5`, `ToString("F2")`, `string.Format` an
 work, with .NET's format strings in the invariant culture (see
 [Format text](../how-to/format-text.html#nets-format-strings-tostring-string.format-and-tryformat)),
 but each allocates a new string with calloc that is never freed: fine once, not in a loop. There,
-write `Str.Format(arena, $"n={5}")`, or `TryFormat` into a span.
+write `Str.Format(arena, $"n={5}")`, or `TryFormat` into a span. In F#, `sprintf` and an interpolated
+string are the same: a string on the heap for good; `arena.Sprintf` puts it in an arena instead.
