@@ -481,7 +481,7 @@ with .NET's: comparing, `IsPrefix`, `IsSuffix`, `IndexOf` and `LastIndexOf`.
   ------------------------------------  ----------------------------------
   a program that never compares with    nothing: the tables aren't linked
   a culture from the table
-  one that does                         about 840 KB of tables, read in
+  one that does                         about 740 KB of tables, read in
                                         place; the ideograph orders are
                                         unpacked (up to 0.5 MB) the first
                                         time ideographs are compared
