@@ -140,6 +140,7 @@ ALL_SAMPLES=(
     Dates
     Casing
     CustomFormats
+    Locales
     Keys
     Tensors
     TensorsAvx
@@ -201,6 +202,7 @@ DOS_SAMPLES=(
     Dates
     Casing
     CustomFormats
+    Locales
     Keys
     Tensors
     TensorTypes
@@ -275,6 +277,7 @@ ARM_SAMPLES=(
     Dates
     Casing
     CustomFormats
+    Locales
     Keys
     Tensors
     TensorTypes
@@ -304,7 +307,6 @@ R4_SAMPLES=(
     Records
     Shapes
     Refs
-    Cultures
     Dates
     Casing
     CustomFormats

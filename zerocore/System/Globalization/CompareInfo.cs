@@ -42,18 +42,29 @@ namespace System.Globalization
 
         private static CompareInfo s_invariant;
 
+        private readonly string _name = "";
+        private readonly int _lcid = CultureInfo.LocaleInvariant;
+
         private CompareInfo() { }
+
+        // A named culture's: its name, and the same ordinal comparisons (there
+        // is no collation data yet).
+        internal CompareInfo(string name, int lcid)
+        {
+            _name = name;
+            _lcid = lcid;
+        }
 
         internal static CompareInfo Invariant => s_invariant ??= new CompareInfo();
 
         public static CompareInfo GetCompareInfo(string name) => CultureInfo.GetCultureInfo(name ?? throw new ArgumentNullException("name")).CompareInfo;
         public static CompareInfo GetCompareInfo(int culture) => CultureInfo.GetCultureInfo(culture).CompareInfo;
 
-        public string Name => "";
-        public int LCID => CultureInfo.LocaleInvariant;
-        public override string ToString() => "CompareInfo - ";
-        public override bool Equals(object value) => value is CompareInfo;
-        public override int GetHashCode() => 0;
+        public string Name => _name;
+        public int LCID => _lcid;
+        public override string ToString() => "CompareInfo - " + _name;
+        public override bool Equals(object value) => value is CompareInfo other && other._name == _name;
+        public override int GetHashCode() => _name.GetHashCode();
 
         // In invariant mode every non-empty text sorts.
         public static bool IsSortable(char ch) => true;

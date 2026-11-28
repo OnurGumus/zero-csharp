@@ -9,11 +9,13 @@ namespace System
     // lib's MemoryExtensions.ToUpperInvariant writes into a buffer instead.
     public sealed partial class String
     {
-        public string ToUpper() => StringOps.ToUpper(this);
-        public string ToUpper(CultureInfo culture) => StringOps.ToUpper(this);
+        // ToUpper and ToLower follow the culture's casing (CurrentCulture's by
+        // default): Turkish maps i up to İ. The Invariant ones never do.
+        public string ToUpper() => TextCasing.Change(this, true, TextCasing.CurrentMode);
+        public string ToUpper(CultureInfo culture) => (culture ?? CultureInfo.CurrentCulture).TextInfo.ToUpper(this);
         public string ToUpperInvariant() => StringOps.ToUpper(this);
-        public string ToLower() => StringOps.ToLower(this);
-        public string ToLower(CultureInfo culture) => StringOps.ToLower(this);
+        public string ToLower() => TextCasing.Change(this, false, TextCasing.CurrentMode);
+        public string ToLower(CultureInfo culture) => (culture ?? CultureInfo.CurrentCulture).TextInfo.ToLower(this);
         public string ToLowerInvariant() => StringOps.ToLower(this);
 
         public bool Equals(string value, StringComparison comparisonType) => StringOps.Equals(this, value, comparisonType);

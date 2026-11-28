@@ -203,10 +203,14 @@ namespace System
 
         public static int ToUpperInvariant(this ReadOnlySpan<char> source, Span<char> destination) => ChangeCase(source, destination, true);
         public static int ToLowerInvariant(this ReadOnlySpan<char> source, Span<char> destination) => ChangeCase(source, destination, false);
-        public static int ToUpper(this ReadOnlySpan<char> source, Span<char> destination, CultureInfo culture) => ChangeCase(source, destination, true);
-        public static int ToLower(this ReadOnlySpan<char> source, Span<char> destination, CultureInfo culture) => ChangeCase(source, destination, false);
+        public static int ToUpper(this ReadOnlySpan<char> source, Span<char> destination, CultureInfo culture)
+            => ChangeCase(source, destination, true, (culture ?? CultureInfo.CurrentCulture).TextInfo);
+        public static int ToLower(this ReadOnlySpan<char> source, Span<char> destination, CultureInfo culture)
+            => ChangeCase(source, destination, false, (culture ?? CultureInfo.CurrentCulture).TextInfo);
 
-        static int ChangeCase(ReadOnlySpan<char> source, Span<char> destination, bool upper)
+        // A culture's casing differs from the invariant one only in the BMP
+        // (Turkish i, İ and ı), so its TextInfo cases those chars.
+        static int ChangeCase(ReadOnlySpan<char> source, Span<char> destination, bool upper, TextInfo text = null)
         {
             unsafe
             {
@@ -227,6 +231,12 @@ namespace System
                 if (System.Text.Rune.DecodeFromUtf16(source.Slice(i), out System.Text.Rune rune, out int used) != System.Buffers.OperationStatus.Done)
                 {
                     destination[i] = source[i]; // a lone surrogate stays as it is
+                    i++;
+                    continue;
+                }
+                if (text != null && rune.IsBmp)
+                {
+                    destination[i] = upper ? text.ToUpper(source[i]) : text.ToLower(source[i]);
                     i++;
                     continue;
                 }

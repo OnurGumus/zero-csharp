@@ -230,8 +230,8 @@ malformed hole such as `"{0:F2"`. `samples/Formats.cs` checks these results on e
 
 - **No holes of other types.** A struct or class in a hole doesn't compile, unless it implements
   `ISpanFormattable`. Format its fields instead, or call its `ToString()`, which allocates.
-- **No custom formats, and no cultures but the invariant one** (a `NumberFormatInfo` of your own
-  can change the symbols). Formatting is otherwise invariant: `.` as the decimal point, `,` between
+- **No custom formats.** Without a culture or a `NumberFormatInfo` of your own, formatting is
+  invariant: `.` as the decimal point, `,` between
   thousands. A custom format such as `{x:0.00}` ends the program with a `FormatException`; use a
   standard one such as `{x:F2}`.
 - **`ToString`, `string.Format`, plain `$"..."` and numbers in `+`** (`"n=" + 5`) work, but
