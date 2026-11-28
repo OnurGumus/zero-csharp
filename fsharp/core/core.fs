@@ -120,15 +120,67 @@ namespace Microsoft.FSharp.Core
             let PhysicalHashIntrinsic (x: 'T) : int when 'T : not struct = (box x).GetHashCode()
             let inline PhysicalHashFast (x: 'T) = PhysicalHashIntrinsic x
 
-            // Structural equality without reflection: IStructuralEquatable
-            // (F# records, unions, tuples), then Equals.
+            // Arrays' elements as objects, for the element types without a
+            // loop of their own below: zerocore's arrays have no GetValue,
+            // but each is an IEnumerable (each element boxed).
+            let ArrayItems (a: Array) =
+                match box a with
+                | :? System.Collections.IEnumerable as items -> items.GetEnumerator()
+                | _ -> raise (InvalidOperationException("an array that isn't an IEnumerable"))
+
+            // Structural equality without reflection: arrays element by
+            // element, as FSharp.Core compares them (zerocore's arrays have no
+            // IStructuralEquatable, which is F#'s); IStructuralEquatable (F#
+            // records, unions, tuples); then Equals.
             let rec GenericEqualityObj (er:bool) (comp:IEqualityComparer) (xobj:obj) (yobj:obj) : bool =
                 match xobj, yobj with
                 | null, null -> true
                 | null, _ -> false
                 | _, null -> false
+                | (:? Array as x1), (:? Array as y1) -> ArrayEquality er comp x1 y1
                 | (:? IStructuralEquatable as x1), _ -> x1.Equals(yobj, comp)
                 | _ -> xobj.Equals(yobj)
+
+            and ArrayEquality (er:bool) (comp:IEqualityComparer) (x: Array) (y: Array) : bool =
+                if x.Length <> y.Length then false
+                else
+                    let n = x.Length
+                    let mutable i = 0
+                    let mutable same = true
+                    match box x, box y with
+                    | (:? (int[]) as a), (:? (int[]) as b) ->
+                        while same && i < n do
+                            same <- (# "ceq" (GetArray a i) (GetArray b i) : bool #)
+                            i <- i + 1
+                    | (:? (byte[]) as a), (:? (byte[]) as b) ->
+                        while same && i < n do
+                            same <- (# "ceq" (GetArray a i) (GetArray b i) : bool #)
+                            i <- i + 1
+                    | (:? (char[]) as a), (:? (char[]) as b) ->
+                        while same && i < n do
+                            same <- (# "ceq" (GetArray a i) (GetArray b i) : bool #)
+                            i <- i + 1
+                    | (:? (int64[]) as a), (:? (int64[]) as b) ->
+                        while same && i < n do
+                            same <- (# "ceq" (GetArray a i) (GetArray b i) : bool #)
+                            i <- i + 1
+                    | (:? (float[]) as a), (:? (float[]) as b) ->
+                        // = says NaN isn't NaN; Equals (er) says it is.
+                        while same && i < n do
+                            let u = (GetArray a i)
+                            let v = (GetArray b i)
+                            same <- (# "ceq" u v : bool #) || (er && not (# "ceq" u u : bool #) && not (# "ceq" v v : bool #))
+                            i <- i + 1
+                    | (:? (string[]) as a), (:? (string[]) as b) ->
+                        while same && i < n do
+                            same <- String.Equals((GetArray a i), (GetArray b i))
+                            i <- i + 1
+                    | _ ->
+                        let xs = ArrayItems x
+                        let ys = ArrayItems y
+                        while same && xs.MoveNext() && ys.MoveNext() do
+                            same <- GenericEqualityObj er comp xs.Current ys.Current
+                    same
 
             let StringCompareOrdinal (x: string) (y: string) =
                 let n = if x.Length < y.Length then x.Length else y.Length
@@ -158,15 +210,61 @@ namespace Microsoft.FSharp.Core
                 | (:? int16 as x), (:? int16 as y) -> (# "cgt" x y : int #) - (# "clt" x y : int #)
                 | (:? float32 as x), (:? float32 as y) -> if (# "clt" x y : bool #) then -1 elif (# "cgt" x y : bool #) then 1 else 0
                 | (:? string as x), (:? string as y) -> StringCompareOrdinal x y
+                | (:? Array as x), (:? Array as y) -> ArrayComparison comp x y
                 | (:? IStructuralComparable as x), _ -> x.CompareTo(yobj, comp)
                 | (:? IComparable as x), _ -> x.CompareTo(yobj)
                 | _ -> raise (ArgumentException("The type does not support comparison"))
 
+            // As FSharp.Core: the shorter array first, then element by element.
+            and ArrayComparison (comp:IComparer) (x: Array) (y: Array) : int =
+                if x.Length <> y.Length then (if x.Length < y.Length then -1 else 1)
+                else
+                    let mutable r = 0
+                    match box x, box y with
+                    | (:? (int[]) as a), (:? (int[]) as b) ->
+                        let mutable i = 0
+                        while r = 0 && i < a.Length do
+                            r <- (# "cgt" (GetArray a i) (GetArray b i) : int #) - (# "clt" (GetArray a i) (GetArray b i) : int #)
+                            i <- i + 1
+                    | (:? (byte[]) as a), (:? (byte[]) as b) ->
+                        let mutable i = 0
+                        while r = 0 && i < a.Length do
+                            r <- (# "cgt.un" (GetArray a i) (GetArray b i) : int #) - (# "clt.un" (GetArray a i) (GetArray b i) : int #)
+                            i <- i + 1
+                    | (:? (char[]) as a), (:? (char[]) as b) ->
+                        let mutable i = 0
+                        while r = 0 && i < a.Length do
+                            r <- (# "cgt" (GetArray a i) (GetArray b i) : int #) - (# "clt" (GetArray a i) (GetArray b i) : int #)
+                            i <- i + 1
+                    | (:? (string[]) as a), (:? (string[]) as b) ->
+                        let mutable i = 0
+                        while r = 0 && i < a.Length do
+                            r <- GenericCompare comp (GetArray a i) (GetArray b i)
+                            i <- i + 1
+                    | _ ->
+                        let xs = ArrayItems x
+                        let ys = ArrayItems y
+                        while r = 0 && xs.MoveNext() && ys.MoveNext() do
+                            r <- GenericCompare comp xs.Current ys.Current
+                    r
+
             let rec GenericHashParamObj (iec : IEqualityComparer) (x: obj) : int =
                 match x with
                 | null -> 0
+                | :? Array as a -> ArrayHash iec a
                 | :? IStructuralEquatable as a -> a.GetHashCode(iec)
                 | _ -> x.GetHashCode()
+
+            // Equal arrays hash alike: their first 18 elements, combined as
+            // FSharp.Core combines them.
+            and ArrayHash (iec : IEqualityComparer) (a: Array) : int =
+                let items = ArrayItems a
+                let mutable acc = 0
+                let mutable i = 0
+                while i < 18 && items.MoveNext() do
+                    acc <- (# "shl" acc 1 : int #) + GenericHashParamObj iec items.Current + 631 * i
+                    i <- i + 1
+                acc
 
             type GenericEqualityComparerImpl(er: bool) =
                 interface IEqualityComparer with

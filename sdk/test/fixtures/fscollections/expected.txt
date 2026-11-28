@@ -158,3 +158,9 @@ true 5
 7: 14, odd, small 7, not negative, low, A
 42: 84, half 21, big, not negative, mid, A
 300: 600, half 150, big, not negative, high, G
+arrays: true false true -1 1
+array hash: true, nested: true, of tuples: true
+tuples: true true true
+set of tuples: 2, map with tuple keys: one
+sorted: 1a,1z,2b
+sorted arrays: 1,1,2

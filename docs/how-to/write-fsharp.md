@@ -959,4 +959,5 @@ one with a `bool`) is an error, ZERO005, that names it.
   ([Recover from errors](recover-from-errors.html)). `try ... finally` and `use` work.
 - **`dict`, `HashSet` and .NET's collections.** Use `Map` and `Set`, or the library's `Dict` and
   `List` ([Choose a collection](choose-a-collection.html)).
-- **Casting an array to another array type**, such as `string[]` to `obj[]`, ends the program.
+- **Casting an array of arrays to another array type**, such as `string[][]` to `obj[][]`, ends the
+  program. (`string[]` to `obj[]` works, as in .NET.)
