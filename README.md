@@ -261,3 +261,30 @@ bflat and [the fork](https://github.com/OnurGumus/bflat) are AGPL-3.0, and so ar
 `ZeroCSharp.Bflat.*` packages that carry it. They are used as a compiler, and nothing from them is
 linked into the programs. Each program does link the C library of its target system, under that
 library's license.
+
+### How can this be MIT if bflat is AGPL?
+
+The fork isn't MIT: it stays AGPL-3.0, and its source is public. What's MIT is this repository, which
+uses the fork the way you'd use any compiler. The AGPL covers the compiler's own code, not the programs
+it compiles, unless its code ends up inside them.
+
+In bflat's zero mode, some of its code would end up inside them: its core library, zerolib, is
+AGPL and gets linked into every program. So this project doesn't use zerolib. It brings its own core
+library, [`zerocore/`](zerocore/README.md), written for this repository from MIT sources (.NET's
+NativeAOT libraries) and the compiler's requirements, and builds with `--stdlib:none` so bflat adds no
+library of its own.
+
+What a program contains, then:
+
+```
+your program  ──  your code                       yours
+              ──  zerocore, lib/                  MIT (with .NET's MIT notices)
+              ──  target runtime (win/, dos/, …)  MIT
+              ──  C library and start files       the target system's license
+              ──  shcrt.lib (Windows only)        MIT, from bflattened/runtime
+```
+
+On Linux, bflat with `--stdlib:none` adds nothing but the system's start files and C library. On
+Windows it also adds `shcrt.lib`, built from bflattened/runtime (a fork of dotnet/runtime, MIT).
+zerocore was compared with zerolib mechanically; [its README](zerocore/README.md#where-the-code-comes-from-and-the-license)
+says how and what matched.
