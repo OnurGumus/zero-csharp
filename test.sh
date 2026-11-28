@@ -369,6 +369,13 @@ run_all() {
     echo
     echo "== $label"
     for name in "${samples[@]}"; do
+        # ZERO_GUARD_PAGES=1 (build.sh) runs every sample with Arena.GuardPages
+        # on. These two use freed memory on purpose, to show what a stale
+        # pointer reads, so with it they are stopped, as they must be.
+        if [ -n "${ZERO_GUARD_PAGES:-}" ] && { [ "$name" = Arena ] || [ "$name" = Refs ]; }; then
+            echo "skip $name (uses freed memory on purpose)"
+            continue
+        fi
         status=0
         argument=
         [ "$name" = Vga ] && argument=test
@@ -417,6 +424,17 @@ run_all() {
         [ -n "$line" ] || continue
         IFS='|' read -r -a fields <<< "$line"
         name=${fields[0]}
+        # Built with guard pages on, the stale list touches freed memory
+        # before DebugChecks gets to report it.
+        [ -n "${ZERO_GUARD_PAGES:-}" ] && [ "$name" = list-after-reset ] && continue
+        # The pages- cases need Arena.GuardPages, which is there only where
+        # the system can protect pages (lib/ArenaGuard.cs); elsewhere the
+        # mistakes they make go unnoticed, as they do without it.
+        if [[ "$name" == pages-* ]]; then
+            case "$target" in
+                wasm|page|dos|uefi|pico2|r4) continue ;;
+            esac
+        fi
         status=0
         out=$("${run[@]}" Guards "$name" < /dev/null 2>&1) || status=$?
         missing=

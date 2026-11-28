@@ -166,7 +166,8 @@ public static class Program
 
         nint firstAddress = Arena.Scratch(static (scoped ScratchScope scratch) => Address(scratch.AllocSpan<int>(64)));
         nint secondAddress = Arena.Scratch(static (scoped ScratchScope scratch) => Address(scratch.AllocSpan<int>(64)));
-        Check("the memory is reused", firstAddress == secondAddress);
+        // (Not with Arena.GuardPages on, which never hands an address out twice.)
+        Check("the memory is reused", firstAddress == secondAddress || Arena.GuardPages);
         int outer = Arena.Scratch(static (scoped ScratchScope scratch) =>
         {
             Span<int> mine = scratch.AllocSpan<int>(4);
@@ -326,7 +327,8 @@ public static class Program
                 items.Add(i);
             return Address(items.AsSpan());
         });
-        Check("their memory is reused", firstList == secondList);
+        // (Not with Arena.GuardPages on, which never hands an address out twice.)
+        Check("their memory is reused", firstList == secondList || Arena.GuardPages);
         // An outer list can be read and changed in a nested call, though not
         // added to there.
         int nested = Arena.Scratch(static (scoped ScratchScope scratch) =>

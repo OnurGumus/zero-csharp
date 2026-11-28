@@ -111,6 +111,17 @@ jobs:
         env:
           BFLAT_DIR: ${{ github.workspace }}/bflat/layouts/linux-glibc-${{ matrix.arch }}
         run: ./test.sh
+      # Every sample again with Arena.GuardPages on from the start: memory an
+      # arena frees is taken away, so any use of it afterwards stops the
+      # program (lib/ArenaGuard.cs). Like page heap on windows-native, for
+      # arenas. Once is enough: the mistakes it finds are the same everywhere.
+      - name: Test with guard pages
+        if: matrix.arch == 'x64'
+        working-directory: zero-csharp
+        env:
+          BFLAT_DIR: ${{ github.workspace }}/bflat/layouts/linux-glibc-${{ matrix.arch }}
+          ZERO_GUARD_PAGES: 1
+        run: ./test.sh
       # The cryptography and TLS checks that need .NET or OpenSSL, all offline:
       # lib/'s crypto against .NET's on random input, RFC 8448's TLS 1.3
       # handshake replayed byte for byte (scripts/crypto-fuzz), and SslStream

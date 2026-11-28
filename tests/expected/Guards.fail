@@ -49,3 +49,10 @@ native-zeroed-overflow|NativeMemory: the size overflows
 native-out-of-memory|NativeMemory: out of memory
 native-bad-alignment|NativeMemory: the alignment isn't a power of two
 native-aligned-overflow|NativeMemory: the size overflows
+pages-pointer-after-reset|Arena "frame":|Arena.GuardPages: memory was used after Arena.Reset freed it
+pages-object-after-scope|Arena "frame":|Arena.GuardPages: memory was used after Arena.Restore, or the end of a scope, freed it
+pages-field-after-scope|Arena "frame":|Arena.GuardPages: memory was used after Arena.Restore, or the end of a scope, freed it
+pages-span-after-scope|Arena "spans":|Arena.GuardPages: memory was used after Arena.Restore, or the end of a scope, freed it
+pages-scratch-pointer|Arena "scratch":|Arena.GuardPages: memory was used after Arena.Restore, or the end of a scope, freed it
+pages-after-destroy|Arena "short-lived":|Arena.GuardPages: memory was used after Arena.Destroy freed it
+pages-arena-after-destroy|Arena "short-lived":|Arena.GuardPages: an arena was used after Arena.Destroy

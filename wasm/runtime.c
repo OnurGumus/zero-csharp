@@ -160,6 +160,21 @@ void RhpInitialDynamicInterfaceDispatch(void) { abort(); }
 // Which system this is, for lib/FileSystem.cs: 6, WebAssembly.
 int ZeroSystem(void) { return 6; }
 
+// lib/ArenaGuard.cs (Arena.GuardPages) asks for pages with mmap and for
+// faults with sigaction. WebAssembly's memory is one block without
+// protection, so mmap fails, and GuardPages stays off.
+void *mmap(void *address, size_t length, int protection, int flags, int file, long long offset)
+{
+    (void)address; (void)length; (void)protection; (void)flags; (void)file; (void)offset;
+    return (void *)-1;
+}
+
+int sigaction(int signal, const void *action, void *previous)
+{
+    (void)signal; (void)action; (void)previous;
+    return -1;
+}
+
 // ZeroRootCertificate, for lib/CryptoX509Chain.cs: the system's trusted root
 // certificates one at a time. Only Windows keeps them where this can ask
 // (win/runtime.c); elsewhere there are none here, and X509Chain reads a PEM
