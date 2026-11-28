@@ -57,6 +57,30 @@ for (int c = 0; c <= 0xFFFF; c++)
     casingOf[c] = index;
 }
 
+// Casing above U+FFFF (Deseret, Osage, Adlam, ...), as Rune.ToUpperInvariant
+// and string casing see it: runs of code points with the same distances to
+// their upper and lower case.
+var wide = new List<byte>();
+int wideRuns = 0;
+for (int cp = 0x10000; cp < CodePoints; )
+{
+    int up = Rune.ToUpperInvariant(new Rune(cp)).Value - cp, low = Rune.ToLowerInvariant(new Rune(cp)).Value - cp;
+    if (up == 0 && low == 0)
+    {
+        cp++;
+        continue;
+    }
+    int end = cp + 1;
+    while (end < CodePoints && Rune.ToUpperInvariant(new Rune(end)).Value - end == up
+        && Rune.ToLowerInvariant(new Rune(end)).Value - end == low)
+        end++;
+    int length = end - cp;
+    wide.AddRange([(byte)cp, (byte)(cp >> 8), (byte)(cp >> 16), (byte)length, (byte)(length >> 8),
+        (byte)up, (byte)(up >> 8), (byte)low, (byte)(low >> 8)]);
+    wideRuns++;
+    cp = end;
+}
+
 // Latin-1's best fit: every char above U+00FF that Encoding.Latin1 turns into
 // something other than '?'.
 var bestFit = new List<byte>();
@@ -92,6 +116,8 @@ foreach (var (upper, lower) in casings)
     casingBytes.AddRange([(byte)upper, (byte)(upper >> 8), (byte)lower, (byte)(lower >> 8)]);
 total += Emit(sb, "CasingPairs", casingBytes,
     "Distance to the upper case, then to the lower case: 2 bytes each,\n        // little-endian, modulo 65536.");
+total += Emit(sb, "WideCasing", wide,
+    "Casing above U+FFFF: runs of a first code point (3 bytes), a length (2 bytes),\n        // and the signed distances to the upper and the lower case (2 bytes each),\n        // little-endian, sorted.");
 total += Trie(sb, "Number", numberOf, "Every code point's index in Numbers.");
 var numberBytes = new List<byte>();
 foreach (double n in numbers)
@@ -107,7 +133,7 @@ sb.Append("    }\n}\n");
 
 string path = Path.Combine(FindRoot(), "zerocore/System/Globalization/UnicodeData.cs");
 File.WriteAllText(path, sb.ToString());
-Console.WriteLine($"{path}: {total} bytes of tables ({casings.Count} casings, {numbers.Count} numbers, {bestFit.Count / 3} best-fit chars)");
+Console.WriteLine($"{path}: {total} bytes of tables ({casings.Count} casings, {wideRuns} wide casing runs, {numbers.Count} numbers, {bestFit.Count / 3} best-fit chars)");
 
 // A four-level table over values. The lowest level holds the values in
 // blocks of 1 << Bits4; each level above holds, in blocks of its own size,

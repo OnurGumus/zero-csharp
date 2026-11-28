@@ -138,6 +138,7 @@ ALL_SAMPLES=(
     Parsing
     Cultures
     Dates
+    Casing
     Keys
     Tensors
     TensorsAvx
@@ -197,6 +198,7 @@ DOS_SAMPLES=(
     Parsing
     Cultures
     Dates
+    Casing
     Keys
     Tensors
     TensorTypes
@@ -269,6 +271,7 @@ ARM_SAMPLES=(
     Parsing
     Cultures
     Dates
+    Casing
     Keys
     Tensors
     TensorTypes
@@ -300,6 +303,7 @@ R4_SAMPLES=(
     Refs
     Cultures
     Dates
+    Casing
     "${SMALL_SAMPLES[@]}"
     Blink
 )

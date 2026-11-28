@@ -12,7 +12,7 @@ namespace System
     // IEnumerable<char>, as in .NET (F# passes strings to Seq functions this
     // way); C#'s foreach over a string stays an indexed loop.
 #pragma warning disable CS0660, CS0661
-    public sealed unsafe class String : IEquatable<string>, IComparable<string>, IComparable, IEnumerable<char>
+    public sealed unsafe partial class String : IEquatable<string>, IComparable<string>, IComparable, IEnumerable<char>
 #pragma warning restore CS0660, CS0661
     {
         // The compiler finds these two fields by name, to lay out string literals.
@@ -59,28 +59,13 @@ namespace System
         // By UTF-16 code unit, as string.CompareOrdinal does. .NET's CompareTo
         // uses the current culture's rules; zero mode has no cultures. So
         // "B" goes before "a" here ('B' is 66, 'a' is 97), not after it.
-        public int CompareTo(string other) => CompareOrdinal(this, other);
+        public int CompareTo(string other) => StringOps.Compare(this, other, StringComparison.CurrentCulture);
 
-        public int CompareTo(object obj) => obj is string other ? CompareOrdinal(this, other) : obj == null ? 1 : throw new ArgumentException("Object must be of type String.");
+        public int CompareTo(object obj) => obj is string other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type String.");
 
-        // Null goes before every string, as in .NET.
-        public static int CompareOrdinal(string a, string b)
-        {
-            if ((object)a == b)
-                return 0;
-            if (a is null)
-                return -1;
-            if (b is null)
-                return 1;
-            int length = a._stringLength < b._stringLength ? a._stringLength : b._stringLength;
-            for (int i = 0; i < length; i++)
-            {
-                int difference = Unsafe.Add(ref a._firstChar, i) - Unsafe.Add(ref b._firstChar, i);
-                if (difference != 0)
-                    return difference;
-            }
-            return a._stringLength - b._stringLength;
-        }
+        // Null goes before every string, and the result is .NET's to the
+        // number (see StringOps.CompareOrdinal).
+        public static int CompareOrdinal(string a, string b) => StringOps.CompareOrdinal(a, b);
 
         public override bool Equals(object obj) => obj is string other && Equals(this, other);
 
