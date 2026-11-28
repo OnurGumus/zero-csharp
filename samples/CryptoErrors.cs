@@ -190,7 +190,7 @@ public static class Program
     {
         byte[] key = Numbered(32, 1);
         Check("short key", Catch.Run(() => new ChaCha20Poly1305(new byte[16])) is CryptographicException);
-        Check("AES key size", Catch.Run(() => new AesGcm(new byte[20], 16)) is ArgumentException);
+        Check("AES key size", Catch.Run(() => new AesGcm(new byte[20], 16)) is CryptographicException);
         Check("AES-GCM tag size", Catch.Run(() => new AesGcm(new byte[16], 8)) is ArgumentException);
         Check("AES-GCM tag not as given", Catch.Run(() =>
         {

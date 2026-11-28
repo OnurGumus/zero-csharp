@@ -194,7 +194,7 @@ Load certificates from PEM text (the `-----BEGIN CERTIFICATE-----` form) or DER 
 X509Certificate2 leaf = X509Certificate2.CreateFromPem(LeafPem);
 string subject = leaf.Subject;   // "CN=www.example.test, O=..."
 string issuer = leaf.Issuer;
-CalendarTime notAfter = leaf.NotAfter;
+DateTime notAfter = leaf.NotAfter;   // local time; ToUniversalTime() for UTC
 ```
 
 `MatchesHostname("www.example.com")` tells whether the certificate is for that host: it checks the

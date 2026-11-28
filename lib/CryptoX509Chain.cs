@@ -128,7 +128,7 @@ public struct X509ChainStatus
 /// <summary>What X509Chain.Build checks against.</summary>
 public sealed class X509ChainPolicy
 {
-    CalendarTime _verificationTime;
+    DateTime _verificationTime;
     bool _timeSet;
 
     /// <summary>Certificates Build may use on the way up: the intermediates a server sent.</summary>
@@ -153,10 +153,14 @@ public sealed class X509ChainPolicy
 
     public X509VerificationFlags VerificationFlags { get; set; }
 
-    /// <summary>The time to check the dates against, in UTC; the current time unless set.</summary>
-    public CalendarTime VerificationTime
+    /// <summary>
+    /// The time to check the dates against; the current time unless set. A
+    /// local time, as in .NET: a DateTime that says it is UTC is taken as
+    /// that, and one that doesn't say, as local.
+    /// </summary>
+    public DateTime VerificationTime
     {
-        get => _timeSet ? _verificationTime : Clock.UtcNow;
+        get => _timeSet ? _verificationTime : DateTime.Now;
         set
         {
             _verificationTime = value;
@@ -168,7 +172,9 @@ public sealed class X509ChainPolicy
     public bool VerificationTimeIgnored { get; set; } = true;
 
     internal long VerificationSeconds
-        => (_timeSet && !VerificationTimeIgnored ? _verificationTime.ToUnixMilliseconds() : Clock.UnixMilliseconds) / 1000;
+        => _timeSet && !VerificationTimeIgnored
+            ? new DateTimeOffset(_verificationTime.ToUniversalTime()).ToUnixTimeSeconds()
+            : Clock.UnixMilliseconds / 1000;
 
     public void Reset()
     {

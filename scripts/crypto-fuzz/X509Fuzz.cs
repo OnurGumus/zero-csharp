@@ -161,7 +161,7 @@ static partial class Program
             chain.ChainPolicy.TrustMode = ZX.X509ChainTrustMode.CustomRootTrust;
             chain.ChainPolicy.CustomTrustStore.Add(ZX.X509Certificate2.CreateFromPem(pems[rootName]));
             chain.ChainPolicy.RevocationMode = ZX.X509RevocationMode.NoCheck;
-            chain.ChainPolicy.VerificationTime = new CalendarTime { Year = at.Year, Month = at.Month, Day = at.Day, Hour = at.Hour };
+            chain.ChainPolicy.VerificationTime = at;
             chain.ChainPolicy.VerificationTimeIgnored = false;
             if (server)
                 chain.ChainPolicy.ApplicationPolicy.Add(new Z.Oid("1.3.6.1.5.5.7.3.1"));
@@ -202,7 +202,7 @@ static partial class Program
             sent.ImportFromPem(Pems()[name]);
             var chain = new ZX.X509Chain();
             chain.ChainPolicy.RevocationMode = ZX.X509RevocationMode.NoCheck;
-            chain.ChainPolicy.VerificationTime = new CalendarTime { Year = 2026, Month = 11, Day = 28, Hour = 12 };
+            chain.ChainPolicy.VerificationTime = new DateTime(2026, 11, 28, 12, 0, 0, DateTimeKind.Utc);
             chain.ChainPolicy.VerificationTimeIgnored = false;
             for (int i = 1; i < sent.Count; i++)
                 chain.ChainPolicy.ExtraStore.Add(sent[i]);
