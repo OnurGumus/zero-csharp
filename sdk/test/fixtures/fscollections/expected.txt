@@ -164,3 +164,5 @@ tuples: true true true
 set of tuples: 2, map with tuple keys: one
 sorted: 1a,1z,2b
 sorted arrays: 1,1,2
+Result: Some(4) [] true false
+Result: 0 6 13 true false

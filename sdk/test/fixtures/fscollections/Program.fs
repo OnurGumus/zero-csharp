@@ -264,3 +264,9 @@ printfn "tuples: %b %b %b" ([ (1, "a") ] = [ (1, "a") ]) (Some (1, 2) = Some (1,
 printfn "set of tuples: %d, map with tuple keys: %s" (Set.ofList [ (1, 2); (0, 5); (1, 2) ]).Count ((Map.ofList [ ((1, "x"), "one"); ((0, "y"), "zero") ])[(1, "x")])
 printfn "sorted: %s" (List.sort [ (2, "b"); (1, "z"); (1, "a") ] |> List.map (fun (n, s) -> sprintf "%d%s" n s) |> String.concat ",")
 printfn "sorted arrays: %s" (List.sort [ [| 2 |]; [| 1; 1 |]; [| 1 |] ] |> List.map (fun x -> string x.Length) |> String.concat ",")
+
+// The Result module.
+let ok: Result<int, string> = Ok 3
+let bad: Result<int, string> = Error "no"
+printfn "Result: %s %s %b %b" (string (Result.map ((+) 1) ok |> Result.toOption)) (string (Result.mapError String.length bad |> Result.toList)) (Result.isOk ok) (Result.isError ok)
+printfn "Result: %d %d %d %b %b" (Result.defaultValue 0 bad) (Result.bind (fun x -> Ok(x * 2)) ok |> Result.defaultWith String.length) (Result.fold (+) 10 ok) (Result.exists ((=) 3) ok) (Result.contains 4 ok)
