@@ -84,15 +84,16 @@ and output, and the TLS cases. In short:
   zero mode ends the program for (a bad index, a failed cast) comes back as an exception.
 - **A fiber that blocks in the system blocks them all.** `lib/`'s own sockets and files yield;
   a call that .NET or the system blocks in (`Thread.Sleep`) holds the turn.
-- **Cultures are ICU's, and the program needs ICU.** zerocore's named cultures and their sort
-  orders come from ICU's data, so .NET runs with ICU (not in invariant globalization mode), and a
-  program starts in the invariant culture, as in zero mode, rather than the user's. Three things
-  follow. The invariant culture compares strings linguistically on .NET ("a" before "B") and
-  ordinally in zero mode. On Linux the machine needs ICU installed (`libicu`; slim container
-  images leave it out, and .NET then stops at startup). And results can differ with each
-  machine's ICU version. A program that names no culture can set `InvariantGlobalization` to
-  `true` in its project: no ICU is needed then, string comparison is ordinal as in zero mode,
-  and naming a culture throws `CultureNotFoundException`.
+- **Cultures: invariant mode by default, ICU for a program that names them.** A program runs in
+  .NET's invariant globalization mode unless its project sets `InvariantGlobalization` to
+  `false`. There strings compare by character code, as zerocore's invariant culture does, and no
+  ICU is needed; but naming a culture (`new CultureInfo("de-DE")`) throws
+  `CultureNotFoundException`. With ICU, named cultures behave as zerocore's (whose tables come
+  from ICU's data), but the invariant culture compares strings by language rules ("apple" before
+  "Banana"; zero mode puts "Banana" first), Linux machines need ICU installed (slim container
+  images leave it out), and results can vary with its version. Either way the program starts in
+  the invariant culture, as in zero mode, not the user's. The test builds turn ICU on only for
+  the samples that name cultures: Cultures, Locales and Sorting.
 
 ## Objects move
 

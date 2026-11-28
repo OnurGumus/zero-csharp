@@ -52,6 +52,12 @@
          nothing of lib/'s has a .NET type's name: there CS0436 is an error. -->
     <NoWarn Condition="'$(ZeroDotnetTypes)' != 'Net'">$(NoWarn);CS0436</NoWarn>
     <WarningsAsErrors Condition="'$(ZeroDotnetTypes)' == 'Net'">$(WarningsAsErrors);CS0436</WarningsAsErrors>
+    <!-- .NET's invariant globalization mode unless the project says otherwise:
+         strings compare by character code, as in zero mode, and no ICU is
+         needed. A program that names cultures sets it to false (ICU: named
+         cultures as zerocore's, but strings in the invariant culture compare
+         by language rules). -->
+    <InvariantGlobalization Condition="'$(InvariantGlobalization)' == ''">true</InvariantGlobalization>
     <ZeroDotnetDir>$(ZeroSdkRoot)payload/dotnet/</ZeroDotnetDir>
   </PropertyGroup>
 
