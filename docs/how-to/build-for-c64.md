@@ -570,7 +570,9 @@ another emulator, VICE's `c1541` puts it on a disk image:
 c1541 -format "zero,01" d64 zero.d64 -write bin/c64/QuizStep1.prg quizstep1
 ```
 
-On the C64, `LOAD"*",8,1` and then `RUN`. The program ends at BASIC's `READY.`
+On the C64, `LOAD"*",8,1` and then `RUN`. The program ends at BASIC's `READY.`, and `RUN` runs it again.
+A program bigger than BASIC's 38,911 bytes ends with BASIC empty, as after `NEW`, and all of BASIC's
+memory free; load it again to run it again.
 
 ## How it works
 

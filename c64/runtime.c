@@ -49,6 +49,54 @@ static void leave(int code)
     exit(code);
 }
 
+// BASIC's own bookkeeping, mended before llvm-mos's save-basic.o copies its
+// zero page (.init.005) to put it back at the end. LOAD sets BASIC's end of
+// program (VARTAB, $2D/$2E) to the end of the file; a program bigger than
+// BASIC's 38,911 bytes ends past BASIC's top of memory (MEMSIZ, $37/$38),
+// and BASIC, given that back, says ?OUT OF MEMORY ERROR to every line typed
+// after the program ends (or at once, to what it finds after SYS). Such a
+// program BASIC can't hold anyway, so here it gets what NEW leaves: an
+// empty program at the start of BASIC's memory (TXTTAB, $2B/$2C), and the
+// variables after it. A smaller program is left as it was, and RUN runs it
+// again.
+//
+// And the program ends through BASIC's warm start ($A002, what RUN/STOP and
+// RESTORE do), last of all the exit code (.fini.999, after save-basic.o has
+// put BASIC's zero page back and the processor port has the ROMs in again):
+// it empties the 6502's stack, closes the channels and prints READY. A
+// return into the SYS line that started the program would have BASIC go on
+// reading that line, which a program bigger than BASIC's memory may have
+// overwritten.
+__asm__(
+    "  .section .fini.999,\"ax\",@progbits\n"
+    "  jmp ($a002)\n"
+    "  .text\n");
+__asm__(
+    "  .section .init.004,\"ax\",@progbits\n"
+    "  lda $37\n"                     // MEMSIZ >= VARTAB: it fits
+    "  cmp $2d\n"
+    "  lda $38\n"
+    "  sbc $2e\n"
+    "  bcs 1f\n"
+    "  ldy #0\n"                      // an empty program: its link 0
+    "  tya\n"
+    "  sta ($2b),y\n"
+    "  iny\n"
+    "  sta ($2b),y\n"
+    "  clc\n"                         // VARTAB, ARYTAB, STREND after it
+    "  lda $2b\n"
+    "  adc #2\n"
+    "  sta $2d\n"
+    "  sta $2f\n"
+    "  sta $31\n"
+    "  lda $2c\n"
+    "  adc #0\n"
+    "  sta $2e\n"
+    "  sta $30\n"
+    "  sta $32\n"
+    "1:\n"
+    "  .text\n");
+
 int main(void)
 {
     leave((int)__managed__Main(0, 0));
