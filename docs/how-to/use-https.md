@@ -63,9 +63,11 @@ SslStream: the server's certificate isn't trusted. The certificate isn't for 127
 
 ## Choosing what to trust
 
-The roots come from the system's PEM bundle on Linux, macOS and Android, as `X509Chain` reads them.
-Windows' certificate store isn't read yet. On Windows, and anywhere without a bundle, set
-`SSL_CERT_FILE` to a PEM file of roots, or give the roots in code:
+The roots come from the system, as `X509Chain` reads them: Windows' ROOT certificate store, and the
+PEM bundle Linux, macOS and Android keep. Windows fills its store as it goes: it adds a root the
+first time its own TLS code (a browser, say) needs one. So a little-used Windows machine may lack a
+root a site needs, and the connection is refused with `UntrustedRoot` or `PartialChain`. Elsewhere,
+or to choose the roots yourself, set `SSL_CERT_FILE` to a PEM file of roots, or give them in code:
 
 ```csharp no-sample
 var policy = new X509ChainPolicy();

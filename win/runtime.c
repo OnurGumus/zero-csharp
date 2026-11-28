@@ -482,6 +482,47 @@ int getentropy(void *buffer, u64 length)
     return gen_random(0, buffer, (u32)length, 2) == 0 ? 0 : -1;
 }
 
+// ---- trusted root certificates, for lib/CryptoX509Chain.cs -------------------
+//
+// ZeroRootCertificate walks the system's ROOT store, one certificate per
+// call: given the one before (null to start), it returns the next one's
+// context and points data and length at its DER bytes, valid until the next
+// call; null at the end. crypt32.dll is looked up at run time, so programs
+// that never check a chain don't import it. CertEnumCertificatesInStore
+// frees the context it is given, so the walk keeps nothing.
+
+typedef struct {
+    u32 encoding_type;
+    unsigned char *encoded;
+    u32 length;
+    void *info;
+    void *store;
+} CertContext;
+
+const void *ZeroRootCertificate(const void *previous, const unsigned char **data, int *length)
+{
+    typedef void *(*OpenStore)(u64 provider, const wchar *name);
+    typedef const CertContext *(*Enumerate)(void *store, const CertContext *previous);
+    static Enumerate enumerate;
+    static void *store;
+    if (!store) {
+        Handle module = LoadLibraryA("crypt32.dll");
+        if (!module)
+            return 0;
+        OpenStore open_store = (OpenStore)GetProcAddress(module, "CertOpenSystemStoreW");
+        enumerate = (Enumerate)GetProcAddress(module, "CertEnumCertificatesInStore");
+        static const wchar root[] = { 'R', 'O', 'O', 'T', 0 };
+        if (!open_store || !enumerate || !(store = open_store(0, root)))
+            return 0;
+    }
+    const CertContext *next = enumerate(store, (const CertContext *)previous);
+    if (!next)
+        return 0;
+    *data = next->encoded;
+    *length = (int)next->length;
+    return next;
+}
+
 // ---- sockets, for lib/Sockets.cs -------------------------------------------
 //
 // lib/Sockets.cs calls the C library's socket functions with Linux's numbers
