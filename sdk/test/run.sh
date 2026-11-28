@@ -637,14 +637,50 @@ EXPECTED
     pass "$name"
 }
 
+# F# on ZeroTarget=dotnet: an F# library (task { } over Task.Run) used by an
+# F# program, both on one lib/ assembly (ZeroCSharp.Dotnet). As in
+# dotnet_target, zero mode first, and the .NET build must print the same.
+test_dotnet_fsharp() {
+    local name="dotnet fsharp" dir exe
+    can_build "$name" || return
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    if ! has_dotnet_11; then skip "$name" "needs the .NET SDK 11"; return; fi
+    if [ "$HOST_OS" = Darwin ] && [ ! -f "$ROOT/sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib" ]; then
+        skip "$name" "this payload has no libzerocompat.dylib (it was built off a Mac)"; return
+    fi
+    if ! ls "$FEED"/ZeroCSharp.Dotnet.*.nupkg > /dev/null 2>&1; then fail "$name" "no ZeroCSharp.Dotnet in $FEED"; return; fi
+    dir=$(fixture dotnetfsharp)
+    if ! run_in "$dir/App" dotnetfsharp-zero build; then fail "$name" "the zero-mode build failed"; return; fi
+    exe=$(exe "$dir/App/bin/Debug/$TFM/App")
+    if ! (cd "$dir/App" && run_limited 60 "$WORK/dotnetfsharp-zero.txt" "$exe"); then fail "$name" "the zero-mode program failed"; return; fi
+    if ! run_in "$dir/App" dotnetfsharp build -p:ZeroTarget=dotnet; then fail "$name" "the build for .NET failed"; return; fi
+    if [ ! -f "$dir/App/bin/Debug/net11.0/App.dll" ] || [ ! -f "$dir/App/bin/Debug/net11.0/ZeroLib.dll" ]; then
+        fail "$name" "no App.dll and ZeroLib.dll in bin/Debug/net11.0"; return
+    fi
+    LOG=$WORK/dotnetfsharp-dotnet.txt
+    if ! (cd "$dir/App" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/App.dll); then fail "$name" "the .NET program failed"; return; fi
+    if [ "$(head -1 "$LOG")" != "on .NET" ] || [ "$(head -1 "$WORK/dotnetfsharp-zero.txt")" != "on zero" ]; then
+        fail "$name" "the first lines aren't 'on zero' and 'on .NET'"; return
+    fi
+    tail -n +2 "$WORK/dotnetfsharp-zero.txt" > "$WORK/dotnetfsharp-zero.rest"
+    tail -n +2 "$LOG" > "$WORK/dotnetfsharp-dotnet.rest"
+    if ! same_output "$WORK/dotnetfsharp-dotnet.rest" "$WORK/dotnetfsharp-zero.rest" "$WORK/dotnetfsharp.diff"; then
+        fail "$name" "on .NET it prints something else: $(cat "$WORK/dotnetfsharp.diff")"; return
+    fi
+    pass "$name"
+}
+
 # What ZeroTarget=dotnet doesn't build yet says so (ZERO016), and an older
 # .NET SDK is told which one it needs.
 test_dotnet_target_errors() {
     local name="dotnet target errors" dir
     if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
     dir=$(fixture fsapp dotnet-fsapp)
-    if run_in "$dir" dotnet-fsapp build -p:ZeroTarget=dotnet; then fail "$name" "an F# project built"; return; fi
-    if ! grep -q "ZERO016" "$LOG" || ! grep -q "C# projects for now" "$LOG"; then fail "$name" "no ZERO016 for an F# project"; return; fi
+    if run_in "$dir" dotnet-fsapp build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "an F# project built with ZeroDotnetTypes=Net"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "ZeroDotnetTypes=Net is for C# projects" "$LOG"; then fail "$name" "no ZERO016 for F# with ZeroDotnetTypes=Net"; return; fi
+    dir=$(fixture fs-with-libs dotnet-cslib)
+    if run_in "$dir/CsLib" dotnet-cslib build -p:ZeroTarget=dotnet; then fail "$name" "a C# library built"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "not C# libraries" "$LOG"; then fail "$name" "no ZERO016 for a C# library"; return; fi
     dir=$(fixture dotnettarget dotnet-oldsdk)
     if run_in "$dir" dotnet-oldsdk build -p:ZeroTarget=dotnet -p:NETCoreSdkVersion=10.0.404; then fail "$name" "the build with the .NET SDK 10 succeeded"; return; fi
     if ! grep -q "ZERO016" "$LOG" || ! grep -q "11.0.100 or newer" "$LOG"; then fail "$name" "no ZERO016 for the .NET SDK 10"; return; fi
@@ -2388,7 +2424,7 @@ test_fsharp_native_library_errors() {
 }
 
 ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old_dotnet_sdk_refused unions_compile plain_packages_refused
-    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target dotnet_target dotnet_net_types dotnet_target_errors path_with_spaces compile_items incremental
+    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target dotnet_target dotnet_net_types dotnet_fsharp dotnet_target_errors path_with_spaces compile_items incremental
     bflat_failure_fails_the_build size strip_symbols ideograph_orders debug_unoptimized mac_debug_object_kept windows_debugger macos_error
     project_reference library_change_rebuilds pack_and_package_reference version_mismatch templates
     custom_packages_folder dotnet_run publish extra_dll_imports library_import inherited_settings clean_and_rebuild

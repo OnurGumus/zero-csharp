@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Packs the Zero C# packages into sdk/feed/:
 #   ZeroCSharp.Sdk               the MSBuild SDK and its payload (./build.sh --sdk-payload)
+#   ZeroCSharp.Dotnet            lib/ built for .NET, for F# on ZeroTarget=dotnet (needs the .NET SDK 11)
 #   ZeroCSharp.Bflat.<rid>       bflat for each host, trimmed (sdk/trim-layout.sh, and for
 #                                Windows sdk/trim-windows-layout.sh from the linux-x64 one)
 #   ZeroCSharp.Stories260K       the Llama sample's model, as a zero library
@@ -43,6 +44,16 @@ for rid in $hosts; do
 done
 
 dotnet pack sdk/ZeroCSharp.Sdk/ZeroCSharp.Sdk.csproj -o sdk/feed -v:q -nologo
+
+# ZeroCSharp.Dotnet: lib/ built for .NET, for F# projects on ZeroTarget=dotnet
+# (dotnet/ZeroLib, dotnet/ZeroLib.FSharp). It targets net11.0, so it needs
+# the .NET SDK 11: without it, it's left out (CI's pack job checks it's there).
+if dotnet --list-sdks | grep -q '^11\.'; then
+    dotnet build -c Release -v:q -nologo dotnet/ZeroLib.FSharp/ZeroLib.FSharp.fsproj
+    dotnet pack sdk/ZeroCSharp.Dotnet/ZeroCSharp.Dotnet.csproj -o sdk/feed -v:q -nologo
+else
+    echo "Warning: no .NET SDK 11, so no ZeroCSharp.Dotnet: F# projects on ZeroTarget=dotnet won't restore from this feed." >&2
+fi
 
 # ZeroCSharp.Stories260K is a zero library, so it's built with the SDK just
 # packed: staged with the version filled in, the model generated next to it,

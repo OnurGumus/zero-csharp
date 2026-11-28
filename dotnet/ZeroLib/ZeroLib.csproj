@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- lib/ as one .NET assembly, for F# projects on ZeroTarget=dotnet: an F#
+       library and the F# program that uses it reference this same assembly,
+       so they agree on lib/'s Task, Fiber and Channel. (C# projects compile
+       lib/ in instead, see dotnet/Faithful: only the program's own types can
+       take the place of .NET's for C#. F# takes a later reference's type of
+       the same name over .NET's.) The sources are dotnet/Faithful's, without
+       a sample. sdk/pack.sh packs it in ZeroCSharp.Dotnet. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>ZeroLib</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
+    <NoWarn>$(NoWarn);CS0436;CS8500</NoWarn>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../lib/*.cs" />
+    <Compile Remove="../../lib/Crypto*.cs;../../lib/SslStream.cs;../../lib/Tls*.cs" />
+    <Compile Include="../../lib/CryptoX25519.cs" />
+    <Compile Include="../ZeroCompat/Shims.cs;../ZeroCompat/Fibers.cs;../ZeroCompat/Additions.cs" />
+    <Compile Include="../Faithful/*.cs" />
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />
+  </ItemGroup>
+  <!-- As dotnet/Faithful: .NET's own assemblies under the alias `bcl` too, for TlsBridge.cs. -->
+  <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences">
+    <ItemGroup>
+      <_ZeroBclReference Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
+      <ReferencePath Remove="@(_ZeroBclReference)" />
+      <ReferencePath Include="@(_ZeroBclReference)" Aliases="global,bcl" />
+    </ItemGroup>
+  </Target>
+</Project>

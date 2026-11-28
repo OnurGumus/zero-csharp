@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- zero's task { }, async { }, MailboxProcessor and arena { } (fsharp/control),
+       built for .NET on dotnet/ZeroLib and FSharp.Core: F# projects on
+       ZeroTarget=dotnet get lib/'s tasks and fibers from them, as in zero
+       mode. sdk/pack.sh packs it, with ZeroLib, in ZeroCSharp.Dotnet. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <!-- zero mode's name: lib/ lets FSharp.Control see its internals (InternalsVisibleTo). -->
+    <AssemblyName>FSharp.Control</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Attributes.fs" />
+    <Compile Include="../../fsharp/control/Control.fs" />
+    <Compile Include="../../fsharp/control/Arena.fs" />
+    <ProjectReference Include="../ZeroLib/ZeroLib.csproj" />
+  </ItemGroup>
+</Project>

@@ -10,6 +10,12 @@
   Cryptography and TLS are .NET's own, which are the platform's (SslStream
   is .NET's, running over lib/'s sockets: the payload's TlsBridge.cs).
 
+  F# projects reference lib/ as one assembly instead (ZeroCSharp.Dotnet:
+  ZeroLib.dll, and zero's task/async/MailboxProcessor as FSharp.Control.dll).
+  F#, unlike C#, takes a referenced assembly's type over .NET's of the same
+  name, and an F# library and the F# program using it then share lib/'s
+  types: the same Task, Fiber and Channel. FSharp.Core is .NET's own.
+
   With ZeroDotnetTypes=Net the program gets .NET's own Task, streams and
   sockets instead, to hand to other .NET code: lib/'s files that have those
   names are left out, and the rest of lib/ is compiled in as before.
@@ -61,7 +67,7 @@
     <ZeroDotnetDir>$(ZeroSdkRoot)payload/dotnet/</ZeroDotnetDir>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'CSharp'">
     <Compile Include="$(ZeroDotnetDir)lib/*.cs" Link="Zero/lib/%(Filename)%(Extension)" Visible="false" />
     <Compile Include="$(ZeroDotnetDir)compat/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false" />
     <Compile Include="$(ZeroDotnetDir)compat-zero/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false"
@@ -69,6 +75,19 @@
     <Compile Include="$(ZeroDotnetDir)compat-net/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false"
              Condition="'$(ZeroDotnetTypes)' == 'Net'" />
     <Compile Remove="@(ZeroLibOwnTypes->'$(ZeroDotnetDir)lib/%(Identity).cs')" Condition="'$(ZeroDotnetTypes)' == 'Net'" />
+  </ItemGroup>
+  <!-- F#: lib/ built for .NET, from ZeroCSharp.Dotnet, downloaded rather than
+       referenced as a package, so that an F# library built with it doesn't
+       depend on it (the program using the library references it itself). -->
+  <PropertyGroup Condition="'$(ZeroLanguage)' == 'FSharp'">
+    <ZeroDotnetLibDir Condition="'$(NuGetPackageRoot)' != ''">$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))zerocsharp.dotnet/$(ZeroSdkVersion.ToLowerInvariant())/dotnet/</ZeroDotnetLibDir>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'FSharp'">
+    <PackageDownload Include="ZeroCSharp.Dotnet" Version="[$(ZeroSdkVersion)]" />
+    <Reference Include="$(ZeroDotnetLibDir)ZeroLib.dll" Condition="'$(ZeroDotnetLibDir)' != ''" />
+    <Reference Include="$(ZeroDotnetLibDir)FSharp.Control.dll" Condition="'$(ZeroDotnetLibDir)' != ''" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- lib/Gpu.cs and the tensor samples use it; zerocore has its own. -->
     <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" IsImplicitlyDefined="true" />
     <!-- macOS: glibc's names and layouts, which lib/ calls (dotnet/native). Linux has glibc. -->
@@ -91,7 +110,7 @@
        TlsBridge.cs reaches the .NET types lib/'s take the place of (Stream,
        SslStream) through it, to run .NET's TLS over lib/'s sockets. -->
   <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences"
-          Condition="'$(ZeroDotnetTypes)' != 'Net'">
+          Condition="'$(ZeroDotnetTypes)' != 'Net' and '$(ZeroLanguage)' == 'CSharp'">
     <ItemGroup>
       <_ZeroBclReference Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
       <ReferencePath Remove="@(_ZeroBclReference)" />
@@ -104,12 +123,14 @@
            Text="ZeroTarget=dotnet needs the .NET SDK 11.0.100 or newer (the program targets $(ZeroDotnetFramework)); this build uses $(NETCoreSdkVersion)." />
     <Error Code="ZERO016" Condition="'$(ZeroDotnetTypes)' != 'Zero' and '$(ZeroDotnetTypes)' != 'Net'"
            Text="ZeroDotnetTypes is '$(ZeroDotnetTypes)': use Zero (lib/'s own Task, streams and sockets, the default) or Net (.NET's own)." />
-    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'FSharp'"
-           Text="ZeroTarget=dotnet builds C# projects for now: F# projects compile against the SDK's own FSharp.Core, which isn't built for .NET's runtime yet." />
-    <Error Code="ZERO016" Condition="'$(OutputType)' == 'Library'"
-           Text="ZeroTarget=dotnet builds programs for now, not libraries: lib/ is compiled into the program, and a library of its own would get a second copy of its types." />
-    <Error Code="ZERO016" Condition="'@(ProjectReference)' != ''"
-           Text="ZeroTarget=dotnet doesn't build projects that reference zero libraries yet (@(ProjectReference->'%(Filename)', ', '))." />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'FSharp' and '$(ZeroDotnetTypes)' == 'Net'"
+           Text="ZeroDotnetTypes=Net is for C# projects: F# projects on ZeroTarget=dotnet use lib/'s own Task, streams and sockets (ZeroCSharp.Dotnet)." />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'CSharp' and '$(OutputType)' == 'Library'"
+           Text="ZeroTarget=dotnet builds C# programs, not C# libraries: lib/ is compiled into a C# program, and a library of its own would get a second copy of its types. (F# libraries work: F# projects share one lib/ assembly.)" />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'CSharp' and '@(ProjectReference)' != ''"
+           Text="ZeroTarget=dotnet doesn't build C# projects that reference zero libraries (@(ProjectReference->'%(Filename)', ', ')): lib/ is compiled into a C# program, and a library's lib/ types would be others. (F# projects can.)" />
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'FSharp' and '$(NuGetPackageRoot)' != '' and !Exists('$(ZeroDotnetLibDir)ZeroLib.dll')"
+           Text="ZeroCSharp.Dotnet $(ZeroSdkVersion), which F# projects on ZeroTarget=dotnet reference, isn't in $(NuGetPackageRoot): restore the project (it's on nuget.org with each release of ZeroCSharp.Sdk)." />
     <Error Code="ZERO016" Condition="$([MSBuild]::IsOSPlatform('Windows'))"
            Text="ZeroTarget=dotnet builds on macOS and Linux for now: on Windows, lib/'s calls to the C library need the functions win/runtime.c gives a zero-mode program, as a library for .NET to load." />
     <Error Code="ZERO016" Condition="$([MSBuild]::IsOSPlatform('OSX')) and !Exists('$(ZeroDotnetDir)native/osx/libzerocompat.dylib')"
