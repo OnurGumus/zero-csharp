@@ -60,6 +60,10 @@ returns false with the reason, for example:
 SslStream: the server's certificate isn't trusted. The certificate isn't for 127.0.0.1.
 ```
 
+That holds whatever the server sends, and also when it hangs up halfway, because lib's
+`NetworkStream` doesn't throw either: a broken connection reads as 0 and drops what is written. Over
+a stream of your own that throws, the throw still ends the program.
+
 ## Choosing what to trust
 
 The roots come from the system's PEM bundle on Linux, macOS and Android, as `X509Chain` reads them.
