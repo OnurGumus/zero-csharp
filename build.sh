@@ -129,6 +129,7 @@ ALL_SAMPLES=(
     Numerics
     Crypto
     CryptoErrors
+    Certificates
     CryptoRandom
     Formats
     Keys
@@ -184,6 +185,7 @@ DOS_SAMPLES=(
     Numerics
     Crypto
     CryptoErrors
+    Certificates
     Formats
     Keys
     Tensors
@@ -249,6 +251,7 @@ ARM_SAMPLES=(
     Numerics
     Crypto
     CryptoErrors
+    Certificates
     Formats
     Keys
     Tensors

@@ -24,10 +24,10 @@ root=$(cd "$here/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-cp "$here/Program.cs" "$work/"
-for source in "$root"/lib/{CryptoHashes,CryptoChaCha,CryptoX25519,CryptoAes,EncryptedStream}.cs; do
+cp "$here"/*.cs "$work/"
+for source in "$root"/lib/{CryptoHashes,CryptoChaCha,CryptoX25519,CryptoAes,EncryptedStream,CryptoBigNumbers,CryptoAsn1,CryptoRsa,CryptoEcdsa,CryptoX509,CryptoX509Chain}.cs; do
     # The namespace keeps the types apart from .NET's own.
-    perl -pe 's/^namespace System\.Security\.Cryptography;$/namespace ZeroTest;/' \
+    perl -pe 's/^namespace System\.Security\.Cryptography(\.X509Certificates)?;$/namespace ZeroTest$1;/' \
         "$source" > "$work/$(basename "$source")"
 done
 cat > "$work/Shims.cs" <<'SHIM'
@@ -38,6 +38,41 @@ namespace ZeroTest
     {
         internal static void Fill(System.Span<byte> data)
             => System.Security.Cryptography.RandomNumberGenerator.Fill(data);
+    }
+}
+SHIM
+# lib/'s own File, Directory and Clock call the C library: .NET's stand in.
+awk '/^public struct CalendarTime/,0' "$root/lib/Clock.cs" > "$work/CalendarTime.cs"
+cat > "$work/LibShims.cs" <<'SHIM'
+using System;
+internal static class Clock
+{
+    internal static long UnixMilliseconds => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    internal static CalendarTime UtcNow => CalendarTime.FromUnixMilliseconds(UnixMilliseconds);
+    internal static long FloorDivide(long value, long divisor)
+    {
+        long quotient = value / divisor;
+        return value % divisor < 0 ? quotient - 1 : quotient;
+    }
+}
+internal static class File
+{
+    internal static bool Exists(string path) => System.IO.File.Exists(path);
+}
+internal struct DirectoryEntry
+{
+    public string Name;
+    public bool IsDirectory;
+}
+internal static class Directory
+{
+    internal static bool Exists(string path) => System.IO.Directory.Exists(path);
+    internal static DirectoryEntry[] Enumerate(string path)
+    {
+        var list = new System.Collections.Generic.List<DirectoryEntry>();
+        foreach (string f in System.IO.Directory.GetFileSystemEntries(path))
+            list.Add(new DirectoryEntry { Name = System.IO.Path.GetFileName(f), IsDirectory = System.IO.Directory.Exists(f) });
+        return list.ToArray();
     }
 }
 SHIM
@@ -53,4 +88,4 @@ cat > "$work/fuzz.csproj" <<'PROJ'
   </PropertyGroup>
 </Project>
 PROJ
-dotnet run --project "$work/fuzz.csproj" -c Release -- "${1:-20000}" "${2:-12345}"
+CERTIFICATES_SAMPLE="$root/samples/Certificates.cs" dotnet run --project "$work/fuzz.csproj" -c Release -- "${1:-20000}" "${2:-12345}"
