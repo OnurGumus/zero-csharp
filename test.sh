@@ -63,6 +63,7 @@ SMALL_SAMPLES=(
     SmallScratch
     SmallCatches
     SmallScratchBuffer
+    SmallDot
 )
 SAMPLES=(
     Tiny
