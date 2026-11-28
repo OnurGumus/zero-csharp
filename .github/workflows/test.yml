@@ -231,7 +231,8 @@ jobs:
         shell: bash
         run: |
           for host in github.com www.microsoft.com letsencrypt.org; do
-            if ./bin/win/Https.exe "$host" / < /dev/null; then exit 0; fi
+            # No "/" argument: Git Bash would turn it into a Windows path.
+            if ./bin/win/Https.exe "$host" < /dev/null; then exit 0; fi
           done
           exit 1
 
