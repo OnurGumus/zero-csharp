@@ -179,15 +179,21 @@ jobs:
           Get-ChildItem bin/win -Filter *.exe | ForEach-Object { & $gflags.FullName /p /enable $_.Name /full | Out-Null }
       - name: Run on Windows
         shell: bash
+        timeout-minutes: 60
         run: |
           failed=0
           for name in Files Paths Directories Streams Network Fibers Tasks; do
             # Not `out=$(...); status=$?`: under bash -e a failing program
             # would end the loop there, before its output is shown.
             status=0
-            out=$(./bin/win/$name.exe < /dev/null 2>&1) || status=$?
+            # Git Bash's timeout: a hung program fails with its name.
+            out=$(timeout 600 ./bin/win/$name.exe < /dev/null 2>&1) || status=$?
             out=${out//$'\r'/}
-            if [ "$status" != 0 ]; then
+            if [ "$status" = 124 ]; then
+              echo "FAIL $name: still running after 600s, stopped"
+              echo "$out" | tail -8 | sed 's/^/       /'
+              failed=1
+            elif [ "$status" != 0 ]; then
               echo "FAIL $name: exit code $status"
               echo "$out" | tail -8 | sed 's/^/       /'
               failed=1

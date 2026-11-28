@@ -24,8 +24,10 @@
 // SetCanceled or Try* call wins, whichever thread makes it.
 //
 // Where there are no pipes or threads (DOS, UEFI, microcontrollers), the
-// task completes at once, as a TaskCompletionSource's does. Not on
-// WebAssembly, which has no fibers.
+// task completes at once, as a TaskCompletionSource's does. If a thread
+// that has others can't make its pipe, completing one of its sources from
+// another thread stops the program with a message. Not on WebAssembly,
+// which has no fibers.
 
 using System;
 using System.Runtime.CompilerServices;
@@ -122,10 +124,17 @@ namespace System.Threading.Tasks
         // On the making thread's inbox list once claimed; null where there's
         // no inbox (no pipes or threads), and the task completes at once.
         readonly unsafe ThreadInbox.Node* _node;
+        // With no inbox: the making thread, the only one that may complete it.
+        readonly nint _thread;
 
         private protected ThreadCompletion()
         {
-            unsafe { _node = ThreadInbox.Expect(this); } // SAFETY: freed when delivered
+            unsafe
+            {
+                _node = ThreadInbox.Expect(this); // SAFETY: freed when delivered
+                if (_node == null)
+                    _thread = OwnThread.Current;
+            }
         }
 
         // Done on the making thread: completes the task.
@@ -141,7 +150,14 @@ namespace System.Threading.Tasks
             {
                 // SAFETY: the node is ours until pushed, the inbox's after.
                 if (_node == null)
+                {
+                    // No inbox: fine where there's only one thread, but from
+                    // another thread the task would be completed there, and
+                    // its own thread never woken.
+                    if (_thread != OwnThread.Current)
+                        Environment.FailFast("ThreadCompletionSource: completed from another thread, but its own thread couldn't make the pipe that wakes it");
                     Deliver(Volatile.Read(ref _state) == 2);
+                }
                 else
                     ThreadInbox.Push(_node);
             }
