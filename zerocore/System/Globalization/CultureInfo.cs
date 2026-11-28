@@ -126,6 +126,11 @@ namespace System.Globalization
         // The invariant dates and times, read-only, likewise.
         public DateTimeFormatInfo DateTimeFormat => DateTimeFormatInfo.InvariantInfo;
 
+        // Casing and comparing, the invariant way (ordinal, as in .NET's
+        // invariant mode).
+        public TextInfo TextInfo => TextInfo.Invariant;
+        public CompareInfo CompareInfo => CompareInfo.Invariant;
+
         public object GetFormat(Type formatType)
             => formatType == typeof(NumberFormatInfo) ? NumberFormat
             : formatType == typeof(DateTimeFormatInfo) ? DateTimeFormat : null;

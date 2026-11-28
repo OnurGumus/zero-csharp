@@ -13,8 +13,8 @@ you chose**.
 
 ## What the core library's string has
 
-zerocore's `string` has `Length`, an indexer, `==`, `!=`, `+`, `Equals`, `IsNullOrEmpty` and `switch` on
-strings, and nothing else. String literals, static string fields and static string arrays work. `a + b`
+zerocore's `string` has `Length`, an indexer, `==`, `!=`, `+`, `Equals`, `IsNullOrEmpty`, `switch` on
+strings, and .NET's casing and comparing (see [Change case and compare](#change-case-and-compare)). String literals, static string fields and static string arrays work. `a + b`
 works too, but it allocates with `calloc` and is never freed, like every allocation the core library
 makes. Use it for strings built once; in a loop, use the arena versions below.
 
@@ -186,8 +186,8 @@ Check("categories",
     && char.IsWhiteSpace('\u00A0'));
 ```
 
-There is only the invariant culture (see [Cultures](#cultures)), so `ToUpper` and `ToLower` are `ToUpperInvariant` and `ToLowerInvariant`: each
-char maps to one char, as in .NET's invariant mode. The tables are linked only into programs that use
+There is only the invariant culture (see [Cultures](#cultures)), so `ToUpper` and `ToLower` are
+`ToUpperInvariant` and `ToLowerInvariant`: each char maps to one char, as in .NET's invariant mode. The tables are linked only into programs that use
 them: categories take about 16 KB, casing 1.6 KB and numeric values 3 KB. `IsAsciiDigit`, `IsAsciiLetter`
 and the other ASCII methods, `IsWhiteSpace` and `IsControl` are plain comparisons and need none, which
 matters on a Commodore 64. `CharUnicodeInfo` (in `System.Globalization`) answers for code points above
@@ -223,6 +223,84 @@ Check("Latin-1", Encoding.Latin1.GetString(latin1) == "Ab");
 There are no `Encoder` or `Decoder` objects, no fallback objects and no other code pages.
 `new UTF8Encoding(false, throwOnInvalidBytes: true)` ends the program at invalid input, which is what
 an exception does here.
+
+## Change case and compare
+
+Comparing text people typed usually has to ignore case: a file called `README.md` or `readme.MD`, an
+HTTP header written `Content-Type` or `content-type`. .NET does that with `ToUpper`, `ToLower` and the
+`StringComparison` overloads, and they are all here, with .NET's results:
+
+<!-- sample: samples/Casing.cs casing -->
+```csharp
+Check("ToUpper", "Grüße, Ελλάδα!".ToUpper() == "GRÜßE, ΕΛΛΆΔΑ!");
+Check("ToLower", "ÇAĞRI".ToLowerInvariant() == "çağri");
+Check("one char to one: ß stays", "ß".ToUpperInvariant() == "ß");
+Check("surrogate pairs", "𐐨".ToUpperInvariant() == "𐐀");
+string done = "ALREADY";
+Check("unchanged is the same string",
+    ReferenceEquals(done.ToUpperInvariant(), done));
+```
+
+Casing maps one character to one, surrogate pairs included, as .NET does in invariant mode, so `ß`
+stays `ß` instead of becoming `SS`. A string that doesn't change comes back as itself; one that does
+is a new string, which like every string the core library makes is never freed. `TextInfo.ToTitleCase`
+follows .NET's rules, which keep acronyms and don't start a word after an apostrophe:
+
+<!-- sample: samples/Casing.cs title -->
+```csharp
+Check("title case", text.ToTitleCase("the lord of the rings")
+    == "The Lord Of The Rings");
+Check("acronyms stay",
+    text.ToTitleCase("NASA and the ESA") == "NASA And The ESA");
+Check("apostrophes", text.ToTitleCase("it's o'neil") == "It's O'neil");
+```
+
+`Equals`, `Compare`, `StartsWith`, `EndsWith`, `Contains`, `IndexOf`, `LastIndexOf` and
+`GetHashCode` take a `StringComparison`, and `CompareInfo` takes `CompareOptions`:
+
+<!-- sample: samples/Casing.cs compare -->
+```csharp
+Check("Equals ignoring case", string.Equals("README.md", "readme.MD",
+    StringComparison.OrdinalIgnoreCase));
+Check("StartsWith", "Content-Type: text/html"
+    .StartsWith("content-type", StringComparison.OrdinalIgnoreCase));
+Check("IndexOf", "Hello World"
+    .IndexOf("WORLD", StringComparison.OrdinalIgnoreCase) == 6);
+Check("Contains",
+    "Zero C#".Contains("c#", StringComparison.CurrentCultureIgnoreCase));
+Check("Compare ignoring case", string.Compare("apple", "APPLE",
+    StringComparison.InvariantCultureIgnoreCase) == 0);
+// The culture compares by character code, as .NET's invariant mode.
+Check("capitals first", string.Compare("Banana", "apple") < 0);
+```
+
+```text
+  StringComparison                   compares
+  ---------------------------------  ----------------------------------------
+  Ordinal                            UTF-16 code units
+  OrdinalIgnoreCase                  their upper cases
+  CurrentCulture, InvariantCulture   the same as Ordinal, as in .NET's
+                                     invariant mode ("Banana" before "apple")
+  ...IgnoreCase                      the same as OrdinalIgnoreCase
+```
+
+To change case without allocating, `MemoryExtensions.ToUpperInvariant` and its siblings write into a
+span you pass, and the span overloads compare in place:
+
+<!-- sample: samples/Casing.cs spans -->
+```csharp
+Span<char> buffer = stackalloc char[32];
+ReadOnlySpan<char> word = "straße";
+int length = word.ToUpperInvariant(buffer);
+Check("into a buffer", buffer.Slice(0, length).SequenceEqual("STRAßE"));
+Check("too small", word.ToUpperInvariant(buffer.Slice(0, 3)) == -1);
+Check("span comparison",
+    word.Equals("STRASSE", StringComparison.OrdinalIgnoreCase) == false
+    && word.StartsWith("STR", StringComparison.OrdinalIgnoreCase));
+```
+
+`System.Text.Rune` reads, writes, cases and classifies a whole code point. `scripts/text-check`
+compares all of this with .NET's over every code point and millions of strings.
 
 ## Cultures
 
@@ -278,7 +356,7 @@ other, and each is one setting for the whole program rather than one per thread.
 `NumberFormatInfo` is read-only and has no public constructor, so code that sets its own decimal
 separator doesn't compile, rather than compiling and being ignored. `DateTimeFormatInfo` is the same
 for dates (see [Work with dates and times](../how-to/work-with-dates-and-times.html)). `TextInfo` and
-`CompareInfo` aren't there yet.
+`CompareInfo` are the invariant culture's (see [Change case and compare](#change-case-and-compare)).
 
 ## What allocates
 

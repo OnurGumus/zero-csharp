@@ -83,6 +83,35 @@ namespace System.Globalization
 
         internal static char ToLower(char c) => (char)(c + CasingDistance(c, 2));
 
+        // A code point's simple, invariant upper and lower case, above U+FFFF
+        // too (Deseret, Osage, Adlam, ...), as Rune and string casing give it.
+        internal static int ToUpper(int codePoint)
+            => codePoint < 0x10000 ? ToUpper((char)codePoint) : codePoint + WideDistance(codePoint, 5);
+
+        internal static int ToLower(int codePoint)
+            => codePoint < 0x10000 ? ToLower((char)codePoint) : codePoint + WideDistance(codePoint, 7);
+
+        // A binary search of WideCasing's runs; offset 5: the distance to the
+        // upper case, 7: to the lower case.
+        private static int WideDistance(int codePoint, int offset)
+        {
+            ReadOnlySpan<byte> runs = WideCasing;
+            int low = 0, high = runs.Length / 9 - 1;
+            while (low <= high)
+            {
+                int middle = (low + high) >> 1;
+                int at = middle * 9;
+                int first = runs[at] | (runs[at + 1] << 8) | (runs[at + 2] << 16);
+                if (codePoint < first)
+                    high = middle - 1;
+                else if (codePoint >= first + (runs[at + 3] | (runs[at + 4] << 8)))
+                    low = middle + 1;
+                else
+                    return (short)(runs[at + offset] | (runs[at + offset + 1] << 8));
+            }
+            return 0;
+        }
+
         // offset 0: the distance to the upper case; 2: to the lower case.
         private static int CasingDistance(char c, int offset)
         {

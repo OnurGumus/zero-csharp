@@ -24,7 +24,8 @@ With zerocore, as `build.sh` builds it:
   which run once even when several threads reach a type at the same time.
 - **Strings**: `==`, `+` (with numbers too: `"n=" + 5`), `switch`, `ToString()` and `string.Format`
   with .NET's standard format strings (`"X4"`, `"F2"`, `"N0"`, `"{0,8:E2}"`), `Parse` and `TryParse`
-  on every number type, with `NumberStyles`, plus `lib/` for the rest (see
+  on every number type, with `NumberStyles`, `ToUpper`/`ToLower`, `ToTitleCase` and the
+  `StringComparison` overloads (ordinal, as .NET's invariant mode), plus `lib/` for the rest (see
   [Strings without a GC](strings.html)).
 - **Cultures**: `CultureInfo` and `NumberFormatInfo`, with the invariant culture as the only one, as
   in .NET with `InvariantGlobalization` set: any other culture throws `CultureNotFoundException` (see
