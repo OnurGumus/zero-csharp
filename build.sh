@@ -289,7 +289,7 @@ R4_SAMPLES=(
 # UEFI gets every sample but these, and Vga too (lib/Uefi.cs has what it uses
 # of lib/Dos.cs). Directories needs directories, which lib/ has only on Linux,
 # macOS, Windows and WebAssembly.
-NOT_UEFI=" Directories Network "
+NOT_UEFI=" Directories Network Https "
 UEFI_SAMPLES=(Vga)
 for name in "${ALL_SAMPLES[@]}"; do
     [[ "$NOT_UEFI" == *" $name "* ]] || UEFI_SAMPLES+=("$name")
