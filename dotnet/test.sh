@@ -18,7 +18,8 @@
 #   ("Sample|check|reason"). A sample with entries passes when exactly those
 #   checks fail; an entry whose check passes is an error, so the list can't
 #   go stale.
-#   "Sample|(sample)|reason" is a sample that doesn't run on .NET at all.
+#   "Sample|(sample)|reason" is a sample that doesn't run on .NET at all,
+#   "(sample:macos)" one that doesn't on macOS.
 #
 # Exit code: the number of samples that didn't do as the lists say.
 #
@@ -88,7 +89,7 @@ compare_known() {
     ' "$1"
 }
 # The checks the list expects to fail for sample $1.
-known_checks() { awk -F'|' -v s="$1" '$1 == s && $2 != "(sample)" && $2 != "?(sample)" { print $2 }' "$KNOWN" | sort -u; }
+known_checks() { awk -F'|' -v s="$1" '$1 == s && $2 !~ /^\(sample/ { print $2 }' "$KNOWN" | sort -u; }
 TIMEOUT=${ZERO_TEST_TIMEOUT:-120}
 OUT=dotnet/out
 mkdir -p "$OUT"
@@ -160,30 +161,23 @@ judge() {
 
 # A sample the list names as a whole ("Sample|(sample)|reason") doesn't run on
 # .NET at all, for the reason given: it not building or failing is expected,
-# and its passing is the error. "?(sample)" is one that doesn't build or
-# stops on some systems only: where it runs to its end, its checks are
-# judged like any other sample's.
+# and its passing is the error. "(sample:macos)" or "(sample:linux)" says so
+# for that system only: on the other, the sample is judged like any other,
+# so nothing that breaks it there goes unseen.
+case "$(uname)" in Darwin) SYSTEM=macos ;; *) SYSTEM=linux ;; esac
 pass=0; fail=0; nobuild=0; known_whole=0
 for name in "${SAMPLES[@]}"; do
-    whole=$(awk -F'|' -v s="$name" '$1 == s && ($2 == "(sample)" || $2 == "?(sample)") { print $2 "|" $3; exit }' "$KNOWN")
+    whole=$(awk -F'|' -v s="$name" -v here="(sample:$SYSTEM)" '$1 == s && ($2 == "(sample)" || $2 == here) { print $3; exit }' "$KNOWN")
     report=$(judge "$name"); result=$?
     if [ -z "$whole" ]; then
         echo "$report"
-        case $result in 0) pass=$((pass + 1)) ;; 1) fail=$((fail + 1)) ;; *) nobuild=$((nobuild + 1)) ;; esac
-    elif [ "${whole%%|*}" = "(sample)" ]; then
-        if [ $result = 0 ]; then
-            echo "FAIL $name: it passes, and $KNOWN says it doesn't run on .NET (${whole#*|})"
-            fail=$((fail + 1))
-        else
-            echo "known $name: ${whole#*|}"
-            known_whole=$((known_whole + 1))
-        fi
-    elif [ $result -ge 2 ]; then
-        echo "known $name: ${whole#*|}"
-        known_whole=$((known_whole + 1))
+        case $result in 0) pass=$((pass + 1)) ;; 2) nobuild=$((nobuild + 1)) ;; *) fail=$((fail + 1)) ;; esac
+    elif [ $result = 0 ]; then
+        echo "FAIL $name: it passes, and $KNOWN says it doesn't run on .NET here ($whole)"
+        fail=$((fail + 1))
     else
-        echo "$report"
-        case $result in 0) pass=$((pass + 1)) ;; *) fail=$((fail + 1)) ;; esac
+        echo "known $name: $whole"
+        known_whole=$((known_whole + 1))
     fi
 done
 echo

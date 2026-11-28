@@ -34,8 +34,9 @@ are the platform's, and a program on .NET gets those. `X25519` and `EncryptedStr
   more than `lib/`'s client: TLS 1.2 as well as 1.3, and other key shares. It trusts the
   system's roots, or only those in `SSL_CERT_FILE` when that is set, as `lib/`'s does.
   `scripts/tls-interop.sh --dotnet` runs it against OpenSSL's server.
-- .NET's `AesGcm` on macOS takes 16-byte tags only (the Crypto and CryptoErrors samples use
-  12-byte ones and stop there).
+- .NET's `AesGcm` on macOS takes 16-byte tags only. The Crypto and CryptoErrors samples use
+  12-byte ones and stop there, so the list names them for macOS alone; on Linux they run and
+  are checked like the rest.
 - `lib/`'s `X509Certificate2.NotBefore` and `NotAfter` are a `CalendarTime` where .NET's are a
   `DateTime` (the Certificates sample doesn't build on .NET).
 
