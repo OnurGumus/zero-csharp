@@ -90,7 +90,22 @@
     <!-- The arguments as a response file: cmd.exe (Exec on Windows) stops at
          8191 characters, which a project's full source paths can pass. -->
     <Message Text="bflat arguments: $(ZeroNativeArgs)" />
-    <Exec Command="&quot;$(ZeroBflatExe)&quot; build @&quot;$(ZeroNativeArgsFile)&quot;" />
+    <!-- The output is kept, to explain one failure ILC reports in its own
+         terms (ZERO015); bflat's errors are reported as they come either way. -->
+    <Exec Command="&quot;$(ZeroBflatExe)&quot; build @&quot;$(ZeroNativeArgsFile)&quot;" ConsoleToMSBuild="true" IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_ZeroBflatExitCode" />
+      <Output TaskParameter="ConsoleOutput" ItemName="_ZeroBflatOutput" />
+    </Exec>
+    <PropertyGroup>
+      <_ZeroBflatText>@(_ZeroBflatOutput)</_ZeroBflatText>
+    </PropertyGroup>
+    <!-- ILC found a method whose IL it can't compile (invalid code, such as F#
+         boxing a span to call a method it doesn't define), and looked for the
+         helper .NET compiles in its place, which zerocore leaves out on
+         purpose: such a program fails here rather than when the method runs. -->
+    <Error Code="ZERO015" Condition="'$(_ZeroBflatExitCode)' != '0' and $(_ZeroBflatText.Contains('ThrowInvalidProgramExceptionWithArgument'))"
+           Text="A method of the program has code the native compiler can't compile (invalid IL), so the build stops here instead of the program failing when the method runs. ILC doesn't say which method; look for code new since the last good build that calls a method on a span or another ref struct that the type doesn't define itself (Equals, GetHashCode, ToString), or boxes one." />
+    <Error Condition="'$(_ZeroBflatExitCode)' != '0'" Text="The command &quot;$(ZeroBflatExe)&quot; build @&quot;$(ZeroNativeArgsFile)&quot; exited with code $(_ZeroBflatExitCode)." />
     <!-- F#: the program bflat wrote under its own name (and Windows' PDB). -->
     <Copy SourceFiles="$(ZeroBflatOutput)" DestinationFiles="$(ZeroNativeOutput)" Condition="'$(ZeroBflatOutput)' != '$(ZeroNativeOutput)' and '$(_ZeroApple)' != 'true'" />
     <Copy SourceFiles="$([System.IO.Path]::ChangeExtension('$(ZeroBflatOutput)', '.pdb'))" DestinationFiles="$([System.IO.Path]::ChangeExtension('$(ZeroNativeOutput)', '.pdb'))"

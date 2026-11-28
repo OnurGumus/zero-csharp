@@ -304,11 +304,10 @@ namespace Internal.Runtime.CompilerHelpers
         private static void ThrowDivideByZeroException() => Environment.FailFast("DivideByZeroException");
         private static void ThrowArrayTypeMismatchException() => Environment.FailFast("ArrayTypeMismatchException");
         private static void ThrowInvalidProgramException() => Environment.FailFast("InvalidProgramException");
-        // For a method whose IL the compiler can't compile: it compiles a call of
-        // this in its place (found by name; id is .NET's ExceptionStringID).
-        // Without it the build stopped with "Expected method ... not found".
-        private static void ThrowInvalidProgramExceptionWithArgument(int id, string methodName)
-            => Environment.FailFast(string.Concat("InvalidProgramException: the compiler couldn't compile ", methodName));
+        // No ThrowInvalidProgramExceptionWithArgument, on purpose: for a method
+        // whose IL it can't compile, ILC would compile a call of it in its place,
+        // and the program would fail only when the method runs. Without it the
+        // build stops, and the SDK explains ILC's message (ZERO015).
         private static void ThrowPlatformNotSupportedException() => Environment.FailFast("PlatformNotSupportedException");
         private static void ThrowArgumentException() => Environment.FailFast("ArgumentException");
         private static void ThrowArgumentOutOfRangeException() => Environment.FailFast("ArgumentOutOfRangeException");

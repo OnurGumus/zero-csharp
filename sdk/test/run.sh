@@ -2297,7 +2297,7 @@ ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old
     link_library link_library_passed_on link_library_newer_glibc sdl3 sdl3_windows
     native_library_name_with_spaces native_library_reference_kinds native_library_app_recipe native_library_bindings
     native_library_visual_studio
-    fsharp_program fsharp_printf fsharp_printf_scope fsharp_collections fsharp_builders fsharp_async fsharp_arena_post fsharp_catch fsharp_memory fsharp_must_not_compile fsharp_scratch_ref_struct_state fsharp_unsafe_calls fsharp_unsafe_calls_libraries fsharp_decimal fsharp_top_level fsharp_libraries fsharp_cross_targets fsharp_incremental fsharp_publish fsharp_c64
+    fsharp_program fsharp_printf fsharp_printf_scope invalid_il_fails_the_build fsharp_collections fsharp_builders fsharp_async fsharp_arena_post fsharp_catch fsharp_memory fsharp_must_not_compile fsharp_scratch_ref_struct_state fsharp_unsafe_calls fsharp_unsafe_calls_libraries fsharp_decimal fsharp_top_level fsharp_libraries fsharp_cross_targets fsharp_incremental fsharp_publish fsharp_c64
     fsharp_native_library fsharp_native_library_cross fsharp_native_library_errors
     fsharp_native_library_bindings fsharp_program_calls_native_library fsharp_native_library_bindings_all_types)
 
@@ -2774,6 +2774,17 @@ test_fsharp_printf_scope() {
             fail "$name" "printed (Optimize=$opt): $(head -c 300 "$WORK/fsprintf-scope.diff")"; return
         fi
     done
+    pass "$name"
+}
+
+# Invalid IL (fs-invalid-il: GetType on a span) stops the build with ZERO015,
+# rather than building a program that fails when the method runs.
+test_invalid_il_fails_the_build() {
+    local name="invalid IL fails the build" dir
+    can_build "$name" || return
+    dir=$(fixture fs-invalid-il)
+    if run_in "$dir" fs-invalid-il build; then fail "$name" "the build succeeded"; return; fi
+    if ! grep -q 'ZERO015' "$LOG"; then fail "$name" "no ZERO015: $(grep -m1 'error' "$LOG")"; return; fi
     pass "$name"
 }
 
