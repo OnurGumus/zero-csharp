@@ -189,6 +189,12 @@ public static class Fiber
     // dispatcher itself, so programs without async methods link none of it.
     internal static delegate*<void> s_dispatcherLeft;
 
+    // Yield, set by Spawn: code that may run in a fiber, or not (lock, in
+    // lib/Monitor.cs), yields through this, so a program that never spawns
+    // a fiber, and so is never in one, doesn't link the stack switch
+    // (WebAssembly has none).
+    internal static delegate*<void> s_yield;
+
     static void LeaveDispatcher(Record* current)
     {
         if (current != t_dispatcher)
@@ -236,6 +242,7 @@ public static class Fiber
         Scheduler* s = This;
         unsafe
         {
+            s_yield = &Yield;
             // SAFETY: the memory holds the record and the state at its top and
             // the stack below them; it's freed only once the fiber has ended
             // and the scheduler is back on its own stack.
