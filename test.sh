@@ -445,9 +445,10 @@ run_all() {
     # Awaiting a canceled task plainly, ThrowIfCancellationRequested on a
     # canceled token, ReceiveAsync on a closed channel, a timer's reused
     # ValueTask a second time, a throw in an async void method, and one in
-    # async Main after an await must end the program with a message.
+    # async Main after an await, and releasing a full semaphore must end the
+    # program with a message.
     if [[ " ${samples[*]} " == *" Tasks "* ]] && [ "$target" != c64 ]; then
-        for case in "canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main"; do
+        for case in "canceled|A task was canceled." "throw|The operation was canceled." "closed|The channel has been closed." "twice|awaited after its operation was reused" "void-throw|Unhandled exception: thrown in an async void method" "main-throw|Unhandled exception: thrown in async Main" "full|would exceed the maximum"; do
             arg=${case%%|*}
             message=${case#*|}
             status=0
