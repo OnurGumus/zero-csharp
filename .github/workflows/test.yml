@@ -181,7 +181,7 @@ jobs:
         shell: bash
         run: |
           failed=0
-          for name in Files Paths Directories Streams Network Fibers Tasks; do
+          for name in Files Paths Directories Streams Network Fibers Tasks Crypto CryptoErrors CryptoRandom; do
             # Not `out=$(...); status=$?`: under bash -e a failing program
             # would end the loop there, before its output is shown.
             status=0

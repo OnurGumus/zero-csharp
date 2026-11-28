@@ -460,6 +460,28 @@ int usleep(u32 microseconds)
     return 0;
 }
 
+// ---- random bytes, for lib/CryptoRandom.cs ----------------------------------
+//
+// getentropy from BCryptGenRandom with the system's preferred generator
+// (BCRYPT_USE_SYSTEM_PREFERRED_RNG, 2), looked up at run time so programs
+// that never ask for random bytes don't import bcrypt.dll.
+
+int getentropy(void *buffer, u64 length)
+{
+    typedef long (*GenRandom)(void *, void *, u32, u32);
+    static GenRandom gen_random;
+    if (length > 256)
+        return -1;
+    if (!gen_random) {
+        Handle module = LoadLibraryA("bcrypt.dll");
+        if (module)
+            gen_random = (GenRandom)GetProcAddress(module, "BCryptGenRandom");
+        if (!gen_random)
+            return -1;
+    }
+    return gen_random(0, buffer, (u32)length, 2) == 0 ? 0 : -1;
+}
+
 // ---- sockets, for lib/Sockets.cs -------------------------------------------
 //
 // lib/Sockets.cs calls the C library's socket functions with Linux's numbers

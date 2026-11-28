@@ -111,15 +111,18 @@ files=("$efi=PROGRAM.EFI" "$work/STARTUP.NSH")
 python3 dos/fat16.py make "$disk" "${files[@]}"
 
 memory=${UEFI_MEMORY:-1024}
+# virtio-rng gives the firmware an EFI_RNG_PROTOCOL to draw random bytes
+# from (RandomNumberGenerator, efi/runtime.c) on both architectures.
 case "$machine" in
     x64)
         command=(qemu-system-x86_64 -machine q35 -m "$memory" "${accel[@]}" -nic none
             -drive "if=pflash,format=raw,readonly=on,file=$firmware"
-            -drive "format=raw,file=$disk")
+            -drive "format=raw,file=$disk" -device virtio-rng-pci)
         ;;
     arm64)
         command=(qemu-system-aarch64 -machine virt -m "$memory" "${accel[@]}" -nic none -bios "$firmware"
-            -drive "if=none,id=disk,format=raw,file=$disk" -device virtio-blk-pci,drive=disk)
+            -drive "if=none,id=disk,format=raw,file=$disk" -device virtio-blk-pci,drive=disk
+            -device virtio-rng-pci)
         # virt has no screen or keyboard of its own: ramfb is a screen the
         # firmware can draw on (Vga test reads it back, window or not).
         command+=(-device ramfb)

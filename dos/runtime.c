@@ -448,6 +448,11 @@ u32 dos_ticks(void)
     return now;
 }
 
+// getentropy for lib/CryptoRandom.cs: a PC under DOS has nothing a key could
+// safely come from (the timer and the clock are guessable), so there are no
+// random bytes, and RandomNumberGenerator throws.
+int getentropy(void *buffer, size_t length) { (void)buffer; (void)length; return -1; }
+
 // clock_gettime, with Linux's clock numbers as lib/Clock.cs passes them. 0 is
 // the wall clock: DOS's date and time, which is usually local time. Anything
 // else is the monotonic clock: dos_ticks, to the millisecond, carried past its

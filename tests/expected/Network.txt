@@ -1,6 +1,7 @@
 PASS Addresses (17 checks)
 PASS Echo (2 checks)
 PASS Backpressure (2 checks)
+PASS Encrypted (1 checks)
 PASS Errors (5 checks)
 PASS Catching (5 checks)
 PASS UDP (1 checks)
