@@ -25,9 +25,14 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 cp "$here"/*.cs "$work/"
-for source in "$root"/lib/{CryptoHashes,CryptoChaCha,CryptoX25519,CryptoAes,EncryptedStream,CryptoBigNumbers,CryptoAsn1,CryptoRsa,CryptoEcdsa,CryptoX509,CryptoX509Chain}.cs; do
+for source in "$root"/lib/{CryptoHashes,CryptoChaCha,CryptoX25519,CryptoAes,EncryptedStream,CryptoBigNumbers,CryptoAsn1,CryptoRsa,CryptoEcdsa,CryptoX509,CryptoX509Chain,TlsRecords,TlsHandshake,SslStream}.cs; do
     # The namespace keeps the types apart from .NET's own.
-    perl -pe 's/^namespace System\.Security\.Cryptography(\.X509Certificates)?;$/namespace ZeroTest$1;/' \
+    perl -pe 's/^namespace System\.Security\.Cryptography(\.X509Certificates)?;$/namespace ZeroTest$1;/;
+              s/^namespace System\.Net\.Security/namespace ZeroTest.Net.Security/;
+              s/^namespace System\.Security\.Authentication/namespace ZeroTest.Authentication/;
+              s/^using System\.Security\.Cryptography\.X509Certificates;/using ZeroTest.X509Certificates;/;
+              s/^using System\.Security\.Cryptography;/using ZeroTest;/;
+              s/^using System\.Security\.Authentication;/using ZeroTest.Authentication;/' \
         "$source" > "$work/$(basename "$source")"
 done
 cat > "$work/Shims.cs" <<'SHIM'

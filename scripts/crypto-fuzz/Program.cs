@@ -63,6 +63,7 @@ static partial class Program
         X509Damaged(iterations);
         X509Chains();
         X509SystemRoots();
+        TlsReplay(Math.Max(500, iterations / 10));
 
         int failed = 0;
         foreach (var r in s_results)

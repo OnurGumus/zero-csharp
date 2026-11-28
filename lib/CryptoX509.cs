@@ -40,8 +40,28 @@ public enum X509NameType
     UrlName = 5,
 }
 
+/// <summary>
+/// The base of X509Certificate2, for APIs that take either (SslStream's validation
+/// callback). Every certificate here is an X509Certificate2.
+/// </summary>
+public abstract class X509Certificate : IDisposable
+{
+    internal X509Certificate() { }
+
+    /// <summary>Who the certificate belongs to.</summary>
+    public abstract string Subject { get; }
+
+    /// <summary>Who signed it.</summary>
+    public abstract string Issuer { get; }
+
+    /// <summary>The certificate's DER encoding.</summary>
+    public abstract byte[] GetRawCertData();
+
+    public virtual void Dispose() { }
+}
+
 /// <summary>An X.509 certificate.</summary>
-public sealed class X509Certificate2 : IDisposable
+public sealed class X509Certificate2 : X509Certificate
 {
     readonly byte[] _raw;
 
@@ -380,14 +400,17 @@ public sealed class X509Certificate2 : IDisposable
     /// <summary>The certificate's DER encoding.</summary>
     public byte[] RawData => _raw.AsSpan().ToArray();
 
+    /// <summary>The certificate's DER encoding, as RawData.</summary>
+    public override byte[] GetRawCertData() => RawData;
+
     /// <summary>The X.509 version: 1, 2 or 3 (almost always 3).</summary>
     public int Version => VersionNumber;
 
     /// <summary>Who the certificate belongs to, such as "CN=example.com, O=Example, C=US".</summary>
-    public string Subject => _subject ??= DistinguishedName.Format(SubjectEncoded);
+    public override string Subject => _subject ??= DistinguishedName.Format(SubjectEncoded);
 
     /// <summary>Who signed the certificate, in the same form as Subject.</summary>
-    public string Issuer => _issuer ??= DistinguishedName.Format(IssuerEncoded);
+    public override string Issuer => _issuer ??= DistinguishedName.Format(IssuerEncoded);
 
     /// <summary>When the certificate starts being good, in UTC (.NET gives local time).</summary>
     public CalendarTime NotBefore => CalendarTime.FromUnixMilliseconds(NotBeforeSeconds * 1000);
@@ -636,7 +659,7 @@ public sealed class X509Certificate2 : IDisposable
         return true;
     }
 
-    public void Dispose() { }
+    public override void Dispose() { }
 
     public override string ToString() => Subject;
 }
