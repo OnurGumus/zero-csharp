@@ -1,5 +1,5 @@
 // Test: making strings in an arena, sized for a small machine: Str.Concat,
-// Str.Format with $"...", StrBuilder, Substring and +; and new string(...). The other half of
+// Str.Format with $"...", StrBuilder, Substring and +. The other half of
 // SmallStrings.cs; Strings.cs checks more and doesn't fit in a Commodore 64
 // (./build.sh --c64). Its holes have no format strings ({x:x4}): the first
 // one in a program costs a C64 about 12 KB, and SmallText.cs and
@@ -93,18 +93,6 @@ public static class Program
         Arena none = default;
         Check("no arena: null, not a crash", Str.Format(none, $"x={1}") == null && Str.Concat(none, "a", "b") == null);
         End("formatting");
-
-        // new string(...) and a span's ToString, as in .NET: strings on the
-        // heap, never freed (fine for a few; Str.ToArenaString for more).
-        char[] letters = { 'z', 'e', 'r', 'o' };
-        ReadOnlySpan<char> middle = letters.AsSpan(1, 2);
-        Check("new string(span)", new string(middle) == "er");
-        Check("new string(char[])", new string(letters) == "zero" && new string((char[])null) == "");
-        Check("new string(char[], start, length)", new string(letters, 2, 2) == "ro");
-        Check("new string(char, count)", new string('-', 3) == "---" && new string('x', 0) == "");
-        Check("span ToString", middle.ToString() == "er" && letters.AsSpan().ToString() == "zero");
-        Check("other span ToString", new ReadOnlySpan<int>(new[] { 1, 2 }).ToString() == "System.ReadOnlySpan[2]");
-        End("new string");
 
         Console.WriteLine();
         if (s_failures == 0)

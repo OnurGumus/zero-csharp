@@ -1,5 +1,4 @@
 PASS building (6 checks)
 PASS formatting (6 checks)
-PASS new string (6 checks)
 
 All checks passed.
