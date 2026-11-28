@@ -37,8 +37,10 @@ are the platform's, and a program on .NET gets those. `X25519` and `EncryptedStr
 - .NET's `AesGcm` on macOS takes 16-byte tags only. The Crypto and CryptoErrors samples use
   12-byte ones and stop there, so the list names them for macOS alone; on Linux they run and
   are checked like the rest.
-- `lib/`'s `X509Certificate2.NotBefore` and `NotAfter` are a `CalendarTime` where .NET's are a
-  `DateTime` (the Certificates sample doesn't build on .NET).
+- .NET's certificates, RSA and chain building are each system's own, and answer differently
+  from `lib/`'s in places (a chain's elements are copies; other status flags for a forged
+  certificate; on macOS, no RSA keys of odd sizes). The list names those checks of the
+  Certificates sample, some for macOS alone (`@macos`).
 
 **`--bcl-types`** leaves out every file of `lib/` that re-declares a .NET type, so `Task`,
 `Stream` and `Socket` are .NET's. That is for a program that passes them to other .NET code. It

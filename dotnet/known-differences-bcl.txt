@@ -21,10 +21,8 @@ SmallNative|?AlignedAlloc, AlignedFree|as Core: the check expects NativeMemory.A
 SmallScratchBuffer|?the buffer's memory, nested calls included|the sample takes the array's address as a number before the call, and .NET's GC may move the array in between (Arena.Scratch pins it only for the call)
 Strings|other span ToString|.NET prints the element type (System.ReadOnlySpan<Int32>[2]); zerocore, which has no type names, prints System.ReadOnlySpan[2]
 Links|(sample)|.NET's runtime can't load two structs that refer to each other through a generic struct (Town holds a Handle<Road>, Road a Handle<Town>)
-Certificates|(sample)|lib/'s X509Certificate2.NotBefore and NotAfter are a CalendarTime where .NET's are a DateTime, so the sample doesn't compile against .NET's
 Crypto|(sample:macos)|.NET's AesGcm takes only 16-byte tags on macOS; the sample makes one with 12 and stops there
-CryptoErrors|(sample:macos)|as Crypto; elsewhere it runs, and the four checks below fail
-CryptoErrors|AES key size|.NET throws CryptographicException for an AES key of the wrong size; lib/'s AesGcm throws ArgumentException
+CryptoErrors|(sample:macos)|as Crypto; elsewhere it runs, and the three checks below fail
 CryptoErrors|RSA without a key|.NET's RSA.Create() makes a key when one is needed, so VerifyData answers false; lib/'s RSA has none and throws
 CryptoErrors|RSA private part|as above: .NET's RSA.Create() has a private key to export
 CryptoErrors|chain of null|.NET's X509Chain.Build(null) throws ArgumentException; lib/'s throws ArgumentNullException
@@ -32,3 +30,14 @@ Network|(sample)|uses lib/'s own socket members (NetworkStream.Error, TryConnect
 Tasks|(sample)|tests lib/'s tasks: on .NET's, Task.Run is the thread pool, and a continuation that blocks in a fiber call stops the program
 Keys|(sample)|.NET's Console refuses to read keys from redirected input
 SmallKeys|(sample)|as Keys
+Certificates|no growth|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Certificates|elements in order|.NET's chain holds its own copies of the certificates, so an element isn't the object the program passed; lib/'s is
+Certificates|signed by another key|.NET's chain builder reports a forged certificate with other status flags than lib/'s (the check wants exactly NotSignatureValid and PartialChain)
+Certificates|SHA-1|as above, for a certificate signed with SHA-1
+Certificates|RSA-PSS in a certificate|as above, for a certificate signed with RSA-PSS
+Certificates|element status|.NET puts a date outside a certificate's validity on other elements of the chain than lib/'s does
+Certificates|@macos 1025: key read|macOS's RSA doesn't take a key of 1025 bits
+Certificates|@macos 1025: PSS|as above
+Certificates|@macos 2047: key read|macOS's RSA doesn't take a key of 2047 bits
+Certificates|@macos revocation unknown|macOS's chain builder answers differently for a certificate that names no revocation service
+Certificates|@macos only the leaf overlooked|as above

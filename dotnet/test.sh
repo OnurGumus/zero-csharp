@@ -19,7 +19,8 @@
 #   checks fail; an entry whose check passes is an error, so the list can't
 #   go stale.
 #   "Sample|(sample)|reason" is a sample that doesn't run on .NET at all,
-#   "(sample:macos)" one that doesn't on macOS.
+#   "(sample:macos)" one that doesn't on macOS, and "@macos <check>" a check
+#   that fails on macOS only (.NET's cryptography is each system's own).
 #
 # Exit code: the number of samples that didn't do as the lists say.
 #
@@ -89,7 +90,14 @@ compare_known() {
     ' "$1"
 }
 # The checks the list expects to fail for sample $1.
-known_checks() { awk -F'|' -v s="$1" '$1 == s && $2 !~ /^\(sample/ { print $2 }' "$KNOWN" | sort -u; }
+# ("@macos <check>" or "@linux <check>": on that system only.)
+known_checks() {
+    awk -F'|' -v s="$1" -v here="@$SYSTEM " '
+        $1 != s || $2 ~ /^\(sample/ { next }
+        $2 ~ /^@/ { if (index($2, here) == 1) print substr($2, length(here) + 1); next }
+        { print $2 }' "$KNOWN" | sort -u
+}
+case "$(uname)" in Darwin) SYSTEM=macos ;; *) SYSTEM=linux ;; esac
 TIMEOUT=${ZERO_TEST_TIMEOUT:-120}
 OUT=dotnet/out
 mkdir -p "$OUT"
@@ -164,7 +172,6 @@ judge() {
 # and its passing is the error. "(sample:macos)" or "(sample:linux)" says so
 # for that system only: on the other, the sample is judged like any other,
 # so nothing that breaks it there goes unseen.
-case "$(uname)" in Darwin) SYSTEM=macos ;; *) SYSTEM=linux ;; esac
 pass=0; fail=0; nobuild=0; known_whole=0
 for name in "${SAMPLES[@]}"; do
     whole=$(awk -F'|' -v s="$name" -v here="(sample:$SYSTEM)" '$1 == s && ($2 == "(sample)" || $2 == here) { print $3; exit }' "$KNOWN")
