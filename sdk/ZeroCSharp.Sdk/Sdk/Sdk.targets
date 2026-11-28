@@ -165,10 +165,34 @@
     NativeAOT-LLVM and llvm-mos are downloaded on the first such build into a
     per-user cache (zero-bitcode's Tools.cs). Always optimized for size.
   -->
+  <!-- The C64 link's options, from the project: in a file that changes only
+       when they do, so that changing one links again (a property alone isn't
+       an input MSBuild compares). -->
+  <Target Name="ZeroC64LinkOptions" Condition="'$(ZeroBuildsNative)' == 'true' and '$(ZeroTarget)' == 'c64'">
+    <PropertyGroup>
+      <!-- ZeroC64Source: the program's own C (.c) or 6502 assembly (.s),
+           compiled by llvm-mos with the rest; a function cs_NAME in it is
+           what [DllImport("libc")] NAME calls. -->
+      <_ZeroC64LinkOptions>@(ZeroC64Source->'--source &quot;%(FullPath)&quot;', ' ')</_ZeroC64LinkOptions>
+      <!-- ZeroC64ShadowStack, ZeroC64StackReserve: bytes for the stack of
+           object references (2048 by default) and for the 6502's soft stack
+           below the heap (1024); the heap gets the rest. -->
+      <_ZeroC64LinkOptions Condition="'$(ZeroC64ShadowStack)' != ''">$(_ZeroC64LinkOptions) --shadow-stack $(ZeroC64ShadowStack)</_ZeroC64LinkOptions>
+      <_ZeroC64LinkOptions Condition="'$(ZeroC64StackReserve)' != ''">$(_ZeroC64LinkOptions) --stack-reserve $(ZeroC64StackReserve)</_ZeroC64LinkOptions>
+      <!-- ZeroC64FastMultiply: 32-bit multiplication with a 1 KB table of
+           quarter squares, about 700 cycles instead of 1,100 (c64/runtime.c,
+           __mulsi3). -->
+      <_ZeroC64LinkOptions Condition="'$(ZeroC64FastMultiply)' == 'true'">$(_ZeroC64LinkOptions) --fast-multiply</_ZeroC64LinkOptions>
+      <ZeroC64LinkOptionsFile>$(ZeroBitcodeDir)c64-link.options</ZeroC64LinkOptionsFile>
+    </PropertyGroup>
+    <MakeDir Directories="$(ZeroBitcodeDir)" />
+    <WriteLinesToFile File="$(ZeroC64LinkOptionsFile)" Lines="$(_ZeroC64LinkOptions)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+
   <Target Name="ZeroC64Build" AfterTargets="CopyFilesToOutputDirectory" BeforeTargets="IncrementalClean"
           Condition="'$(ZeroBuildsNative)' == 'true' and '$(ZeroTarget)' == 'c64'"
-          DependsOnTargets="ZeroCheckNativeLib;ZeroCheckNativeHost;ZeroNativeCommand;ZeroFSharpEntry"
-          Inputs="@(Compile);@(ZeroLibraryReference);@(ZeroNativeInput);$(ZeroNativeArgsFile);@(ZeroFSharpNativeInput)"
+          DependsOnTargets="ZeroCheckNativeLib;ZeroCheckNativeHost;ZeroNativeCommand;ZeroFSharpEntry;ZeroC64LinkOptions"
+          Inputs="@(Compile);@(ZeroLibraryReference);@(ZeroNativeInput);$(ZeroNativeArgsFile);@(ZeroFSharpNativeInput);@(ZeroC64Source);$(ZeroC64LinkOptionsFile)"
           Outputs="$(ZeroNativeOutput)">
     <PropertyGroup>
       <_ZeroDotnet>$(DOTNET_HOST_PATH)</_ZeroDotnet>
@@ -180,7 +204,7 @@
     <Message Text="bflat arguments: $(ZeroNativeArgs)" />
     <Exec Command="&quot;$(ZeroBflatExe)&quot; build-il @&quot;$(ZeroNativeArgsFile)&quot;" />
     <Exec Command="$(_ZeroBitcode) c64-bitcode &quot;$(ZeroBitcodeIl)&quot; &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$(ZeroNativeDir)System.Private.CoreLib.dll&quot; &quot;$(ZeroRefDir)BflatLib.dll&quot; @(_ZeroBitcodeReference->'&quot;%(Identity)&quot;', ' ') @(ZeroLibraryReference->'&quot;%(FullPath)&quot;', ' ')" />
-    <Exec Command="$(_ZeroBitcode) c64-link &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$([System.IO.Path]::GetFileNameWithoutExtension('$(ZeroBitcodeIl)'))&quot; &quot;$(ZeroNativeDir)runtime.c&quot; &quot;$(ZeroNativeOutput)&quot;" />
+    <Exec Command="$(_ZeroBitcode) c64-link &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$([System.IO.Path]::GetFileNameWithoutExtension('$(ZeroBitcodeIl)'))&quot; &quot;$(ZeroNativeDir)runtime.c&quot; &quot;$(ZeroNativeOutput)&quot; $(_ZeroC64LinkOptions)" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(ZeroNativeOutput)" />
   </Target>
 
