@@ -261,7 +261,9 @@ object scope around it ([Free F# values with a scope](#free-f-values-with-a-scop
 
 `task { }`, `async { }` and `MailboxProcessor` work, on the library's fibers and tasks, the same
 ones C#'s `async` and `await` use ([Use fibers](use-fibers.html#use-async-and-await)). A `task`
-starts at once and gives a `Task`; `let!` and `do!` wait for a `Task`, a `Task<'T>` or an `Async`:
+starts at once and gives a `Task`; `let!` and `do!` wait for a `Task`, a `Task<'T>`, an `Async`, a
+`ValueTask` (a channel's `SendAsync`), `Task.Yield()` or what `ConfigureAwait` returns. .NET events
+work too: `timer.Elapsed.Add(fun _ -> ...)` subscribes, as in .NET.
 
 <!-- sample: sdk/test/fixtures/fsasync/Program.fs task -->
 ```fsharp

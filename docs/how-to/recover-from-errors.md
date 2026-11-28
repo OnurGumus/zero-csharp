@@ -383,6 +383,14 @@ Exception error = await Catch.RunAsync(() => FailLate("late"));
 // error is the IOException the method threw after its await
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs run-async -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+let! (error: exn) = Catch.RunAsync(fun () -> failLate "late")
+// error is the IOException the task threw after its wait
+```
+
 An `OperationCanceledException` cancels the task rather than faulting it, and `Catch.RunAsync`
 gives it back. `Task.Exception` is the exception itself, not an `AggregateException`, and
 `WhenAll` faults with the first one. An `async void` method that throws ends the program, as in

@@ -143,6 +143,16 @@ await File.WriteAllBytesAsync(name, data);
 byte[] back = await File.ReadAllBytesAsync(name);
 ```
 
+<div class="fs-alt"></div>
+
+<!-- sample: samples/Fibers.fs files -->
+```fsharp no-check reason="a zero program: the SDK tests build and run it"
+// The write and the read run on another thread; this task waits, and
+// the others run meanwhile.
+do! File.WriteAllBytesAsync("tasks.tmp", "0123456789"B)
+let! back = File.ReadAllBytesAsync("tasks.tmp")
+```
+
 A file can't be waited on the way a socket can, because the system calls a file always ready, then
 blocks in the read. Hence the thread. Each thread that uses the async calls gets one I/O thread, started
 by its first call. The I/O thread runs the jobs in order and, when they're done, wakes `Fiber.Run` through
