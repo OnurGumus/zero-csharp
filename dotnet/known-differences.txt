@@ -43,3 +43,5 @@ Sorting|back to ordinal|with ICU, which the sample needs for its cultures, .NET'
 Cultures|current UI and installed|.NET's InstalledUICulture is the system's; zerocore has no system culture
 Cultures|no default for threads|the program sets DefaultThreadCurrentCulture to the invariant culture at startup, so that threads (lib/'s fibers here) don't start in the user's locale as .NET's would
 Locales|@linux ?Japanese date*|depends on the system's ICU: 78.2 writes ja-JP's long date without the space before the weekday that macOS's ICU, where zerocore's table comes from, has: 2026年3月5日木曜日
+Sorting|the invariant culture ignores it, as .NET's invariant mode|with ICU, which the sample needs for its cultures, .NET's invariant culture applies NumericOrdering ("a2" before "a10"); zerocore's ignores it, as .NET does in its invariant globalization mode
+SortingRoot|(sample)|it tests a zero-mode build switch (ZeroIdeographOrders=false: Chinese, Japanese and Korean ideographs in the root order, for a smaller program), which .NET has no equivalent of: ICU sorts them in each culture's own order
