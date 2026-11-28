@@ -1,7 +1,8 @@
 // Example: what the cryptography refuses (lib/CryptoChaCha.cs,
 // lib/CryptoAes.cs, lib/EncryptedStream.cs): a changed ciphertext, tag,
 // nonce or associated data; records changed, cut short, reordered or under
-// a wrong key; wrong argument sizes. Each throw comes back through
+// a wrong key; wrong argument sizes; certificates and keys that aren't
+// (lib/CryptoX509.cs, lib/CryptoRsa.cs, lib/CryptoEcdsa.cs). Each throw comes back through
 // Catch.Run, which WebAssembly doesn't have, so this runs everywhere else.
 // Crypto checks the results that should come out.
 // Exit code = number of failed checks.
@@ -10,6 +11,7 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 namespace CryptoErrorsSample;
 
@@ -58,6 +60,7 @@ public static class Program
         Aead();
         Records();
         Arguments();
+        Certificates();
         return s_failures;
     }
 
@@ -213,5 +216,41 @@ public static class Program
         Check("short secret", Catch.Run(() =>
             EncryptedStream.FromSharedSecret(new MemoryStream(), new byte[8], true)) is ArgumentException);
         Section("Arguments");
+    }
+
+    static void Certificates()
+    {
+        // docs:bad-certificate
+        // Bytes that aren't a certificate throw CryptographicException.
+        byte[] garbage = { 0x30, 0x82, 0x01, 0x00, 0x02, 0x01 };
+        Exception error = Catch.Run(() => new X509Certificate2(garbage));
+        // docs:end
+        Check("not a certificate", error is CryptographicException);
+        Check("no PEM", Catch.Run(() => X509Certificate2.CreateFromPem("hello")) is CryptographicException);
+        Check("bad base64", Catch.Run(() => X509Certificate2.CreateFromPem(
+            "-----BEGIN CERTIFICATE-----\n@@@@\n-----END CERTIFICATE-----")) is CryptographicException);
+        Check("loader", Catch.Run(() => X509CertificateLoader.LoadCertificate(new byte[] { 1, 2, 3 })) is CryptographicException);
+        Check("no file", Catch.Run(() => X509CertificateLoader.LoadCertificateFromFile("no-such-file.pem")) is CryptographicException);
+        Check("RSA without a key", Catch.Run(() =>
+            RSA.Create().VerifyData(new byte[1], new byte[256], HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)) is CryptographicException);
+        Check("RSA private part", Catch.Run(() => RSA.Create().ExportParameters(true)) is CryptographicException);
+        Check("RSA even modulus", Catch.Run(() => RSA.Create(new RSAParameters
+        {
+            Modulus = new byte[128],
+            Exponent = new byte[] { 1, 0, 1 },
+        })) is CryptographicException);
+        Check("RSA bad key bytes", Catch.Run(() => RSA.Create().ImportSubjectPublicKeyInfo(garbage, out _)) is CryptographicException);
+        Check("ECDSA off the curve", Catch.Run(() => ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP256,
+            Q = new ECPoint { X = new byte[32], Y = new byte[32] },
+        })) is CryptographicException);
+        Check("ECDSA other curve", Catch.Run(() => ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.CreateFromFriendlyName("brainpoolP256r1"),
+            Q = new ECPoint { X = new byte[32], Y = new byte[32] },
+        })) is CryptographicException);
+        Check("chain of null", Catch.Run(() => new X509Chain().Build(null)) is ArgumentNullException);
+        Section("Certificate refusals");
     }
 }

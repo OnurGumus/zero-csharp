@@ -9,7 +9,7 @@ using System.Numerics;
 using S = System.Security.Cryptography;
 using Z = ZeroTest;
 
-static class Program
+static partial class Program
 {
     static Random s_random;
     static readonly List<(string Name, int Runs, int Failures, string First)> s_results = new();
@@ -57,6 +57,12 @@ static class Program
         Poly1305(iterations);
         X25519(Math.Max(200, iterations / 20));
         Stream(Math.Max(100, iterations / 100));
+        Rsa(Math.Max(200, iterations / 20));
+        Ecdsa(Math.Max(200, iterations / 20));
+        KeysDamaged(iterations);
+        X509Damaged(iterations);
+        X509Chains();
+        X509SystemRoots();
 
         int failed = 0;
         foreach (var r in s_results)
