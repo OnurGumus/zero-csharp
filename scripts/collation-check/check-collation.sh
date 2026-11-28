@@ -20,7 +20,7 @@ root=$(cd "$here/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-cp "$here/Program.cs" "$work/"
+cp "$here/Program.cs" "$root/scripts/zerocore-shims.cs" "$work/"
 for f in Collator CollationData CultureData; do
     perl -pe 'print "using System;\nusing System.Globalization;\n" if $. == 1;
               s/^namespace System\.Globalization$/namespace ZeroTest/' \

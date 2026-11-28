@@ -15,10 +15,10 @@ root=$(cd "$here/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-cp "$here/Program.cs" "$work/"
+cp "$here/Program.cs" "$root/scripts/zerocore-shims.cs" "$work/"
 # In a namespace of its own, so it can't reach .NET's internals by name.
 for f in Globalization/TextCasing Globalization/CompareInfo Globalization/TextInfo Text/Rune StringOps \
-         Globalization/CharUnicodeInfo Globalization/UnicodeData; do
+         Globalization/CharUnicodeInfo Globalization/UnicodeData Globalization/Collator Globalization/CollationData; do
     perl -pe 'print "using System;\nusing System.Globalization;\n" if $. == 1;
               s/^namespace System(\.Globalization|\.Text)?$/namespace ZeroTest/' \
         "$root/zerocore/System/$f.cs" > "$work/$(basename "$f").cs"

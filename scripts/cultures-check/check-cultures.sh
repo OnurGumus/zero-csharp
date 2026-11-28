@@ -18,12 +18,12 @@ root=$(cd "$here/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-cp "$here/Program.cs" "$work/"
+cp "$here/Program.cs" "$root/scripts/zerocore-shims.cs" "$work/"
 # In a namespace of its own, so it can't reach .NET's internals by name.
 for f in Globalization/CultureInfo Globalization/CultureData Globalization/CultureData.Lookup Globalization/NumberFormatInfo \
          Globalization/DateTimeFormatInfo Globalization/TextInfo Globalization/CompareInfo Globalization/TextCasing \
          Globalization/CharUnicodeInfo Globalization/UnicodeData Text/Rune Number.Formatting Number.Parsing Number.Culture \
-         DateTimeFormat DateTime DateTimeKind DateTimeOffset DateOnly TimeSpan TimeZoneInfo; do
+         DateTimeFormat DateTime DateTimeKind DateTimeOffset DateOnly TimeSpan TimeZoneInfo Globalization/Collator Globalization/CollationData StringOps; do
     perl -pe 'print "using System;\nusing System.Globalization;\nusing System.Runtime.InteropServices;\n" if $. == 1;
               s/^namespace System(\.Globalization|\.Text)?$/namespace ZeroTest/;
               s/DllImport\("\*"\)/DllImport("libc")/' \

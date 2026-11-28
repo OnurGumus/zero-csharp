@@ -707,25 +707,8 @@ namespace System.Globalization
         private bool Later(int cp)
         {
             if (_laterInContraction == null)
-            {
-                Buffer later = default;
-                later.Items = new int[64];
-                AddLater(Table(1), ref later);
-                if (_tailoringFirst != null)
-                    AddLater(Table(0), ref later);
-                int[] sorted = later.Items.Slice(0, later.Count).ToArray();
-                for (int i = 1; i < sorted.Length; i++)
-                {
-                    int v = sorted[i], j = i;
-                    while (j > 0 && sorted[j - 1] > v)
-                    {
-                        sorted[j] = sorted[j - 1];
-                        j--;
-                    }
-                    sorted[j] = v;
-                }
-                _laterInContraction = sorted;
-            }
+                using (System.Runtime.ObjectAllocator.Lasting())
+                    _laterInContraction = LaterInContraction();
             int low = 0, high = _laterInContraction.Length - 1;
             while (low <= high)
             {
@@ -738,6 +721,29 @@ namespace System.Globalization
                     high = middle - 1;
             }
             return false;
+        }
+
+        // The code points after the first in the culture's and the root's
+        // contractions, sorted.
+        private int[] LaterInContraction()
+        {
+            Buffer later = default;
+            later.Items = new int[64];
+            AddLater(Table(1), ref later);
+            if (_tailoringFirst != null)
+                AddLater(Table(0), ref later);
+            int[] sorted = later.Items.Slice(0, later.Count).ToArray();
+            for (int i = 1; i < sorted.Length; i++)
+            {
+                int v = sorted[i], j = i;
+                while (j > 0 && sorted[j - 1] > v)
+                {
+                    sorted[j] = sorted[j - 1];
+                    j--;
+                }
+                sorted[j] = v;
+            }
+            return sorted;
         }
 
         private static void AddLater(ReadOnlySpan<byte> entries, ref Buffer into)
