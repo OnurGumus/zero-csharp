@@ -245,6 +245,15 @@ ZeroSystem:
     mov     eax, 1
     ret
 
+// ZeroRootCertificate(previous, data, length), for lib/CryptoX509Chain.cs:
+// the system's trusted roots one at a time. Linux keeps them in a PEM bundle,
+// which X509Chain reads itself, so here there are none: null.
+    .global ZeroRootCertificate
+    .type ZeroRootCertificate, @function
+ZeroRootCertificate:
+    xor     eax, eax
+    ret
+
 // fcntl(fd, command, argument), for lib/Sockets.cs. fcntl is variadic; on
 // Linux a variadic call passes its arguments as any other does, so this only
 // says no vector registers carry arguments (al = 0) and jumps.

@@ -79,12 +79,18 @@ namespace System.Collections.Generic
     // Create's own body runs only where the compiler can't tell T (shared code).
     public abstract class EqualityComparer<T> : IEqualityComparer<T>
     {
-        private static EqualityComparer<T> s_default;
+        // Made by a static constructor, so it is allocated outside any object scope
+        // open when Default is first used (lib/Arena.cs), where a cache filled
+        // lazily would be freed with the scope.
+        private static class DefaultHolder
+        {
+            internal static readonly EqualityComparer<T> Value = Create();
+        }
 
         public static EqualityComparer<T> Default
         {
             [Intrinsic]
-            get => s_default ??= Create();
+            get => DefaultHolder.Value;
         }
 
         [Intrinsic]
@@ -177,12 +183,18 @@ namespace System.Collections.Generic
     // Null goes before everything else, as in .NET.
     public abstract class Comparer<T> : IComparer<T>
     {
-        private static Comparer<T> s_default;
+        // Made by a static constructor, so it is allocated outside any object scope
+        // open when Default is first used (lib/Arena.cs), where a cache filled
+        // lazily would be freed with the scope.
+        private static class DefaultHolder
+        {
+            internal static readonly Comparer<T> Value = Create();
+        }
 
         public static Comparer<T> Default
         {
             [Intrinsic]
-            get => s_default ??= Create();
+            get => DefaultHolder.Value;
         }
 
         [Intrinsic]

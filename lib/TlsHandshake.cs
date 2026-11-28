@@ -1,6 +1,8 @@
 // The client side of TLS 1.3's handshake (RFC 8446 section 4), for SslStream:
 //
-//   ClientHello              ──▶
+//   ClientHello              ──▶                             (an X25519 key share)
+//                           [◀──  HelloRetryRequest          (the server wants P-256)
+//   ClientHello              ──▶]                            (a P-256 key share)
 //                            ◀──  ServerHello                (in the clear)
 //                                 EncryptedExtensions        (handshake keys from here)
 //                                 [CertificateRequest]
@@ -152,12 +154,16 @@ internal sealed class TlsClientHandshake
     const byte ClientHelloType = 1, ServerHelloType = 2, EncryptedExtensionsType = 8, CertificateType = 11;
     const byte CertificateRequestType = 13, CertificateVerifyType = 15, FinishedType = 20;
     const int X25519Group = 0x001d;
+    const int P256Group = 0x0017;
 
     readonly SslStream _stream;
     readonly SslClientAuthenticationOptions _options;
     readonly TlsRecordLayer _records;
 
-    Bytes32 _privateKey;
+    Bytes32 _privateKey;          // X25519
+    Bytes32 _p256PrivateKey;      // P-256, after a HelloRetryRequest
+    int _group = X25519Group;     // the key share's group
+    byte[] _random;
     byte[] _sessionId;
     byte[] _clientHello;
     TlsSuite _suite;
@@ -208,8 +214,8 @@ internal sealed class TlsClientHandshake
     /// <summary>The handshake: null when the connection is ready, else why it failed.</summary>
     internal string Run()
     {
-        // ClientHello
-        Span<byte> publicKey = stackalloc byte[32];
+        // ClientHello, with an X25519 key share (and P-256 among the groups offered).
+        Span<byte> publicKey = stackalloc byte[65];
         if (_stream.TestClientHello != null)
         {
             _clientHello = _stream.TestClientHello;
@@ -218,32 +224,91 @@ internal sealed class TlsClientHandshake
         }
         else
         {
+            _random = new byte[32];
+            RandomNumberGenerator.Fill(_random);
+            // A session ID of 32 random bytes: "middlebox compatibility mode" (RFC 8446 D.4),
+            // which some networks need to let TLS 1.3 through.
+            _sessionId = new byte[32];
+            RandomNumberGenerator.Fill(_sessionId);
             X25519.GeneratePrivateKey(_privateKey);
-            X25519.GetPublicKey(_privateKey, publicKey);
-            _clientHello = BuildClientHello(publicKey);
+            X25519.GetPublicKey(_privateKey, publicKey.Slice(0, 32));
+            _clientHello = BuildClientHello(X25519Group, publicKey.Slice(0, 32), ReadOnlySpan<byte>.Empty);
         }
         _offeredExtensions = ExtensionTypes(_clientHello);
         _records.Write(TlsRecordLayer.Handshake, _clientHello);
         _records.Flush();
 
-        // ServerHello
+        // ServerHello, or a HelloRetryRequest
         byte[] serverHello = Next(out string error);
         if (serverHello == null)
             return error;
         if (serverHello[0] != ServerHelloType)
             return Fail(TlsAlert.UnexpectedMessage, "the server's first message wasn't a ServerHello");
-        string problem = ReadServerHello(serverHello, out ReadOnlySpan<byte> serverShare);
+        string problem = ReadServerHello(serverHello, out bool retry, out int group,
+            out ReadOnlySpan<byte> serverShare, out ReadOnlySpan<byte> cookie);
         if (problem != null)
             return problem;
-        _transcript = IncrementalHash.CreateHash(_suite.HashName);
+        if (retry)
+        {
+            // The server wants a P-256 key share instead (RFC 8446 4.1.4). The
+            // transcript starts with the first ClientHello's hash in its place.
+            if (group != P256Group)
+                return Fail(TlsAlert.IllegalParameter, "the server asked for a key share for a group that wasn't offered");
+            ushort retrySuite = _suite.Code;
+            _transcript = IncrementalHash.CreateHash(_suite.HashName);
+            Span<byte> messageHash = stackalloc byte[4 + _suite.HashSize];
+            messageHash[0] = 254; // message_hash
+            messageHash[1] = 0;
+            messageHash[2] = 0;
+            messageHash[3] = (byte)_suite.HashSize;
+            HashState.Hash(_suite.Hash, _clientHello, messageHash.Slice(4));
+            _transcript.AppendData(messageHash);
+            _transcript.AppendData(serverHello);
+            CryptographicOperations.ZeroMemory(_privateKey);
+
+            _group = P256Group;
+            if (_stream.TestClientHello2 != null)
+            {
+                _clientHello = _stream.TestClientHello2;
+                _stream.TestP256PrivateKey.AsSpan().CopyTo(_p256PrivateKey);
+            }
+            else
+            {
+                P256Ecdh.GenerateKey(_p256PrivateKey, publicKey);
+                _clientHello = BuildClientHello(P256Group, publicKey, cookie);
+            }
+            _offeredExtensions = ExtensionTypes(_clientHello);
+            _records.Write(TlsRecordLayer.Handshake, _clientHello);
+            _records.Flush();
+
+            serverHello = Next(out error);
+            if (serverHello == null)
+                return error;
+            if (serverHello[0] != ServerHelloType)
+                return Fail(TlsAlert.UnexpectedMessage, "a ServerHello didn't come after the second ClientHello");
+            problem = ReadServerHello(serverHello, out retry, out group, out serverShare, out _);
+            if (problem != null)
+                return problem;
+            if (retry)
+                return Fail(TlsAlert.UnexpectedMessage, "the server sent a second HelloRetryRequest");
+            if (_suite.Code != retrySuite)
+                return Fail(TlsAlert.IllegalParameter, "the ServerHello's cipher suite isn't the HelloRetryRequest's");
+        }
+        else
+            _transcript = IncrementalHash.CreateHash(_suite.HashName);
         _transcript.AppendData(_clientHello);
         _transcript.AppendData(serverHello);
+        if (group != _group)
+            return Fail(TlsAlert.IllegalParameter, "the server answered with a key share for another group");
 
         // The shared secret, and the handshake keys from it.
         int h = _suite.HashSize;
         Span<byte> shared = stackalloc byte[32];
-        if (serverShare.Length != 32 || !X25519.TryGetSharedSecret(_privateKey, serverShare, shared))
-            return Fail(TlsAlert.IllegalParameter, "the server's key share isn't a usable X25519 key");
+        bool agreed = _group == X25519Group
+            ? serverShare.Length == 32 && X25519.TryGetSharedSecret(_privateKey, serverShare, shared)
+            : P256Ecdh.TryGetSharedSecret(_p256PrivateKey, serverShare, shared);
+        if (!agreed)
+            return Fail(TlsAlert.IllegalParameter, "the server's key share isn't a usable key");
         Span<byte> early = stackalloc byte[h];
         Span<byte> zeros = stackalloc byte[h];
         zeros.Clear();
@@ -252,6 +317,7 @@ internal sealed class TlsClientHandshake
         TlsKeys.Next(_suite, early, shared, _handshakeSecret);
         CryptographicOperations.ZeroMemory(shared);
         CryptographicOperations.ZeroMemory(_privateKey);
+        CryptographicOperations.ZeroMemory(_p256PrivateKey);
         Span<byte> hash = stackalloc byte[h];
         _transcript.GetCurrentHash(hash);
         _clientSecret = new byte[h];
@@ -373,20 +439,15 @@ internal sealed class TlsClientHandshake
         return null;
     }
 
-    byte[] BuildClientHello(ReadOnlySpan<byte> publicKey)
+    // A ClientHello with one key share; a second one (after a HelloRetryRequest)
+    // has the same random and session ID, the new share and the server's cookie.
+    byte[] BuildClientHello(int group, ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> cookie)
     {
-        Span<byte> random = stackalloc byte[32];
-        RandomNumberGenerator.Fill(random);
-        // A session ID of 32 random bytes: "middlebox compatibility mode" (RFC 8446 D.4),
-        // which some networks need to let TLS 1.3 through.
-        _sessionId = new byte[32];
-        RandomNumberGenerator.Fill(_sessionId);
-
         TlsWriter w = new TlsWriter();
         w.U8(ClientHelloType);
         int body = w.Begin(3);
         w.U16(0x0303);
-        w.Bytes(random);
+        w.Bytes(_random);
         int sid = w.Begin(1);
         w.Bytes(_sessionId);
         w.End(sid);
@@ -419,6 +480,7 @@ internal sealed class TlsClientHandshake
         int groups = w.Begin(2);
         int groupList = w.Begin(2);
         w.U16(X25519Group);
+        w.U16(P256Group);
         w.End(groupList);
         w.End(groups);
         // signature_algorithms
@@ -451,11 +513,21 @@ internal sealed class TlsClientHandshake
         w.U16(0x0304);
         w.End(versionList);
         w.End(versions);
-        // key_share: one X25519 key
+        // cookie, echoed from a HelloRetryRequest
+        if (!cookie.IsEmpty)
+        {
+            w.U16(44);
+            int ext = w.Begin(2);
+            int value = w.Begin(2);
+            w.Bytes(cookie);
+            w.End(value);
+            w.End(ext);
+        }
+        // key_share: one key, X25519 (or P-256 when the server asked for it)
         w.U16(51);
         int share = w.Begin(2);
         int shares = w.Begin(2);
-        w.U16(X25519Group);
+        w.U16(group);
         int key = w.Begin(2);
         w.Bytes(publicKey);
         w.End(key);
@@ -509,9 +581,14 @@ internal sealed class TlsClientHandshake
         return false;
     }
 
-    string ReadServerHello(byte[] message, out ReadOnlySpan<byte> serverShare)
+    // A ServerHello, or a HelloRetryRequest (retry): the group, and the share or cookie.
+    string ReadServerHello(byte[] message, out bool retry, out int group,
+        out ReadOnlySpan<byte> serverShare, out ReadOnlySpan<byte> cookie)
     {
+        retry = false;
+        group = 0;
         serverShare = default;
+        cookie = default;
         TlsReader r = new TlsReader(message.AsSpan(4));
         int legacyVersion = r.U16();
         ReadOnlySpan<byte> random = r.Bytes(32);
@@ -527,9 +604,7 @@ internal sealed class TlsClientHandshake
                 return Fail(TlsAlert.ProtocolVersion, "the server speaks only TLS 1.1 or older");
             return Fail(TlsAlert.DecodeError, "a malformed ServerHello");
         }
-        if (DerReader.Same(random, HelloRetryRandom))
-            return Fail(TlsAlert.HandshakeFailure,
-                "the server wants a key share this client doesn't offer (HelloRetryRequest): only X25519 is supported");
+        retry = DerReader.Same(random, HelloRetryRandom);
         if (!DerReader.Same(sessionId, _sessionId))
             return Fail(TlsAlert.IllegalParameter, "the ServerHello doesn't echo the session ID");
         if (!TlsSuite.IsKnown((ushort)suite))
@@ -553,10 +628,18 @@ internal sealed class TlsClientHandshake
             {
                 if ((seen & 2) != 0) return Fail(TlsAlert.IllegalParameter, "a ServerHello extension came twice");
                 seen |= 2;
-                if (data.U16() != X25519Group)
-                    return Fail(TlsAlert.IllegalParameter, "the server answered with a key share for another group");
-                serverShare = data.Vector(2);
+                group = data.U16();
+                if (!retry)
+                    serverShare = data.Vector(2); // a HelloRetryRequest names only the group
                 haveShare = true;
+            }
+            else if (type == 44 && retry)
+            {
+                if ((seen & 4) != 0) return Fail(TlsAlert.IllegalParameter, "a ServerHello extension came twice");
+                seen |= 4;
+                cookie = data.Vector(2);
+                if (cookie.IsEmpty)
+                    return Fail(TlsAlert.DecodeError, "an empty cookie");
             }
             else
                 return Fail(TlsAlert.UnsupportedExtension, "the ServerHello has an extension that wasn't offered");
@@ -570,6 +653,15 @@ internal sealed class TlsClientHandshake
         {
             // A TLS 1.2 server marks its random this way when it saw TLS 1.3 offered (4.1.3).
             return Fail(TlsAlert.ProtocolVersion, "the server doesn't speak TLS 1.3 (only TLS 1.2 or older)");
+        }
+        if (retry)
+        {
+            // It must ask for something: a key share for a group not sent yet.
+            if (!haveShare)
+                return Fail(TlsAlert.IllegalParameter, "a HelloRetryRequest that asks for no new key share");
+            if (group == _group)
+                return Fail(TlsAlert.IllegalParameter, "a HelloRetryRequest for the key share already sent");
+            return null;
         }
         if (!haveShare)
             return Fail(TlsAlert.MissingExtension, "the ServerHello has no key share");
@@ -760,6 +852,7 @@ internal sealed class TlsClientHandshake
     internal void Clear()
     {
         CryptographicOperations.ZeroMemory(_privateKey);
+        CryptographicOperations.ZeroMemory(_p256PrivateKey);
         if (_handshakeSecret != null) CryptographicOperations.ZeroMemory(_handshakeSecret);
         if (_clientSecret != null) CryptographicOperations.ZeroMemory(_clientSecret);
         if (_serverSecret != null) CryptographicOperations.ZeroMemory(_serverSecret);
