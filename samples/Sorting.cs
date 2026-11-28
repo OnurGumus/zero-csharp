@@ -1,9 +1,11 @@
 // Test: sorting and searching text in each culture's order, against .NET's
 // answers with ICU: Turkish dotless ı, Swedish ö after z, Czech ch, Danish aa,
 // Chinese by pinyin and by strokes, Japanese, Korean hanja by their reading,
-// what ignoring case and accents means per language, and the current
-// culture's string.Compare. scripts/collation-check compares every culture in
-// the table with .NET's on millions of random texts.
+// what ignoring case and accents means per language, numbers by value
+// (NumericOrdering), kana and widths (IgnoreKanaType, IgnoreWidth), and the
+// current culture's string.Compare.
+// scripts/collation-check compares every culture in the table with .NET's on
+// millions of random texts.
 // Exit code = number of failed checks.
 // Build: ./build.sh Sorting
 
@@ -48,13 +50,15 @@ public static class Program
     }
 
     // The words in the culture's order, joined by spaces (a sorted copy).
-    static string Sorted(string culture, params string[] words)
+    static string Sorted(string culture, params string[] words) => Sorted(culture, CompareOptions.None, words);
+
+    static string Sorted(string culture, CompareOptions options, params string[] words)
     {
         var compare = CultureInfo.GetCultureInfo(culture).CompareInfo;
         string[] sorted = new string[words.Length];
         for (int i = 0; i < words.Length; i++)
             sorted[i] = words[i];
-        new Span<string>(sorted).Sort((a, b) => compare.Compare(a, b));
+        new Span<string>(sorted).Sort((a, b) => compare.Compare(a, b, options));
         string joined = sorted[0];
         for (int i = 1; i < sorted.Length; i++)
             joined = joined + " " + sorted[i];
@@ -109,6 +113,39 @@ public static class Program
         Check("ß isn't ss", !"Straße".StartsWith("Strasse", false, german) && german.CompareInfo.Compare("Straße", "Strasse", CompareOptions.IgnoreCase) > 0);
         Check("equal text hashes alike", turkish.CompareInfo.GetHashCode("İSTANBUL", CompareOptions.IgnoreCase) == turkish.CompareInfo.GetHashCode("istanbul", CompareOptions.IgnoreCase));
         Section("ignoring case, accents and symbols");
+
+        // docs:numeric
+        var numeric = CompareOptions.NumericOrdering;
+        string[] files = { "file10", "file2", "File3", "file1" };
+        Is("by value", Sorted("en-US", numeric, files), "file1 file2 File3 file10");
+        Is("digit by digit", Sorted("en-US", CompareOptions.None, files),
+            "file1 file10 file2 File3");
+        Check("leading zeros don't count",
+            american.CompareInfo.Compare("file02", "file2", numeric) == 0);
+        // docs:end
+        Check("digits of every script", american.CompareInfo.Compare("\u0661\u0662", "12", numeric) == 0);
+        Check("decimals aren't numbers", american.CompareInfo.Compare("1.5", "1.10", numeric) < 0);
+        Check("ignoring case too", turkish.CompareInfo.Compare("A2", "a10", numeric | CompareOptions.IgnoreCase) < 0);
+        Check("the invariant culture ignores it, as .NET's invariant mode",
+            CultureInfo.InvariantCulture.CompareInfo.Compare("a2", "a10", numeric) > 0);
+        Section("numbers");
+
+        // docs:kana
+        var japanese = CultureInfo.GetCultureInfo("ja-JP").CompareInfo;
+        var noCase = CompareOptions.IgnoreCase;
+        Check("hiragana and katakana apart",
+            japanese.Compare("あい", "アイ", noCase) < 0);
+        Check("alike with IgnoreKanaType",
+            japanese.Compare("あい", "アイ", noCase | CompareOptions.IgnoreKanaType) == 0);
+        Check("full width alike with IgnoreWidth",
+            japanese.Compare("ＡＢＣ", "abc", noCase | CompareOptions.IgnoreWidth) == 0);
+        Check("half width katakana found",
+            japanese.IndexOf("ファイル名", "ｲﾙ", CompareOptions.IgnoreWidth) == 2);
+        // docs:end
+        Check("full width apart without", japanese.Compare("ＡＢＣ", "abc", noCase) > 0);
+        Check("both", japanese.Compare("ｱｲ", "あい", noCase | CompareOptions.IgnoreKanaType | CompareOptions.IgnoreWidth) == 0);
+        Check("half width alone", japanese.Compare("ｱｲ", "アイ", CompareOptions.IgnoreWidth) == 0);
+        Section("kana and widths");
 
         CultureInfo.CurrentCulture = turkish;
         Check("string.Compare follows the current culture", string.Compare("ıa", "ib") < 0);

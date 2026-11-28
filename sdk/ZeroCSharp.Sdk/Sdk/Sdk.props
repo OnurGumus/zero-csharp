@@ -98,6 +98,11 @@
          is a .pdb file beside the program; it isn't written.) -->
     <ZeroStripSymbols Condition="'$(ZeroStripSymbols)' == '' and '$(Configuration)' == 'Debug'">false</ZeroStripSymbols>
     <ZeroStripSymbols Condition="'$(ZeroStripSymbols)' == ''">true</ZeroStripSymbols>
+    <!-- false: leave out Chinese's, Japanese's and Korean's own orders of
+         ideographs (pinyin, strokes, Japan's, hanja with their reading),
+         about 300 KB of a program that compares with those cultures; they
+         then sort ideographs by radical and strokes, as other cultures do. -->
+    <ZeroIdeographOrders Condition="'$(ZeroIdeographOrders)' == ''">true</ZeroIdeographOrders>
     <!-- dotnet publish builds Release, as it does for .NET 8 and later (which
          decide by the target framework, and don't know this one). -->
     <PublishRelease Condition="'$(PublishRelease)' == ''">true</PublishRelease>

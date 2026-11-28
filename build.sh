@@ -142,6 +142,7 @@ ALL_SAMPLES=(
     CustomFormats
     Locales
     Sorting
+    SortingRoot
     Keys
     Tensors
     TensorsAvx
@@ -151,8 +152,9 @@ ALL_SAMPLES=(
 )
 # Samples WebAssembly can't run: the fiber samples switch stacks, which a WebAssembly
 # program has no way to do, and Catches, CryptoErrors and Cultures catch exceptions with Catch.Run,
-# which jumps back up the stack, which it can't do either. Https needs sockets.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures Https "
+# which jumps back up the stack, which it can't do either. Https needs sockets. SortingRoot
+# needs a feature switch (bflat_flags) the WebAssembly build doesn't pass.
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures Https SortingRoot "
 # Programs with kernels for the GPU (Metal): only --gpu builds them.
 GPU_SAMPLES=(Gpu)
 # Simd and Kernels benchmark SIMD instructions, which a 386 doesn't have.
@@ -361,6 +363,8 @@ bflat_flags() {
     echo ${BFLAT_EXTRA_FLAGS:-}
     case "$1" in
         Tiny) echo -Os ;;
+        # Sorting without the ideograph orders (zerocore's Switches).
+        SortingRoot) echo --feature Zero.Globalization.IdeographOrders=false ;;
         # Zero mode has no runtime CPU detection, so SIMD extensions must be part of
         # the baseline. x64: AVX2/FMA (Haswell, 2013, or newer). arm64 always has
         # NEON; dotprod (SDOT, for int8) needs ARMv8.2+, e.g. Apple M1 or Cortex-A76.

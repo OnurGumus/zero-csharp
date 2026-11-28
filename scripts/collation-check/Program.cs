@@ -41,7 +41,19 @@ static class Program
         G.CompareOptions.None, G.CompareOptions.IgnoreCase, G.CompareOptions.IgnoreNonSpace,
         G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreNonSpace, G.CompareOptions.IgnoreSymbols,
         G.CompareOptions.IgnoreSymbols | G.CompareOptions.IgnoreCase,
+        G.CompareOptions.NumericOrdering, G.CompareOptions.NumericOrdering | G.CompareOptions.IgnoreCase,
+        G.CompareOptions.IgnoreKanaType, G.CompareOptions.IgnoreWidth, G.CompareOptions.IgnoreKanaType | G.CompareOptions.IgnoreWidth,
+        G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreKanaType, G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreWidth,
+        G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreKanaType | G.CompareOptions.IgnoreWidth,
+        G.CompareOptions.IgnoreNonSpace | G.CompareOptions.IgnoreKanaType | G.CompareOptions.IgnoreWidth | G.CompareOptions.IgnoreSymbols,
+        G.CompareOptions.NumericOrdering | G.CompareOptions.IgnoreWidth,
     };
+
+    // Kana and characters of every width, for IgnoreKanaType and IgnoreWidth.
+    static readonly string Kana = "\u3042\u3041\u304B\u304C\u3071\u30A2\u30A1\u30AB\u30AC\u30D1\u30FC\u30FD\u309D\uFF71\uFF76\uFF9E\uFF9F\uFF21\uFF41\uFF10\uFF01\uFFE5\uFFA1\u3131\uFF64\u3001";
+
+    // Digits of several scripts, for NumericOrdering.
+    static readonly string Digits = "0123456789000\u0660\u0661\u0662\u0669\u0966\u0967\u096F\uFF10\uFF11\uFF19\u0E50\u0E51\u00B2\u2460";
 
     // Letters every culture uses, the culture's own (from its alphabet),
     // accents, punctuation, digits and spaces.
@@ -63,7 +75,7 @@ static class Program
         var sb = new StringBuilder();
         for (int i = 0; i < n; i++)
         {
-            int k = R.Next(20);
+            int k = R.Next(21);
             if (k < 11)
                 sb.Append(alphabet[R.Next(alphabet.Length)]);
             else if (k < 14)
@@ -76,8 +88,18 @@ static class Program
                 sb.Append((char)R.Next(0x4E00, 0xA000));
             else if (k < 18)
                 sb.Append((char)R.Next(0xAC00, 0xD7A4));
+            else if (k < 19 && R.Next(2) == 0)
+                sb.Append(Kana[R.Next(Kana.Length)]);
+            else if (k < 19)
+            {
+                // A run of digits, sometimes a long one.
+                int digits = R.Next(5) == 0 ? R.Next(240, 520) : R.Next(1, 6);
+                for (int d = 0; d < digits; d++)
+                    sb.Append(Digits[R.Next(Digits.Length)]);
+            }
             else
                 sb.Append(char.ConvertFromUtf32(Everything[R.Next(Everything.Length)]));
+            // (k 19 and 20: anything.)
         }
         return sb.ToString();
     }
@@ -140,10 +162,15 @@ static class Program
                         Fail(label, $"[{Escape(a)}] vs [{Escape(b)}]: zero {actual}, .NET {expected}");
                         continue;
                     }
-                    if (expected == 0 && zero.GetHashCode(a, options) != zero.GetHashCode(b, options))
+                    // (With NumericOrdering .NET's Compare can say equal where its
+                    // sort keys, and so hashes, differ: ICU skips common prefixes.)
+                    bool sameKeys = (options & G.CompareOptions.NumericOrdering) == 0
+                        || net.GetSortKey(a, options).KeyData.AsSpan().SequenceEqual(net.GetSortKey(b, options).KeyData);
+                    if (expected == 0 && sameKeys && zero.GetHashCode(a, options) != zero.GetHashCode(b, options))
                         Fail(label + " hash", $"[{Escape(a)}] and [{Escape(b)}] are equal but hash differently");
                 }
-                if (Searches)
+                // (.NET refuses NumericOrdering for searching.)
+                if (Searches && (options & G.CompareOptions.NumericOrdering) == 0)
                 {
                     for (int i = 0; i < iterations; i++)
                     {

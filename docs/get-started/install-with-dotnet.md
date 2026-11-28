@@ -162,6 +162,7 @@ or not: see [Make a game window](../how-to/make-a-game-window.html), which uses 
 | `ZeroIosSimulator` | the simulator `dotnet run` runs an `iossimulator-arm64` program in, by name (`iPhone 16`) or UDID | the booted one, else the first iPhone |
 | `ZeroOptimizeFor` | `None` (bflat's `-O0`), `Speed`, or `Size` (bflat's `-Os`) | `None` in Debug, `Speed` otherwise |
 | `ZeroStripSymbols` | `true`: no debug information and no symbol table, about half of a Linux or macOS program; `false` keeps them for a debugger | `false` in Debug, `true` otherwise |
+| `ZeroIdeographOrders` | `false`: leave out Chinese's, Japanese's and Korean's own orders of ideographs (pinyin, strokes, Japan's, hanja by their reading), about 300 KB of a program that compares with those cultures; they then sort ideographs by radical and strokes, as other cultures do (see [Strings](../concepts/strings.html)) | `true` |
 | `ZeroInstructionSet` | passed to bflat as `-m`, e.g. `x86-64-v3` or `dotprod` (see [Use SIMD](../how-to/use-simd.html)) | none |
 | `ZeroDllImports` | more libraries whose `[DllImport]`s are bound when linking, besides `libc` and `libm.so.6`, which always are | none |
 | `ZeroLibraryPath` | folders, separated by `;`, searched first for the C libraries `ZeroLinkLibrary` names (see [Make a game window](../how-to/make-a-game-window.html)) | none |

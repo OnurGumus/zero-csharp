@@ -15,7 +15,7 @@ root=$(cd "$here/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-cp "$here/Program.cs" "$work/"
+cp "$here/Program.cs" "$root/scripts/zerocore-shims.cs" "$work/"
 # In a namespace of its own, so it can't reach .NET's internals by name, and
 # with the C library found by name instead of at link time.
 for f in TimeSpan DateTime DateTimeKind DateTimeOffset DateOnly DateTimeFormat TimeZoneInfo Globalization/ISOWeek \
