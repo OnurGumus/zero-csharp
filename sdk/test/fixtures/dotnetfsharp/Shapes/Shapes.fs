@@ -1,5 +1,5 @@
-/// An F# library whose functions return lib/'s tasks: on .NET the program
-/// that uses it must see the same Task type (one shared lib/ assembly).
+/// An F# library, built for zero mode, for .NET with lib/'s types and for
+/// .NET with .NET's own (ZeroDotnetTypes=Net): the same source each time.
 module Shapes
 
 open System.Threading.Tasks
@@ -19,6 +19,16 @@ let totalArea (shapes: Shape list) : Task<int> =
         let mutable total = 0
         for s in shapes do
             let! a = Task.Run(fun () -> area s)
+            do! Task.Delay 1
             total <- total + a
         return total
     }
+
+/// lib/'s arenas, whose Destroy is unsafe: [<Safety>] says why it's used
+/// correctly (zero's mark, on .NET too).
+[<Safety "nothing allocated from the arena is used after Destroy">]
+let arenaRoundTrip () =
+    let arena = Arena.Create(4096un)
+    let fresh = arena.Used = 0un
+    arena.Destroy()
+    fresh

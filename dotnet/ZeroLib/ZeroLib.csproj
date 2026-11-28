@@ -5,7 +5,7 @@
        lib/ in instead, see dotnet/Faithful: only the program's own types can
        take the place of .NET's for C#. F# takes a later reference's type of
        the same name over .NET's.) The sources are dotnet/Faithful's, without
-       a sample. sdk/pack.sh packs it in ZeroCSharp.Dotnet. -->
+       a sample. sdk/pack.sh packs it inside ZeroCSharp.Dotnet. -->
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
     <OutputType>Library</OutputType>
@@ -16,7 +16,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
-    <NoWarn>$(NoWarn);CS0436;CS8500</NoWarn>
+    <!-- lib/'s own warnings, as the SDK payload's zero.editorconfig silences them. -->
+    <NoWarn>$(NoWarn);CS0436;CS8500;CS8632;CS8669;CS0618;CS8909;CS0414;CS0169;CS0649</NoWarn>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>

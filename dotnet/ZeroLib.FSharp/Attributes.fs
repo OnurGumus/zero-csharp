@@ -9,8 +9,16 @@ namespace Microsoft.FSharp.Control
     open System
 
     /// [<Safety "why">]: the unsafe calls inside are used correctly, for the
-    /// reason given (zero mode's FSharp.Core has it too).
-    type SafetyAttribute = NoCompilerInliningAttribute
+    /// reason given. (zero mode's FSharp.Core makes it NoCompilerInlining with
+    /// the reason, so that fsc never copies a marked function into callers;
+    /// FSharp.Core on .NET has that attribute without an argument, so here it's
+    /// an attribute of its own, which the check reads by name. A marked
+    /// function fsc does copy shows as a warning in its caller, not a miss.)
+    [<AttributeUsage (AttributeTargets.Method ||| AttributeTargets.Property ||| AttributeTargets.Constructor, AllowMultiple=false)>]
+    [<Sealed>]
+    type SafetyAttribute(reason: string) =
+        inherit Attribute()
+        member _.Reason = reason
 
     /// The function may call unsafe members, and calling it is unsafe in turn.
     [<AttributeUsage (AttributeTargets.Method ||| AttributeTargets.Property ||| AttributeTargets.Constructor, AllowMultiple=false)>]

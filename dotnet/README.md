@@ -129,15 +129,34 @@ The collector leaves such objects alone, as it does .NET's own frozen ones.
 ## F#
 
 An F# project builds for .NET with the same `-p:ZeroTarget=dotnet`, and F# libraries and the
-programs that use them do too. They don't compile `lib/` in: they reference it as one assembly,
-`ZeroLib.dll` (`dotnet/ZeroLib`), with zero's `task { }`, `async { }`, `MailboxProcessor` and
-`arena { }` built for .NET as `FSharp.Control.dll` (`dotnet/ZeroLib.FSharp`). Both come in the
-`ZeroCSharp.Dotnet` package, which the SDK downloads for the project. F# takes a referenced
-assembly's type over .NET's of the same name, where C# calls it ambiguous, so a library and the
-program using it get the same `lib/` types: the library's `Task` is the program's. FSharp.Core is
-.NET's own; zero's two unsafe-code marks, `[<Safety>]` and `[<RequiresUnsafe>]`, come with
-`FSharp.Control.dll`. The SDK test `dotnet_fsharp` builds an F# library and program for zero mode
-and for .NET, and checks they print the same.
+programs that use them do too. They don't compile `lib/` in, as C# programs do: they reference it
+as one assembly from a package, which a packed F# library then lists as a dependency.
+
+| | lib/'s own `Task` (default) | `-p:ZeroDotnetTypes=Net` |
+|---|---|---|
+| Package | `ZeroCSharp.Dotnet` | `ZeroCSharp.Dotnet.Net` |
+| `lib/` | `ZeroLib.dll` (`dotnet/ZeroLib`) | `ZeroLib.Net.dll` (`dotnet/ZeroLib.Net`) |
+| `task { }`, `async { }`, `MailboxProcessor` | zero's, on `lib/`'s tasks and fibers (`FSharp.Control.dll`, `dotnet/ZeroLib.FSharp`) | FSharp.Core's, on .NET's tasks |
+| `arena { }` | yes | not yet (it's built on zero's `async`) |
+| A packed library works in | F# zero programs built the same way | any .NET project, C# included |
+
+F# takes a referenced assembly's type over .NET's of the same name, where C# calls it ambiguous
+(CS0433). So with `lib/`'s own types, an F# library and the program using it share `lib/`'s
+`Task`, but a C# project that installs the library finds two. With `Net` nothing of `lib/` has a
+.NET type's name, so a library built that way is an ordinary .NET library that also has `lib/`'s
+arenas, fibers and channels: build a library meant for any .NET project that way.
+
+A program and the zero libraries it uses must be built the same way: one built otherwise would
+bring the other `lib/`, with its own `Arena` and fiber scheduler, and the SDK stops the build
+(ZERO016). C# programs on this target, which have `lib/` compiled in, can't use them either.
+
+FSharp.Core is .NET's own. zero's two unsafe-code marks come with the package: `[<RequiresUnsafe>]`
+as in zero mode, and `[<Safety "why">]` as an attribute of its own (zero's FSharp.Core makes it
+`NoCompilerInlining` with the reason, which .NET's doesn't take; the ZERO007 check reads both).
+F# projects here make no reference assemblies, so that switching `ZeroDotnetTypes` rebuilds what
+uses a library. The SDK test `dotnet_fsharp` builds an F# library and program for zero mode, for
+.NET and for .NET with `Net`, checks all three print the same, installs the `Net` library in a
+plain C# project, and checks that a program built the other way is refused.
 
 ## Not yet
 
@@ -145,8 +164,6 @@ and for .NET, and checks they print the same.
   for .NET to load).
 - C# libraries, and C# projects that reference zero libraries (SDK: ZERO016): a C# program has
   `lib/` compiled in, so a library's `lib/` types would be other types.
-- F# with .NET's own `Task` and `Async` (`ZeroDotnetTypes=Net` is for C#): an F# project here
-  always gets zero's, so a .NET library that returns .NET's `Task` or FSharp.Core's `Async`
-  doesn't fit its `task { }` and `async { }`.
+- C# programs using F# zero libraries, and `arena { }` with `ZeroDotnetTypes=Net`.
 - The Links sample: .NET's runtime can't load two structs that refer to each other through a
   generic struct (`Town` holds a `Handle<Road>`, `Road` a `Handle<Town>`).

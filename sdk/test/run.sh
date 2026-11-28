@@ -639,7 +639,8 @@ EXPECTED
 
 # F# on ZeroTarget=dotnet: an F# library (task { } over Task.Run) used by an
 # F# program, both on one lib/ assembly (ZeroCSharp.Dotnet). As in
-# dotnet_target, zero mode first, and the .NET build must print the same.
+# dotnet_target, zero mode first, and the .NET builds must print the same:
+# with lib/'s types, and with .NET's own (ZeroDotnetTypes=Net).
 test_dotnet_fsharp() {
     local name="dotnet fsharp" dir exe
     can_build "$name" || return
@@ -667,6 +668,72 @@ test_dotnet_fsharp() {
     if ! same_output "$WORK/dotnetfsharp-dotnet.rest" "$WORK/dotnetfsharp-zero.rest" "$WORK/dotnetfsharp.diff"; then
         fail "$name" "on .NET it prints something else: $(cat "$WORK/dotnetfsharp.diff")"; return
     fi
+    # And with .NET's own Task (FSharp.Core's task { }, ZeroLib.Net): the same source.
+    if ! run_in "$dir/App" dotnetfsharp-net build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "the build with ZeroDotnetTypes=Net failed"; return; fi
+    if [ ! -f "$dir/App/bin/Debug/net11.0/ZeroLib.Net.dll" ]; then fail "$name" "no ZeroLib.Net.dll with ZeroDotnetTypes=Net"; return; fi
+    LOG=$WORK/dotnetfsharp-net.txt
+    if ! (cd "$dir/App" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/App.dll); then fail "$name" "the program with ZeroDotnetTypes=Net failed"; return; fi
+    tail -n +2 "$LOG" > "$WORK/dotnetfsharp-net.rest"
+    if [ "$(head -1 "$LOG")" != "on .NET" ] || ! same_output "$WORK/dotnetfsharp-net.rest" "$WORK/dotnetfsharp-zero.rest" "$WORK/dotnetfsharp.diff"; then
+        fail "$name" "with ZeroDotnetTypes=Net it prints something else: $(cat "$WORK/dotnetfsharp.diff")"; return
+    fi
+    # Write once, use anywhere: the library packed with ZeroDotnetTypes=Net,
+    # installed in a plain C# project (no zero SDK), gets what it needs
+    # (ZeroCSharp.Dotnet.Net, as a dependency) and gives the same answer.
+    rm -rf "$WORK/dotnetfsharp-feed" "${NUGET_PACKAGES:-$HOME/.nuget/packages}/shapes"
+    if ! run_in "$dir/Shapes" dotnetfsharp-pack pack -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net -o "$WORK/dotnetfsharp-feed"; then fail "$name" "packing the library failed"; return; fi
+    mkdir -p "$dir/PlainCs"
+    cat > "$dir/PlainCs/PlainCs.csproj" <<'EOF2'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Shapes" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+EOF2
+    cat > "$dir/PlainCs/Program.cs" <<'EOF2'
+using Microsoft.FSharp.Collections;
+
+var shapes = ListModule.OfArray(new[] { Shapes.Shape.NewCircle(1), Shapes.Shape.NewSquare(2), Shapes.Shape.NewCircle(3) });
+System.Console.WriteLine($"total {Shapes.totalArea(shapes).Result}");
+EOF2
+    cat > "$dir/PlainCs/nuget.config" <<EOF2
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="shapes" value="$(native_path "$WORK/dotnetfsharp-feed")" />
+    <add key="zero" value="$(native_path "$FEED")" />
+    <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+EOF2
+    if ! run_in "$dir/PlainCs" dotnetfsharp-plaincs build; then fail "$name" "a plain C# project with the packed library didn't build"; return; fi
+    LOG=$WORK/dotnetfsharp-plaincs.txt
+    if ! (cd "$dir/PlainCs" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/PlainCs.dll); then fail "$name" "the plain C# program failed"; return; fi
+    if [ "$(cat "$LOG")" != "$(grep '^total ' "$WORK/dotnetfsharp-zero.txt")" ]; then
+        fail "$name" "the plain C# program printed '$(cat "$LOG")', not zero mode's '$(grep '^total ' "$WORK/dotnetfsharp-zero.txt")'"; return
+    fi
+    # But an F# zero program built with lib/'s own Task can't take it: it would
+    # get both lib/ assemblies (ZERO016).
+    mkdir -p "$dir/Mixed"
+    cp "$dir/PlainCs/nuget.config" "$dir/Mixed/"
+    cat > "$dir/Mixed/Mixed.fsproj" <<EOF2
+<Project Sdk="ZeroCSharp.Sdk/$VERSION">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+    <PackageReference Include="Shapes" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+EOF2
+    echo 'printfn "%d" (Shapes.area (Shapes.Square 2))' > "$dir/Mixed/Program.fs"
+    if run_in "$dir/Mixed" dotnetfsharp-mixed build -p:ZeroTarget=dotnet; then fail "$name" "a program built with lib/'s Task took a library built with ZeroDotnetTypes=Net"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "built with ZeroDotnetTypes=Net" "$LOG"; then fail "$name" "no ZERO016 for mixing the two lib/ builds"; return; fi
     pass "$name"
 }
 
@@ -675,12 +742,12 @@ test_dotnet_fsharp() {
 test_dotnet_target_errors() {
     local name="dotnet target errors" dir
     if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
-    dir=$(fixture fsapp dotnet-fsapp)
-    if run_in "$dir" dotnet-fsapp build -p:ZeroTarget=dotnet -p:ZeroDotnetTypes=Net; then fail "$name" "an F# project built with ZeroDotnetTypes=Net"; return; fi
-    if ! grep -q "ZERO016" "$LOG" || ! grep -q "ZeroDotnetTypes=Net is for C# projects" "$LOG"; then fail "$name" "no ZERO016 for F# with ZeroDotnetTypes=Net"; return; fi
-    dir=$(fixture fs-with-libs dotnet-cslib)
-    if run_in "$dir/CsLib" dotnet-cslib build -p:ZeroTarget=dotnet; then fail "$name" "a C# library built"; return; fi
-    if ! grep -q "ZERO016" "$LOG" || ! grep -q "not C# libraries" "$LOG"; then fail "$name" "no ZERO016 for a C# library"; return; fi
+    # (With the .NET SDK 10, .NET's own NETSDK1045 for net11.0 comes first.)
+    if has_dotnet_11; then
+        dir=$(fixture fs-with-libs dotnet-cslib)
+        if run_in "$dir/CsLib" dotnet-cslib build -p:ZeroTarget=dotnet; then fail "$name" "a C# library built"; return; fi
+        if ! grep -q "ZERO016" "$LOG" || ! grep -q "not C# libraries" "$LOG"; then fail "$name" "no ZERO016 for a C# library"; return; fi
+    fi
     dir=$(fixture dotnettarget dotnet-oldsdk)
     if run_in "$dir" dotnet-oldsdk build -p:ZeroTarget=dotnet -p:NETCoreSdkVersion=10.0.404; then fail "$name" "the build with the .NET SDK 10 succeeded"; return; fi
     if ! grep -q "ZERO016" "$LOG" || ! grep -q "11.0.100 or newer" "$LOG"; then fail "$name" "no ZERO016 for the .NET SDK 10"; return; fi

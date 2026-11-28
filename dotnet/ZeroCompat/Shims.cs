@@ -305,7 +305,14 @@ public static class NativeResolver
             if (name is not ("*" or "libc" or "libm.so.6"))
                 return 0;
             if (OperatingSystem.IsMacOS())
-                return NativeLibrary.Load(System.IO.Path.Combine(AppContext.BaseDirectory, "libzerocompat.dylib"));
+            {
+                // Next to the program (the SDK copies it there), or where
+                // NuGet puts a package's native asset for a .NET project that
+                // installed an F# zero library (runtimes/osx/native, found
+                // through the program's deps.json).
+                string local = System.IO.Path.Combine(AppContext.BaseDirectory, "libzerocompat.dylib");
+                return System.IO.File.Exists(local) ? NativeLibrary.Load(local) : NativeLibrary.Load("libzerocompat", assembly, null);
+            }
             if (OperatingSystem.IsLinux())
                 return NativeLibrary.Load(name == "libm.so.6" ? "libm.so.6" : "libc.so.6");
             throw new PlatformNotSupportedException("Zero C# programs run on .NET on macOS and Linux for now.");

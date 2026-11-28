@@ -290,7 +290,7 @@ jobs:
           for d in sdk/trimmed/trimmed-*; do mv "$d" "sdk/trimmed/${d#sdk/trimmed/trimmed-}"; done
           ZERO_PAYLOAD_PREBUILT=1 sdk/pack.sh
           # F# projects on ZeroTarget=dotnet need it (pack.sh leaves it out without the .NET SDK 11).
-          ls sdk/feed/ZeroCSharp.Dotnet.*.nupkg
+          ls sdk/feed/ZeroCSharp.Dotnet.0*.nupkg sdk/feed/ZeroCSharp.Dotnet.Net.*.nupkg
       - uses: actions/upload-artifact@v4
         with:
           name: feed

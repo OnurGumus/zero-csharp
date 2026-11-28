@@ -1,5 +1,6 @@
-// An F# program using an F# library (Shapes): built for zero mode and for
-// .NET, it must print the same after the first line.
+// An F# program using an F# library (Shapes): built for zero mode, for .NET
+// and for .NET with .NET's own types, it must print the same after the first
+// line.
 open System.Threading.Tasks
 open Shapes
 
@@ -32,3 +33,4 @@ let counter =
         loop 0)
 counter.PostAndReply(fun r -> (5, r)) |> ignore
 printfn "agent %d" (counter.PostAndReply(fun r -> (7, r)))
+printfn "arena %b" (arenaRoundTrip ())
