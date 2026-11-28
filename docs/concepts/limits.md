@@ -27,9 +27,10 @@ With zerocore, as `build.sh` builds it:
   on every number type, with `NumberStyles`, `ToUpper`/`ToLower`, `ToTitleCase` and the
   `StringComparison` overloads (ordinal, as .NET's invariant mode), plus `lib/` for the rest (see
   [Strings without a GC](strings.html)).
-- **Cultures**: `CultureInfo` and `NumberFormatInfo`, with the invariant culture as the only one, as
-  in .NET with `InvariantGlobalization` set: any other culture throws `CultureNotFoundException` (see
-  [Cultures](strings.html#cultures)).
+- **Cultures**: `CultureInfo`, `NumberFormatInfo` and `DateTimeFormatInfo`, with the invariant
+  culture as the only one, as in .NET with `InvariantGlobalization` set: any other culture throws
+  `CultureNotFoundException`. Formats of your own (separators, patterns, names) work, and
+  `CurrentCulture` is per thread (see [Cultures](strings.html#cultures)).
 - **Dates and times**: `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`,
   `TimeZoneInfo`, `ISOWeek` and `Stopwatch`, with .NET's results, messages and formats; local time
   from the system's zone (see [Work with dates and times](../how-to/work-with-dates-and-times.html)).
