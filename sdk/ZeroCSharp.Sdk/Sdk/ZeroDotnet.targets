@@ -1,0 +1,65 @@
+<!--
+  ZeroTarget=dotnet: a zero project as an ordinary .NET program (Sdk.props).
+
+  lib/ is compiled into the program as source (payload/dotnet/): its Task,
+  timers, streams, sockets and Console have the names of .NET's, and only
+  types of the program's own assembly can take the place of .NET's (the
+  compiler warns, CS0436, and uses them; the same types in a referenced
+  assembly would be an ambiguity, CS0433). So the program behaves as in zero
+  mode: Task.Run starts a fiber, a socket lets the other fibers run. The
+  hashes, ciphers and random numbers are .NET's own, which are the platform's.
+
+  What differs from zero mode is in the repository's dotnet/ folder
+  (known-differences.txt): objects are the garbage collector's, not an
+  arena's; a throw runs catch and finally blocks on its way to Catch.Run;
+  fibers are threads that take turns.
+-->
+<Project>
+  <PropertyGroup>
+    <!-- Nothing native is built: .NET runs the IL. -->
+    <ZeroBuildsNative>false</ZeroBuildsNative>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
+    <!-- CS0436: lib/'s types in place of .NET's, at every use. CS8500: lib/
+         takes addresses of its own structs with references in them. -->
+    <NoWarn>$(NoWarn);CS0436;CS8500</NoWarn>
+    <!-- zerocore's cultures: the invariant one only, as this mode of .NET's. -->
+    <InvariantGlobalization Condition="'$(InvariantGlobalization)' == ''">true</InvariantGlobalization>
+    <ZeroDotnetDir>$(ZeroSdkRoot)payload/dotnet/</ZeroDotnetDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(ZeroDotnetDir)lib/*.cs" Link="Zero/lib/%(Filename)%(Extension)" Visible="false" />
+    <Compile Include="$(ZeroDotnetDir)compat/*.cs" Link="Zero/compat/%(Filename)%(Extension)" Visible="false" />
+    <!-- lib/Gpu.cs and the tensor samples use it; zerocore has its own. -->
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" IsImplicitlyDefined="true" />
+    <!-- macOS: glibc's names and layouts, which lib/ calls (dotnet/native). Linux has glibc. -->
+    <None Include="$(ZeroDotnetDir)native/osx/libzerocompat.dylib" Link="libzerocompat.dylib" Visible="false"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('$(ZeroDotnetDir)native/osx/libzerocompat.dylib')" />
+  </ItemGroup>
+
+  <!-- The payload's own warnings stay out of the project's build: its
+       zero.editorconfig turns them off for its folder only, so the project's
+       code keeps every warning. (NuGet leaves a file named .editorconfig out
+       of a package, hence the name.) -->
+  <Target Name="ZeroDotnetAnalyzerConfig" BeforeTargets="GenerateMSBuildEditorConfigFile;CoreCompile">
+    <ItemGroup>
+      <EditorConfigFiles Include="$(ZeroDotnetDir)zero.editorconfig" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ZeroCheckDotnetTarget" BeforeTargets="Restore;_CheckForInvalidConfigurationAndPlatform;CoreCompile">
+    <Error Code="ZERO015" Condition="'$(NETCoreSdkVersion)' != '' and $([MSBuild]::VersionLessThan($([System.Text.RegularExpressions.Regex]::Replace('$(NETCoreSdkVersion)', '-.*', '')), '11.0.100'))"
+           Text="ZeroTarget=dotnet needs the .NET SDK 11.0.100 or newer (the program targets $(ZeroDotnetFramework)); this build uses $(NETCoreSdkVersion)." />
+    <Error Code="ZERO015" Condition="'$(ZeroLanguage)' == 'FSharp'"
+           Text="ZeroTarget=dotnet builds C# projects for now: F# projects compile against the SDK's own FSharp.Core, which isn't built for .NET's runtime yet." />
+    <Error Code="ZERO015" Condition="'$(OutputType)' == 'Library'"
+           Text="ZeroTarget=dotnet builds programs for now, not libraries: lib/ is compiled into the program, and a library of its own would get a second copy of its types." />
+    <Error Code="ZERO015" Condition="'@(ProjectReference)' != ''"
+           Text="ZeroTarget=dotnet doesn't build projects that reference zero libraries yet (@(ProjectReference->'%(Filename)', ', '))." />
+    <Error Code="ZERO015" Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+           Text="ZeroTarget=dotnet builds on macOS and Linux for now: on Windows, lib/'s calls to the C library need the functions win/runtime.c gives a zero-mode program, as a library for .NET to load." />
+    <Error Code="ZERO015" Condition="$([MSBuild]::IsOSPlatform('OSX')) and !Exists('$(ZeroDotnetDir)native/osx/libzerocompat.dylib')"
+           Text="This build of ZeroCSharp.Sdk has no libzerocompat.dylib (payload/dotnet/native/osx), which ZeroTarget=dotnet needs on macOS: it was packed on a machine that couldn't build it." />
+  </Target>
+</Project>

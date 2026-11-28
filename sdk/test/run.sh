@@ -269,8 +269,14 @@ test_payload_complete() {
              native/arm/{an505,an386,rp2350}.ld.in \
              tools/zero-bitcode/zero-bitcode.dll tools/zero-bitcode/zero-bitcode.runtimeconfig.json \
              tools/zero-bitcode/SharpCompress.dll tools/zero-bitcode/THIRD-PARTY-NOTICES.txt \
-             analyzers/ZeroCSharp.LibraryImport.dll; do
+             analyzers/ZeroCSharp.LibraryImport.dll \
+             dotnet/lib/Fibers.cs dotnet/lib/Tasks.cs dotnet/compat/{Shims,Fibers,Additions,CryptoBridge,ZeroStartup}.cs \
+             dotnet/zero.editorconfig; do
         if [ ! -s "$payload/$f" ]; then fail "payload complete" "missing $f"; return; fi
+    done
+    # ZeroTarget=dotnet uses .NET's own hashes, ciphers and random numbers: lib/'s aren't in its sources.
+    for f in CryptoHashes CryptoChaCha CryptoRandom; do
+        if [ -e "$payload/dotnet/lib/$f.cs" ]; then fail "payload complete" "dotnet/lib has $f.cs: .NET's own must be used there"; return; fi
     done
     if ! is_elf "$payload/native/linux-x64/zerocore.o" x86-64; then fail "payload complete" "linux-x64 object isn't x86-64"; return; fi
     if ! is_elf "$payload/native/linux-arm64/zerocore.o" aarch64; then fail "payload complete" "linux-arm64 object isn't aarch64"; return; fi
@@ -555,6 +561,55 @@ test_arm_target() {
     else
         echo "     (no qemu-system-arm: built, not run)"
     fi
+    pass "$name"
+}
+
+# ZeroTarget=dotnet: the same project as an ordinary .NET program, with lib/
+# compiled in. It needs the .NET SDK 11 (the program targets net11.0), and
+# macOS or Linux.
+has_dotnet_11() { dotnet --list-sdks 2>/dev/null | grep -q '^11\.'; }
+
+test_dotnet_target() {
+    local name="dotnet target" dir exe
+    can_build "$name" || return
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    if ! has_dotnet_11; then skip "$name" "needs the .NET SDK 11"; return; fi
+    if [ "$HOST_OS" = Darwin ] && [ ! -f "$ROOT/sdk/ZeroCSharp.Sdk/payload/dotnet/native/osx/libzerocompat.dylib" ]; then
+        skip "$name" "this payload has no libzerocompat.dylib (it was built off a Mac)"; return
+    fi
+    dir=$(fixture dotnettarget)
+    # Zero mode first: what the .NET build must print too.
+    if ! run_in "$dir" dotnettarget-zero build; then fail "$name" "the zero-mode build failed"; return; fi
+    exe=$(exe "$dir/bin/Debug/$TFM/dotnettarget")
+    if ! (cd "$dir" && run_limited 60 "$WORK/dotnettarget-zero.txt" "$exe"); then fail "$name" "the zero-mode program failed"; return; fi
+    if ! run_in "$dir" dotnettarget build -p:ZeroTarget=dotnet; then fail "$name" "the build for .NET failed"; return; fi
+    # lib/'s own warnings stay out of the project's build.
+    if grep -q 'warning' "$LOG" && ! grep -q ' 0 Warning(s)' "$LOG"; then fail "$name" "the build for .NET has warnings"; return; fi
+    if [ ! -f "$dir/bin/Debug/net11.0/dotnettarget.dll" ]; then fail "$name" "no bin/Debug/net11.0/dotnettarget.dll"; return; fi
+    LOG=$WORK/dotnettarget-dotnet.txt
+    if ! (cd "$dir" && run_limited 60 "$LOG" dotnet bin/Debug/net11.0/dotnettarget.dll); then fail "$name" "the .NET program failed"; return; fi
+    if [ "$(head -1 "$LOG")" != "on .NET" ] || [ "$(head -1 "$WORK/dotnettarget-zero.txt")" != "on zero" ]; then
+        fail "$name" "the first lines aren't 'on zero' and 'on .NET'"; return
+    fi
+    tail -n +2 "$WORK/dotnettarget-zero.txt" > "$WORK/dotnettarget-zero.rest"
+    tail -n +2 "$LOG" > "$WORK/dotnettarget-dotnet.rest"
+    if ! same_output "$WORK/dotnettarget-dotnet.rest" "$WORK/dotnettarget-zero.rest" "$WORK/dotnettarget.diff"; then
+        fail "$name" "on .NET it prints something else: $(cat "$WORK/dotnettarget.diff")"; return
+    fi
+    pass "$name"
+}
+
+# What ZeroTarget=dotnet doesn't build yet says so (ZERO015), and an older
+# .NET SDK is told which one it needs.
+test_dotnet_target_errors() {
+    local name="dotnet target errors" dir
+    if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
+    dir=$(fixture fsapp dotnet-fsapp)
+    if run_in "$dir" dotnet-fsapp build -p:ZeroTarget=dotnet; then fail "$name" "an F# project built"; return; fi
+    if ! grep -q "ZERO015" "$LOG" || ! grep -q "C# projects for now" "$LOG"; then fail "$name" "no ZERO015 for an F# project"; return; fi
+    dir=$(fixture dotnettarget dotnet-oldsdk)
+    if run_in "$dir" dotnet-oldsdk build -p:ZeroTarget=dotnet -p:NETCoreSdkVersion=10.0.404; then fail "$name" "the build with the .NET SDK 10 succeeded"; return; fi
+    if ! grep -q "ZERO015" "$LOG" || ! grep -q "11.0.100 or newer" "$LOG"; then fail "$name" "no ZERO015 for the .NET SDK 10"; return; fi
     pass "$name"
 }
 
@@ -2295,7 +2350,7 @@ test_fsharp_native_library_errors() {
 }
 
 ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old_dotnet_sdk_refused unions_compile plain_packages_refused
-    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target path_with_spaces compile_items incremental
+    native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target dotnet_target dotnet_target_errors path_with_spaces compile_items incremental
     bflat_failure_fails_the_build size strip_symbols ideograph_orders debug_unoptimized mac_debug_object_kept windows_debugger macos_error
     project_reference library_change_rebuilds pack_and_package_reference version_mismatch templates
     custom_packages_folder dotnet_run publish extra_dll_imports library_import inherited_settings clean_and_rebuild

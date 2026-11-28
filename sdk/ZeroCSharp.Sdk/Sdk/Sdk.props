@@ -14,6 +14,31 @@
 
   <PropertyGroup>
     <ZeroSdkRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..'))</ZeroSdkRoot>
+  </PropertyGroup>
+
+  <!-- ZeroTarget=dotnet: the same project as an ordinary .NET program, on
+       .NET's own runtime (for its debugger, profilers and test tools, or to
+       check a program against .NET itself). Not a zero-mode build at all:
+       .NET's framework and core library, with lib/ compiled into the
+       program as source, so that its Task, timers, streams, sockets and
+       Console take the place of .NET's and the program behaves as in zero
+       mode (Sdk.targets). It has to be known here, before the project's own
+       properties: pass it on the command line (-p:ZeroTarget=dotnet) or set
+       it in Directory.Build.props. -->
+  <PropertyGroup Condition="'$(ZeroTarget)' == 'dotnet'">
+    <_ZeroDotnet>true</_ZeroDotnet>
+    <ZeroDotnetFramework Condition="'$(ZeroDotnetFramework)' == ''">net11.0</ZeroDotnetFramework>
+    <TargetFramework>$(ZeroDotnetFramework)</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <Features>$(Features);updated-memory-safety-rules</Features>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ZeroLanguage Condition="'$(MSBuildProjectExtension)' == '.fsproj'">FSharp</ZeroLanguage>
+    <ZeroLanguage Condition="'$(ZeroLanguage)' == ''">CSharp</ZeroLanguage>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(_ZeroDotnet)' != 'true'">
     <ZeroSdkTfm>$(ZeroFramework)</ZeroSdkTfm>
 
     <!-- NuGet reads a framework name it doesn't know as name + version 0.0,
@@ -134,7 +159,8 @@
     <NoWarn>$(NoWarn);NU5103;NU5128</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(ZeroLanguage)' == 'CSharp'">
+  <!-- (ZeroTarget=dotnet: .NET's own [LibraryImport] generator does it.) -->
+  <ItemGroup Condition="'$(ZeroLanguage)' == 'CSharp' and '$(_ZeroDotnet)' != 'true'">
     <Analyzer Include="$(ZeroSdkRoot)payload/analyzers/ZeroCSharp.LibraryImport.dll" />
   </ItemGroup>
 </Project>

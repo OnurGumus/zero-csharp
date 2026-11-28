@@ -1,0 +1,22 @@
+# For the SDK's payload/dotnet/ (ZeroTarget=dotnet), which a project compiles
+# in as source: lib/ and what stands in for zerocore on .NET. Their warnings
+# aren't the project's to see or fix. Sdk/ZeroDotnet.targets hands this file
+# to the compiler; it covers this folder only, so the project's own code keeps
+# every warning.
+root = true
+
+[*.cs]
+generated_code = true
+# Nullable annotations in files compiled without a nullable context (lib/ is
+# built that way in zero mode too).
+dotnet_diagnostic.CS8632.severity = none
+dotnet_diagnostic.CS8669.severity = none
+# RuntimeHelpers.OffsetToStringData: obsolete in .NET, and what lib/ lays out
+# strings in arena memory by.
+dotnet_diagnostic.CS0618.severity = none
+# Comparing function pointers (lib/ compares the ones it stored itself).
+dotnet_diagnostic.CS8909.severity = none
+# Fields only one of the two builds reads.
+dotnet_diagnostic.CS0414.severity = none
+dotnet_diagnostic.CS0169.severity = none
+dotnet_diagnostic.CS0649.severity = none
