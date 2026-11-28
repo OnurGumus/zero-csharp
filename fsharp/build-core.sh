@@ -56,7 +56,7 @@ dotnet "$ZERO_FSHARP_SDK/FSharp/fsc.dll" --nologo --noframework --targetprofile:
     --target:library -r:"$out/System.Runtime.dll" -r:"$out/System.Runtime.Extensions.dll" \
     --out:"$out/FSharp.Core.dll" \
     "$here/core/prelude.fs" "$here/core/attrs.fs" "$here/core/core.fs" "$here/core/ops.fs" "$here/core/local.fs" \
-    "$here/core/seqcore.fs" "$here/core/seq.fs" "$here/core/collections.fs" "$here/core/map.fs" "$here/core/set.fs" "$here/core/string.fs" "$here/core/option.fs" "$here/core/lazy.fs" \
+    "$here/core/event.fs" "$here/core/seqcore.fs" "$here/core/seq.fs" "$here/core/collections.fs" "$here/core/map.fs" "$here/core/set.fs" "$here/core/string.fs" "$here/core/option.fs" "$here/core/lazy.fs" \
     "$here/core/nativeptr.fs" "$here/core/printf.fs"
 
 # printf and the others: a library of their own (see printf/Printf.fs), as

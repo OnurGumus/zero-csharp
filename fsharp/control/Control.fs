@@ -528,9 +528,41 @@ namespace Microsoft.FSharp.Control
                     elif outcome.Canceled then raise (OperationCanceledException())
                     else (f outcome.Task.Result) r k))
 
+        // The other awaitables lib's methods return, as .NET's task { }
+        // takes any: a ValueTask (Channel.SendAsync), Task.Yield(), and
+        // ConfigureAwait's (SuppressThrowing).
+
+        member b.Bind(t: ValueTask<'T>, f: 'T -> TaskCode<'U>) : TaskCode<'U> =
+            if t.IsCompletedSuccessfully then (fun r k -> (f t.Result) r k)
+            else b.Bind(t.AsTask(), f)
+
+        member b.Bind(t: ValueTask, f: unit -> TaskCode<'U>) : TaskCode<'U> =
+            if t.IsCompletedSuccessfully then (fun r k -> (f ()) r k)
+            else b.Bind(t.AsTask(), f)
+
+        /// Lets the others run first, as await Task.Yield() does.
+        member _.Bind(_: System.Runtime.CompilerServices.YieldAwaitable, f: unit -> TaskCode<'U>) : TaskCode<'U> =
+            (fun r k -> r.Yield(fun () -> (f ()) r k))
+
+        member _.Bind(a: System.Runtime.CompilerServices.ConfiguredTaskAwaitable, f: unit -> TaskCode<'U>) : TaskCode<'U> =
+            (fun r k ->
+                let w = a.GetAwaiter()
+                let next () =
+                    w.GetResult()
+                    (f ()) r k
+                if w.IsCompleted then r.Step next else r.Await(w.m_task, next))
+
+        member _.Bind(a: System.Runtime.CompilerServices.ConfiguredTaskAwaitable<'T>, f: 'T -> TaskCode<'U>) : TaskCode<'U> =
+            (fun r k ->
+                let w = a.GetAwaiter()
+                let next () = (f (w.GetResult())) r k
+                if w.IsCompleted then r.Step next else r.Await(w.m_task, next))
+
         member b.ReturnFrom(t: Task<'T>) : TaskCode<'T> = b.Bind(t, fun v -> b.Return v)
         member b.ReturnFrom(t: Task) : TaskCode<unit> = b.Bind(t, fun () -> b.Zero())
         member b.ReturnFrom(a: Async<'T>) : TaskCode<'T> = b.Bind(a, fun v -> b.Return v)
+        member b.ReturnFrom(t: ValueTask<'T>) : TaskCode<'T> = b.Bind(t, fun v -> b.Return v)
+        member b.ReturnFrom(t: ValueTask) : TaskCode<unit> = b.Bind(t, fun () -> b.Zero())
 
         member _.While(cond: unit -> bool, body: TaskCode<unit>) : TaskCode<unit> =
             (fun r k ->
