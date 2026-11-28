@@ -190,7 +190,12 @@ sealed class ThreadInbox : Fiber.IoWaiter
     {
         public Node* Next;
         public Shared* Inbox;
+#if ZERO_DOTNET
+        nint _source; // real .NET: a GC handle, since the GC neither sees a reference in calloc'd memory nor updates it when the object moves
+        public System.Threading.Tasks.ThreadCompletion Source { get => (System.Threading.Tasks.ThreadCompletion)Fiber.Held(_source); set => Fiber.Hold(ref _source, value); }
+#else
         public System.Threading.Tasks.ThreadCompletion Source;
+#endif
     }
 
     // From calloc, kept for the program's life: other threads touch this only.
@@ -204,7 +209,15 @@ sealed class ThreadInbox : Fiber.IoWaiter
     [ThreadStatic] static bool t_none;  // no pipes here
 
     readonly Shared* _shared;
+#if ZERO_DOTNET
+    // Real .NET: the scheduler keeps this record's address, so it can't be in
+    // an object the GC moves.
+    readonly nint _recordMemory = Fiber.NewRecord();
+    ref Fiber.Record _record { get { unsafe { return ref *(Fiber.Record*)_recordMemory; } } } // SAFETY: allocated with this object, freed by its finalizer
+    ~ThreadInbox() => Fiber.FreeRecord(_recordMemory); // off the scheduler's list by now, or this object would still be referenced
+#else
     Fiber.Record _record;
+#endif
     int _expected;                      // sources made and not yet delivered
     bool _waiting;
 

@@ -37,7 +37,15 @@ namespace System.Threading
     /// <summary>A lock for C#'s lock statement (C# 13's System.Threading.Lock), held by a fiber or a thread.</summary>
     public sealed class Lock
     {
+#if ZERO_DOTNET
+        // Real .NET: a fiber waiting for the lock keeps the state's address,
+        // so it can't be in this object, which the GC moves.
+        readonly nint _stateMemory = LockOwner.New();
+        ref LockOwner _state { get { unsafe { return ref *(LockOwner*)_stateMemory; } } } // SAFETY: allocated with this object, freed by its finalizer
+        ~Lock() => LockOwner.Free(_stateMemory); // nothing refers to the lock any more
+#else
         LockOwner _state;
+#endif
 
         /// <summary>Takes the lock, waiting while another fiber or thread holds it.</summary>
         public void Enter()
@@ -149,6 +157,18 @@ namespace System.Threading
 // changes by compare-and-swap; Thread and Count are the holder's to write.
 struct LockOwner
 {
+#if ZERO_DOTNET
+    internal static nint New()
+    {
+        unsafe { return (nint)NativeMemory.AllocZeroed((nuint)sizeof(LockOwner)); } // SAFETY: freed by Free
+    }
+
+    internal static void Free(nint memory)
+    {
+        unsafe { NativeMemory.Free((void*)memory); } // SAFETY: from New, freed once
+    }
+#endif
+
     public nint Owner;      // the holder: its fiber's record, or its thread's marker; 0: free
     public nint Thread;     // the holder's thread's marker; 0 while it's being set or left
     public int Count;

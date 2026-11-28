@@ -510,6 +510,9 @@ public static partial class Fiber
             if (*link == null)
                 return false;
             RemoveIoWaiter(s, link);
+#if ZERO_DOTNET
+            r->Body = null; // its GC handle, as in PollIO
+#endif
             return true;
         }
     }
@@ -554,7 +557,16 @@ public static partial class Fiber
                 Record* r = reversed;
                 reversed = r->Next;
                 r->Next = null;
+#if ZERO_DOTNET
+                // Real .NET: Body is a GC handle that keeps the operation
+                // alive while it waits; freed now (it sets Body again if
+                // it waits again).
+                IoWaiter waiter = (IoWaiter)r->Body;
+                r->Body = null;
+                waiter.Ready(r->Revents);
+#else
                 ((IoWaiter)r->Body).Ready(r->Revents);
+#endif
             }
         }
     }
@@ -1048,10 +1060,23 @@ public sealed partial class Channel<T>
             if (_closed)
                 return false;
             Fiber.Record* current = Fiber.CurrentRecord;
+#if ZERO_DOTNET
+            // Real .NET: `value` may be a field of an object (a variable an
+            // async method or a lambda keeps), which the GC can move while
+            // this fiber waits. A local of this method doesn't move.
+            T slot = default!;
+            if (current != null)
+                current->Slot = System.Runtime.CompilerServices.Unsafe.AsPointer(ref slot);
+            Append(ref _receivers, current);
+            bool got = Fiber.Park("Channel.Receive: the channel is empty, and only a fiber can wait");
+            value = slot;
+            return got;
+#else
             if (current != null)
                 current->Slot = System.Runtime.CompilerServices.Unsafe.AsPointer(ref value);
             Append(ref _receivers, current);
             return Fiber.Park("Channel.Receive: the channel is empty, and only a fiber can wait");
+#endif
         }
     }
 
@@ -1080,12 +1105,20 @@ public sealed partial class Channel<T>
             if (current == null)
                 Environment.FailFast("Channel.Receive: the channel is empty, and only a fiber can wait");
             value = default!;
+#if ZERO_DOTNET
+            T slot = default!; // as in Receive(out T)
+            current->Slot = System.Runtime.CompilerServices.Unsafe.AsPointer(ref slot);
+#else
             current->Slot = System.Runtime.CompilerServices.Unsafe.AsPointer(ref value);
+#endif
             Append(ref _receivers, current);
             var waiter = new CanceledReceiver(this, current);
             bool received;
             using (cancellationToken.Register(static w => ((CanceledReceiver)w!).Cancel(), waiter))
                 received = Fiber.Park("Channel.Receive: the channel is empty, and only a fiber can wait");
+#if ZERO_DOTNET
+            value = slot;
+#endif
             return received;
         }
     }

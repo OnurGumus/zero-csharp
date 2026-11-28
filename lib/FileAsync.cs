@@ -77,7 +77,12 @@ sealed class FileThread : Fiber.IoWaiter
         public nint Buffer;
         public nint Length;
         public nint Result;     // bytes read or written; fflush's result
+#if ZERO_DOTNET
+        nint _task; // real .NET: a GC handle, since the GC neither sees a reference in calloc'd memory nor updates it when the object moves
+        public Task<int> Task { get => (Task<int>)Fiber.Held(_task); set => Fiber.Hold(ref _task, value); }
+#else
         public Task<int> Task;
+#endif
     }
 
     // What the two threads share, from calloc, kept for the program's life.
@@ -93,7 +98,15 @@ sealed class FileThread : Fiber.IoWaiter
     [ThreadStatic] static bool t_none;  // no pipes or threads here
 
     readonly Shared* _shared;
+#if ZERO_DOTNET
+    // Real .NET: the scheduler keeps this record's address, so it can't be in
+    // an object the GC moves.
+    readonly nint _recordMemory = Fiber.NewRecord();
+    ref Fiber.Record _record { get { unsafe { return ref *(Fiber.Record*)_recordMemory; } } } // SAFETY: allocated with this object, freed by its finalizer
+    ~FileThread() => Fiber.FreeRecord(_recordMemory); // off the scheduler's list by now, or this object would still be referenced
+#else
     Fiber.Record _record;               // on Fiber.Run's poll list while jobs are out
+#endif
     int _out;                           // jobs queued and not yet completed
     bool _waiting;
 
@@ -318,7 +331,7 @@ sealed class FileThread : Fiber.IoWaiter
     // Where a Memory's bytes are, for the I/O thread.
     internal static nint Address(ReadOnlyMemory<byte> memory)
     {
-        unsafe { return (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(memory.Span)); } // SAFETY: zero mode's arrays and strings don't move
+        unsafe { return (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(memory.Span)); } // SAFETY: zero mode's arrays and strings don't move (real .NET: callers pin, see Pinned)
     }
 }
 
@@ -363,6 +376,9 @@ namespace System.IO
             {
                 // A big read goes straight to the file.
                 nint stream2 = _file.BeginIo("FileStream");
+#if ZERO_DOTNET
+                using System.Buffers.MemoryHandle pinned2 = buffer.Pin(); // real .NET: the GC moves arrays; not this one, while the I/O thread writes to it
+#endif
                 n = await FileThread.RunAsync(FileThread.Read, stream2, FileThread.Address(buffer), buffer.Length);
                 _file.EndIo();
             }
@@ -370,6 +386,9 @@ namespace System.IO
             {
                 _readPos = 0;
                 nint stream3 = _file.BeginIo("FileStream");
+#if ZERO_DOTNET
+                using System.Buffers.MemoryHandle pinned3 = new Memory<byte>(_buffer).Pin(); // as above
+#endif
                 _readLen = await FileThread.RunAsync(FileThread.Read, stream3, FileThread.Address(_buffer), _buffer.Length);
                 _file.EndIo();
                 n = TakeReadAhead(buffer.Span);
@@ -461,6 +480,9 @@ namespace System.IO
         async ValueTask WriteOutAsync(ReadOnlyMemory<byte> bytes)
         {
             nint stream5 = _file.BeginIo("FileStream");
+#if ZERO_DOTNET
+            using System.Buffers.MemoryHandle pinned5 = bytes.Pin(); // real .NET: the GC moves arrays; not this one, while the I/O thread reads it
+#endif
             int written = await FileThread.RunAsync(FileThread.Write, stream5, FileThread.Address(bytes), bytes.Length);
             _file.EndIo();
             if (written != bytes.Length)

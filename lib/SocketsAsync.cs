@@ -55,7 +55,15 @@ namespace System.Net.Sockets;
 internal abstract class SocketOperation<TResult> : Fiber.IoWaiter
 {
     protected readonly Socket Socket;
+#if ZERO_DOTNET
+    // Real .NET: the scheduler keeps this record's address, so it can't be in
+    // an object the GC moves.
+    readonly nint _recordMemory = Fiber.NewRecord();
+    ref Fiber.Record _record { get { unsafe { return ref *(Fiber.Record*)_recordMemory; } } } // SAFETY: allocated with this object, freed by its finalizer
+    ~SocketOperation() => Fiber.FreeRecord(_recordMemory); // off the scheduler's list by now, or this object would still be referenced
+#else
     Fiber.Record _record;           // on Fiber.Run's list while waiting
+#endif
     readonly short _events;
     readonly Task<TResult> _task = new Task<TResult> { Reusable = true };
     Registration? _onCancel;

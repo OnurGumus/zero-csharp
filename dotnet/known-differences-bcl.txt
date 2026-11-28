@@ -12,11 +12,7 @@ Catches|and its next read runs the factory again|.NET's Lazy keeps a factory's e
 Catches|what was flushed is in it; what was still buffered isn't|a throw runs the using's Dispose on .NET, which writes the stream's buffer out; zero mode jumps over it and the buffer is lost
 Catches|and disposing it then does nothing|as above: the file already holds all five bytes
 Catches|Copy copies|as above: the file it copies holds five bytes, not three
+Catches|a file in use on the I/O thread is closed once its write is done|Catch.Run closes lib/'s File handles left open after a throw; a BCL FileStream opened without a using stays open until the GC finalizes it
 Catches|1000 failed attempts in an arena leave nothing behind|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
 Core|?AlignedAlloc, AlignedFree|the check expects NativeMemory.AlignedAlloc's memory zeroed, which zerocore's is; .NET's is whatever was there, zero or not
-Tasks|timer loop: *|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
-Tasks|ReceiveAsync loop: *|as above
-Tasks|await foreach loop: *|as above
-Tasks|SendAsync loop: *|as above
-Tasks|a file opened in the step that threw is closed|on .NET the catch block the compiler puts in every async method takes the exception before the step's Catch.Run sees it, so that Catch.Run closes nothing; zero mode jumps over the catch block
-Network|a round trip allocates nothing *|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Strings|scratch: only the result is kept|an arena string takes one more word on .NET: the header every .NET object has in front, which zero mode's objects don't

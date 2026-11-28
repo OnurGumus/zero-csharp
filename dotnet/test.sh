@@ -1,21 +1,29 @@
 #!/usr/bin/env bash
-# The samples of ../test.sh, built for real .NET (CoreCLR, the BCL) against
-# dotnet/ZeroCompat (lib/ minus what .NET has), run, and checked the same way:
-# exit code 0, and the output tests/expected holds.
+# The samples of ../test.sh, built for real .NET (CoreCLR), run, and checked the
+# same way: exit code 0, and the output tests/expected holds.
+#
+# By default with all of lib/ compiled into the program (dotnet/Faithful): its
+# Task, timers, streams, sockets and Console take the place of the BCL's, so
+# the program behaves as in zero mode (Task.Run starts a fiber, a socket lets
+# the other fibers run). With --bcl-types those are .NET's own, for a program
+# that hands them to other .NET code: the samples then reference
+# dotnet/ZeroCompat, lib/ without what .NET has.
 #
 # Two lists say where real .NET can't give zero mode's answer:
 # - HEAP_MEASURED samples print how many bytes the heap grew, which is 0 only
 #   where objects go to arenas: only their exit code is checked.
-# - dotnet/known-differences.txt names checks that fail on .NET for a reason
-#   given there ("Sample|check|reason"). A sample with entries passes when
-#   exactly those checks fail; an entry whose check passes is an error, so
-#   the list can't go stale.
+# - dotnet/known-differences.txt (known-differences-bcl.txt with --bcl-types)
+#   names checks that fail on .NET for a reason given there
+#   ("Sample|check|reason"). A sample with entries passes when exactly those
+#   checks fail; an entry whose check passes is an error, so the list can't
+#   go stale.
 #
-# Usage:  dotnet/test.sh [--lib-types] [Sample...]   (default: every sample ../test.sh runs)
-#   --lib-types   with lib/'s own Task, timers, streams and sockets in place of
-#                 the BCL's (dotnet/Faithful): async code behaves as in zero
-#                 mode, but those types aren't .NET's. Its list of known
-#                 differences is dotnet/known-differences-lib.txt.
+# Usage:  dotnet/test.sh [--bcl-types] [--gc-stress] [Sample...]
+#                                        (default: every sample ../test.sh runs)
+#   --gc-stress   while each program runs, a thread makes .NET's GC collect
+#                 and compact every couple of milliseconds, so objects move
+#                 all the time: for finding code in lib/ that assumed they
+#                 never do.
 # Env:    JOBS (parallel builds, default 6), ZERO_TEST_TIMEOUT (seconds, default 120)
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -27,15 +35,22 @@ mapfile_samples() {
     awk '/^SAMPLES=\(/{s=1;next} s&&/^\)/{s=0} s&&$1!~/"/{print $1}' test.sh
     cat /tmp/.zs.$$; rm -f /tmp/.zs.$$
 }
-PROJECT=dotnet/Sample/Sample.csproj
-BIN=dotnet/Sample/bin
+PROJECT=dotnet/Faithful/Faithful.csproj
+BIN=dotnet/Faithful/bin
 KNOWN=dotnet/known-differences.txt
-if [ "${1:-}" = --lib-types ]; then
+BCL=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --bcl-types)
+            BCL=1
+            PROJECT=dotnet/Sample/Sample.csproj
+            BIN=dotnet/Sample/bin
+            KNOWN=dotnet/known-differences-bcl.txt ;;
+        --gc-stress) export ZERO_GC_STRESS=1 ;;
+        *) break ;;
+    esac
     shift
-    PROJECT=dotnet/Faithful/Faithful.csproj
-    BIN=dotnet/Faithful/bin
-    KNOWN=dotnet/known-differences-lib.txt
-fi
+done
 export PROJECT
 if [ $# -gt 0 ]; then SAMPLES=("$@"); else SAMPLES=($(mapfile_samples)); fi
 TIMED=" Simd Kernels Fibers Tasks "
@@ -76,10 +91,12 @@ mkdir -p "$OUT"
 
 echo "[dotnet] native"
 dotnet/native/build.sh
-echo "[dotnet] ZeroCompat"
-if ! dotnet build -v q -c Release dotnet/ZeroCompat/ZeroCompat.csproj > "$OUT/ZeroCompat.build.txt" 2>&1; then
-    grep -E " error " "$OUT/ZeroCompat.build.txt" | sort -u | head -20
-    exit 1
+if [ -n "$BCL" ]; then
+    echo "[dotnet] ZeroCompat"
+    if ! dotnet build -v q -c Release dotnet/ZeroCompat/ZeroCompat.csproj > "$OUT/ZeroCompat.build.txt" 2>&1; then
+        grep -E " error " "$OUT/ZeroCompat.build.txt" | sort -u | head -20
+        exit 1
+    fi
 fi
 
 build_one() {

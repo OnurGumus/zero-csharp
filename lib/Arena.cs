@@ -242,7 +242,11 @@ public partial struct Arena
             state->MaxCapacity = maxCapacity;
             state->LastNormal = state->InitialSize;
             state->Poison = DebugChecks;
+#if ZERO_DOTNET
+            state->Name = Kept.Address(name); // real .NET: a GC handle, since the GC moves strings
+#else
             state->Name = Unsafe.As<string, nint>(ref name);
+#endif
             state->StopOnOutOfMemory = stopOnOutOfMemory;
 
             if (AddBlock(state, state->InitialSize) == null)
@@ -299,7 +303,11 @@ public partial struct Arena
             state->MaxCapacity = capacity;  // which also means no other block
             state->InBuffer = true;
             state->Poison = DebugChecks;
+#if ZERO_DOTNET
+            state->Name = Kept.Address(name); // real .NET: a GC handle, since the GC moves strings
+#else
             state->Name = Unsafe.As<string, nint>(ref name);
+#endif
             state->StopOnOutOfMemory = stopOnOutOfMemory;
 
             block->Next = null;
@@ -1192,6 +1200,9 @@ public partial struct Arena
             else
             {
                 // SAFETY: the state and its blocks come from malloc and are freed exactly once here.
+#if ZERO_DOTNET
+                Kept.Free(state->Name);
+#endif
                 FreeAllBlocks(state, FreedByDestroy);
                 FreeState(state);
             }
@@ -1338,7 +1349,11 @@ public partial struct Arena
     {
         // SAFETY: Name holds null or the address of the string given to Create,
         // which the caller keeps alive. In zero mode a reference is its address.
+#if ZERO_DOTNET
+        unsafe { return (string)Kept.Object(state->Name); }
+#else
         unsafe { return Unsafe.As<nint, string>(ref state->Name); }
+#endif
     }
 
     // What a failed allocation returns: null, unless the arena was created to

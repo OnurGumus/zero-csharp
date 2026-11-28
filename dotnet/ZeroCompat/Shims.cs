@@ -57,6 +57,27 @@ static class ZeroCoreExtensions
     }
 }
 
+// An object's "address" for lib/ to keep in native memory, where zero mode
+// keeps the address itself. Real .NET's GC doesn't see a reference there and
+// moves objects, so it's a GC handle: the object stays alive until Free.
+static class Kept
+{
+    internal static nint Address(object value) => value == null ? 0 : GCHandle.ToIntPtr(GCHandle.Alloc(value));
+
+    internal static object Object(nint address)
+    {
+        if (address == 0)
+            return null;
+        unsafe { return GCHandle.FromIntPtr(address).Target; } // SAFETY: from Address
+    }
+
+    internal static void Free(nint address)
+    {
+        if (address != 0)
+            unsafe { GCHandle.FromIntPtr(address).Free(); } // SAFETY: from Address, freed once
+    }
+}
+
 static class ZeroExit
 {
     internal static nint OutBuffer; // byte*

@@ -260,14 +260,34 @@ public static partial class Fiber
         public readonly TState State = state;
     }
 
-    static object Held(nint handle)
+    // An async operation's record for the scheduler's list (lib/SocketsAsync.cs
+    // and the like keep theirs inside the object in zero mode): native
+    // memory, which doesn't move.
+    internal static nint NewRecord()
+    {
+        unsafe { return (nint)NativeMemory.AllocZeroed((nuint)sizeof(Record)); } // SAFETY: freed by FreeRecord
+    }
+
+    internal static void FreeRecord(nint memory)
+    {
+        unsafe
+        {
+            // SAFETY: from NewRecord, and off every list.
+            Record* record = (Record*)memory;
+            record->Body = null;
+            record->Run = null;
+            NativeMemory.Free(record);
+        }
+    }
+
+    internal static object Held(nint handle)
     {
         if (handle == 0)
             return null;
         unsafe { return GCHandle.FromIntPtr(handle).Target; } // SAFETY: a handle Hold made
     }
 
-    static void Hold(ref nint handle, object value)
+    internal static void Hold(ref nint handle, object value)
     {
         if (handle != 0)
         {

@@ -522,7 +522,21 @@ public static class Str
 
     /// <summary>Room for a string object of <paramref name="length"/> chars plus a terminator, or null.</summary>
     internal static byte* AllocStringObject(Arena arena, int length)
+#if ZERO_DOTNET
+    {
+        // Real .NET's objects have a word in front of them (lock and
+        // RuntimeHelpers.GetHashCode use it): room for it, zeroed, so that a
+        // string in arena memory is a well-formed object there too. The GC
+        // leaves it alone, as it does .NET's own objects outside its heap.
+        byte* memory = (byte*)arena.Alloc(StringObjectSize(length) + (nuint)sizeof(nint), (nuint)sizeof(nint), zero: false);
+        if (memory == null)
+            return null;
+        unsafe { *(nint*)memory = 0; } // SAFETY: the first word of what Alloc gave
+        return memory + sizeof(nint);
+    }
+#else
         => (byte*)arena.Alloc(StringObjectSize(length), (nuint)sizeof(nint), zero: false);
+#endif
 
     /// <summary>Writes the object header and terminator around chars already in place.</summary>
     /// <safety>obj must come from AllocStringObject with capacity for at least length chars.</safety>
