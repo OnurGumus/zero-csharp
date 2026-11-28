@@ -74,6 +74,13 @@ namespace Microsoft.FSharp.Core
         [<CompiledName("InvalidOp")>]
         let inline invalidOp message = raise (InvalidOperationException(message))
 
+        /// Ends the program with an exit code, as Environment.Exit does: output
+        /// is flushed and the hooks the program added run first.
+        [<CompiledName("Exit")>]
+        let exit (exitcode: int) : 'T =
+            Environment.Exit(exitcode)
+            failwith "Environment.Exit returned"
+
         [<CompiledName("Reraise")>]
         let inline reraise() = unbox(# "rethrow ldnull" : obj #)
 

@@ -2289,7 +2289,7 @@ ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old
     mac_target mac_target_links_libm_and_threads mac_target_path_with_spaces mac_target_undefined_import
     ios_simulator_target ios_simulator_errors
     trim_macos_layout mac_host_builds_all_targets mac_target_common_libc mac_target_user_tbd mac_target_newer_dylib
-    tutorial_steps fsharp_tutorial_steps simd_instruction_set static_constructor_threads failure_keeps_output
+    tutorial_steps fsharp_doc_samples simd_instruction_set static_constructor_threads failure_keeps_output
     native_library_dotnet native_library_exports native_library_two native_library_errors
     native_library_not_packable native_library_publish native_library_incremental native_library_clean
     native_library_path_with_spaces native_library_with_zero_reference native_library_dotted_name
@@ -2297,7 +2297,7 @@ ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old
     link_library link_library_passed_on link_library_newer_glibc sdl3 sdl3_windows
     native_library_name_with_spaces native_library_reference_kinds native_library_app_recipe native_library_bindings
     native_library_visual_studio
-    fsharp_program fsharp_printf fsharp_collections fsharp_builders fsharp_async fsharp_arena_post fsharp_catch fsharp_memory fsharp_must_not_compile fsharp_scratch_ref_struct_state fsharp_unsafe_calls fsharp_unsafe_calls_libraries fsharp_decimal fsharp_top_level fsharp_libraries fsharp_cross_targets fsharp_incremental fsharp_publish fsharp_c64
+    fsharp_program fsharp_printf fsharp_printf_scope fsharp_collections fsharp_builders fsharp_async fsharp_arena_post fsharp_catch fsharp_memory fsharp_must_not_compile fsharp_scratch_ref_struct_state fsharp_unsafe_calls fsharp_unsafe_calls_libraries fsharp_decimal fsharp_top_level fsharp_libraries fsharp_cross_targets fsharp_incremental fsharp_publish fsharp_c64
     fsharp_native_library fsharp_native_library_cross fsharp_native_library_errors
     fsharp_native_library_bindings fsharp_program_calls_native_library fsharp_native_library_bindings_all_types)
 
@@ -2755,20 +2755,57 @@ test_tutorial_steps() {
     pass "$name"
 }
 
-# The tutorial's F# tabs: each step's samples/*.fs is the Program.fs of an F# zero
-# project, and prints what its C# twin prints (tests/expected/).
-test_fsharp_tutorial_steps() {
-    local name="F# tutorial steps" s dir input out
+# printf in its scratch scope (fsprintf-scope): a ToString that keeps what it
+# makes runs outside it, a throw from one leaves printf working, a call leaves
+# only what its call site makes on the heap, Arena.Sprintf, span
+# ToString, new string, and exit's code. Optimized and not: the closures fsc
+# makes for a printf call differ.
+test_fsharp_printf_scope() {
+    local name="F# printf scope" dir exe opt code
     can_build "$name" || return
-    for s in QuizStep1 QuizStep2 QuizStep3 Quiz; do
-        dir=$(fixture fstoplevel "fs-tutorial-$s")
+    dir=$(fixture fsprintf-scope)
+    for opt in true false; do
+        if ! run_in "$dir" fsprintf-scope build -p:Optimize=$opt; then fail "$name" "dotnet build failed (Optimize=$opt)"; return; fi
+        exe=$(exe "$dir/bin/Debug/$TFM/fsprintf-scope")
+        code=0
+        "$exe" > "$WORK/fsprintf-scope.out" 2> /dev/null || code=$?
+        if [ "$code" != 3 ]; then fail "$name" "exit code $code, not 3 (Optimize=$opt): $(tail -3 "$WORK/fsprintf-scope.out")"; return; fi
+        if ! same_output "$WORK/fsprintf-scope.out" "$dir/expected.txt" "$WORK/fsprintf-scope.diff"; then
+            fail "$name" "printed (Optimize=$opt): $(head -c 300 "$WORK/fsprintf-scope.diff")"; return
+        fi
+    done
+    pass "$name"
+}
+
+# The docs' F# tabs: each samples/<Name>.fs here is the Program.fs of an F# zero
+# project, and prints what its C# twin samples/<Name>.cs prints
+# (tests/expected/<Name>.txt), or, for a test sample whose twin checks only
+# what the docs show, tests/expected/<Name>.fs.txt. It must exit with 0.
+FSHARP_DOC_SAMPLES=(
+    Hello
+    Minimal
+    QuizStep1
+    QuizStep2
+    QuizStep3
+    Quiz
+    Strings
+    Unicode
+)
+test_fsharp_doc_samples() {
+    local name="F# doc samples" s dir input out expected code
+    can_build "$name" || return
+    for s in "${FSHARP_DOC_SAMPLES[@]}"; do
+        dir=$(fixture fstoplevel "fs-doc-$s")
         cp "$ROOT/samples/$s.fs" "$dir/Program.fs"
         input=/dev/null; [ -f "$ROOT/tests/input/$s.txt" ] && input=$ROOT/tests/input/$s.txt
-        if ! run_in "$dir" "fs-tutorial-$s" build; then fail "$name" "$s didn't build"; return; fi
-        out=$("$(exe "$dir/bin/Debug/$TFM/fstoplevel")" < "$input" | tr -d '\r')
-        if [ "$out" != "$(tr -d '\r' < "$ROOT/tests/expected/$s.txt")" ]; then
+        if ! run_in "$dir" "fs-doc-$s" build; then fail "$name" "$s didn't build"; return; fi
+        expected=$ROOT/tests/expected/$s.fs.txt; [ -f "$expected" ] || expected=$ROOT/tests/expected/$s.txt
+        code=0
+        out=$("$(exe "$dir/bin/Debug/$TFM/fstoplevel")" < "$input" | tr -d '\r') || code=$?
+        if [ "$code" != 0 ]; then echo "$out" >> "$LOG"; fail "$name" "$s exited with $code"; return; fi
+        if [ "$out" != "$(tr -d '\r' < "$expected")" ]; then
             echo "$out" >> "$LOG"
-            fail "$name" "$s printed something else than $s.cs"; return
+            fail "$name" "$s printed something else than $(basename "$expected")"; return
         fi
     done
     pass "$name"

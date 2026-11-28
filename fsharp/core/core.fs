@@ -774,10 +774,11 @@ namespace Microsoft.FSharp.Core
         // the others, over the function's types) are generic code bflat's
         // compiler gives up on when those types nest deeply (IL3054, generic
         // recursion), and zero mode has no type loader to make them at run
-        // time. A printf with five arguments or more gets here with its format
-        // (whose type holds the whole printer's) as the first. The first
-        // argument is applied, then the other four the fast way: a five-
-        // argument closure called through a function value allocates once.
+        // time. A printf with four values or more gets here with its format
+        // (whose type holds the whole printer's) as the first. Each argument
+        // is applied in turn, a closure each. Testing only the result of the
+        // first for a four-argument closure isn't enough: that type holds the
+        // rest of a longer printer's, and its adapters nest the same way.
         static member InvokeFast (func: FSharpFunc<'T, ('Res -> 'V -> 'W -> 'X -> 'Y)>, arg1: 'T, arg2: 'Res, arg3: 'V, arg4: 'W, arg5: 'X) : 'Y =
             let f2 = (# "" (func.Invoke(arg1)) : FSharpFunc<'Res, ('V -> 'W -> 'X -> 'Y)> #)
             let f3 = (# "" (f2.Invoke(arg2)) : FSharpFunc<'V, ('W -> 'X -> 'Y)> #)

@@ -6,7 +6,7 @@ What F# projects (`.fsproj` with `ZeroCSharp.Sdk`) compile against: a small FSha
 |---|---|
 | `core/` | FSharp.Core: the prelude and attributes (from dotnet/fsharp, MIT); `LanguagePrimitives` with structural equality, comparison and hashing through interfaces instead of reflection; `FSharpFunc` and closures; `Option`, `ValueOption`, `Result`, `Choice`, `Ref`, `list`; `Operators`, with ranges of any numeric type and `char`, the math functions (`sqrt`, `round`, `sin`, `pown`, ...) and `decimal`; `seq { }`, list and array comprehensions (`seqcore.fs`: what the compiler calls for them); the `Seq`, `List`, `Array` and `String` modules; `Map` and `Set`; `lazy` (`lazy.fs`, over zerocore's `System.Lazy<T>`); the format types printf uses |
 | `core/map.fs`, `core/set.fs` | dotnet/fsharp's own, made by `core/adapt-mapset.py` (edit that, not them): the AVL trees and modules as they are, without serialization, debugger views and `IDictionary` |
-| `printf/` | `FSharp.Printf.dll`: `printf`, `printfn`, `eprintf`, `sprintf`, `failwithf`, `ksprintf` and the others |
+| `printf/` | `FSharp.Printf.dll`: `printf`, `printfn`, `eprintf`, `sprintf`, `Arena.Sprintf`, `failwithf`, `ksprintf` and the others |
 | `control/` | `FSharp.Control.dll` (in `ref/`, next to `BflatLib.dll`): `task`, `async`, `MailboxProcessor` (on lib's tasks and fibers), `arena frame { }` (on lib's object scopes) |
 | `shim/` | `System.Runtime.Extensions.dll`: `Tuple` (with .NET's `ToString`), `KeyValuePair`, `IStructuralEquatable`, `IList<T>` and attributes the F# compiler emits or looks up |
 
@@ -16,7 +16,7 @@ Not there yet: `%A` (the compiler refuses it without reflection), `asin`/`acos`/
 
 ## How a program is built
 
-1. fsc compiles the project against `ref/fsharp/` (zerocore as `System.Runtime.dll`, the shim, FSharp.Core, FSharp.Printf) and `lib/`, as C# projects compile against zerocore.
+1. fsc compiles the project against `ref/fsharp/` (zerocore as `System.Runtime.dll`, the shim, FSharp.Core) and `ref/` (`lib/`, with FSharp.Printf and FSharp.Control next to it), as C# projects compile against zerocore.
 2. The SDK reads the entry point from the IL (an `[<EntryPoint>]` function, or the `main@` fsc makes for top-level code) and writes a C# `Main` that calls it through `[UnsafeAccessor]`. For a native library it writes a C# export for each `[<UnmanagedCallersOnly(EntryPoint = ...)>]` F# function instead.
 3. bflat compiles that C# with the F# IL, FSharp.Core and the libraries as references, into one native program, as for C#.
 

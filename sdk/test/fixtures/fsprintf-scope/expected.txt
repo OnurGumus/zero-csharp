@@ -1,0 +1,13 @@
+cached 3 | cached 3 | cached 3
+interpolated cached 3 and { cached 4 }
+struct (1, 2), (3, 4)
+total 2382
+kept: cached 3 / 50
+caught: ToString threw
+after: 5 fine
+2 + 3 = 5 (9 characters, in the arena)
+printf leaves at most 256 bytes on the heap per call
+Sprintf leaves only its format on the heap per call
+span: bc, abcd, System.ReadOnlySpan[2]
+new string: bc abcd cd ---
+bye

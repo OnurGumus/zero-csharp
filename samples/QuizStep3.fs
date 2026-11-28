@@ -23,10 +23,9 @@ type Outcome =
     | Wrong
     | Skipped
     | EndOfInput
-    | AskAgain
 
-// Reads one answer and says what it was.
-let read i a b =
+// Asks until the answer is a number, empty, or the input ends.
+let rec ask i a b =
     printf "Q%d: %d + %d = " i a b
     let length = In.ReadLine(Span<char>(buffer))
     if length < 0 then
@@ -38,7 +37,7 @@ let read i a b =
     elif length > buffer.Length then
         printf "that's %d characters; " length
         printfn "answers are at most %d" buffer.Length
-        AskAgain
+        ask i a b
     else
         let answer = ReadOnlySpan<char>(buffer, 0, length).Trim()
         let mutable value = 0L
@@ -46,23 +45,14 @@ let read i a b =
             printfn "skipped"
             Skipped
         elif not (Str.TryParse(answer, &value)) then
-            // A span isn't a printf argument; Console writes it as it is.
-            Console.Write('"')
-            Console.Write(answer)
-            Console.WriteLine("\" isn't a number")
-            AskAgain
+            printfn "\"%s\" isn't a number" (answer.ToString())
+            ask i a b
         elif value = int64 (a + b) then
             printfn "right"
             Right
         else
             printfn "no, it's %d" (a + b)
             Wrong
-
-// Asks until the answer is a number, empty, or the input ends.
-let rec ask i a b =
-    match read i a b with
-    | AskAgain -> ask i a b
-    | outcome -> outcome
 // docs:end
 
 let rec quiz i right asked =
@@ -74,7 +64,7 @@ let rec quiz i right asked =
         match ask i a b with
         | EndOfInput -> right, asked
         | Right -> quiz (i + 1) (right + 1) (asked + 1)
-        | Wrong | Skipped | AskAgain -> quiz (i + 1) right (asked + 1)
+        | Wrong | Skipped -> quiz (i + 1) right (asked + 1)
 
 printfn "%d questions. An empty answer skips one." Questions
 let right, asked = quiz 1 0 0
