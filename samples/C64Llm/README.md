@@ -35,9 +35,7 @@ RAM) and `Kernels.DotI8` (an int8 dot product, in 6502 assembly).
 
 2. **The program**, with the Zero C# SDK (on a Mac, with Docker running). It needs `C64.Reu`,
    `C64.KernalRom`, the 6502 `Kernels.DotI8`, `ZeroC64ShadowStack` and `ZeroC64FastMultiply`, which
-   are newer than SDK
-   0.15.0: until a release has them, pack the SDK from this repository (`sdk/pack.sh`) and point
-   NuGet at `sdk/feed`.
+   came in SDK 0.16.0.
 
    ```bash
    cd samples/C64Llm && dotnet build -p:ZeroTarget=c64

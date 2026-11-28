@@ -62,12 +62,12 @@ A window opens with a square that the arrow keys move; Escape, or closing the wi
 project is a program that references the package:
 
 ```xml
-<Project Sdk="ZeroCSharp.Sdk/0.15.0">
+<Project Sdk="ZeroCSharp.Sdk/0.16.0">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="ZeroCSharp.SDL3" Version="0.15.0" />
+    <PackageReference Include="ZeroCSharp.SDL3" Version="0.16.0" />
   </ItemGroup>
 </Project>
 ```

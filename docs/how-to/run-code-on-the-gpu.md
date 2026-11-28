@@ -49,7 +49,7 @@ Sum:   4718580 (the CPU says 4718580), 85 us on the GPU
 The project is a program with one more property, `ZeroGpu`:
 
 ```xml
-<Project Sdk="ZeroCSharp.Sdk/0.15.0">
+<Project Sdk="ZeroCSharp.Sdk/0.16.0">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ZeroGpu>Metal</ZeroGpu>

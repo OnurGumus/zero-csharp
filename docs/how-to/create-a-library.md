@@ -21,7 +21,7 @@ dotnet new zerolib -o Geometry
 The project file names the SDK and says it's a library:
 
 ```xml
-<Project Sdk="ZeroCSharp.Sdk/0.15.0">
+<Project Sdk="ZeroCSharp.Sdk/0.16.0">
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <Version>1.0.0</Version>
@@ -65,7 +65,7 @@ native code made from it is optimized is up to the program's build: not in Debug
 Reference the library's project:
 
 ```xml
-<Project Sdk="ZeroCSharp.Sdk/0.15.0">
+<Project Sdk="ZeroCSharp.Sdk/0.16.0">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
@@ -152,7 +152,7 @@ Within one framework, a newer SDK may add to zerocore and `lib/`, so a library r
 that packed it, and a program built with an older SDK refuses it:
 
 ```text
-error ZERO002: Acme.Geometry was built with ZeroCSharp.Sdk 0.15.2, newer than this project's 0.15.0:
+error ZERO002: Acme.Geometry was built with ZeroCSharp.Sdk 0.16.2, newer than this project's 0.16.0:
 update ZeroCSharp.Sdk in the project's Sdk attribute.
 ```
 

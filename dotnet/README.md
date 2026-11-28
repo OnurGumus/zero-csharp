@@ -82,6 +82,9 @@ and output, and the TLS cases. In short:
   `Catch.Run` run on .NET; zero mode jumps over them.
 - **`Catch.Run` catches more.** .NET can't tell `throw null` from a null dereference, so what
   zero mode ends the program for (a bad index, a failed cast) comes back as an exception.
+- **Memory problems don't show.** Zero mode never frees an object outside an arena, and on .NET
+  the collector frees those objects, so a program that slowly runs out of memory natively can
+  look fine here. Check memory on the native targets.
 - **A fiber that blocks in the system blocks them all.** `lib/`'s own sockets and files yield;
   a call that .NET or the system blocks in (`Thread.Sleep`) holds the turn.
 - **Cultures: invariant mode by default, ICU for a program that names them.** A program runs in
