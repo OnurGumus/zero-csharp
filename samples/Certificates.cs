@@ -323,8 +323,11 @@ public static class Program
         late.ChainPolicy.ExtraStore.Add(X509Certificate2.CreateFromPem(InterPem));
         late.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreNotTimeValid;
         Check("IgnoreNotTimeValid", late.Build(X509Certificate2.CreateFromPem(LeafPem)) && Flags(late) == X509ChainStatusFlags.NotTimeValid);
+        // All three have expired by then, the trusted root too: each element says so.
         Check("element status", late.ChainElements[0].ChainElementStatus.Length == 1
-                                && late.ChainElements[2].ChainElementStatus.Length == 0);
+                                && late.ChainElements[1].ChainElementStatus.Length == 1
+                                && late.ChainElements[2].ChainElementStatus.Length == 1
+                                && late.ChainElements[2].ChainElementStatus[0].Status == X509ChainStatusFlags.NotTimeValid);
 
         // .NET's default asks for revocation checks, which aren't done here:
         // Build says so and refuses, without throwing.

@@ -21,8 +21,9 @@
 //   it has one, includes those purposes;
 // - no extension marked critical that this doesn't understand.
 //
-// A root is trusted as it is: its own dates and extensions aren't checked,
-// as RFC 5280 says (.NET on Windows would also report an expired root).
+// A root is trusted as it is: its own extensions aren't checked, as RFC 5280
+// says. Its dates are, as .NET does: a chain under a root that has expired,
+// or isn't valid yet, is refused with NotTimeValid on the root's element.
 //
 // Trust comes from ChainPolicy.CustomTrustStore when TrustMode is
 // CustomRootTrust, else from the system's roots: the PEM bundle at
@@ -371,6 +372,9 @@ public class X509Chain : IDisposable
             if (!AllowsPurposes(c))
                 flags[i] |= X509ChainStatusFlags.NotValidForUsage;
         }
+        // The trusted root: its dates only.
+        if (trusted && (now < path[count - 1].NotBeforeSeconds || now > path[count - 1].NotAfterSeconds))
+            flags[count - 1] |= X509ChainStatusFlags.NotTimeValid;
         // Every issuer, the trusted root included, must be a CA that may sign certificates.
         for (int i = 1; i < count; i++)
         {
