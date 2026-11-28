@@ -79,12 +79,14 @@ SMALL_SAMPLES=(
     SmallFormats
     SmallDoubleFormats
     SmallDecimalFormats
+    SmallParsing
     SmallKeys
     SmallFibers
     SmallChannels
     SmallScratch
     SmallCatches
     SmallScratchBuffer
+    SmallDot
 )
 ALL_SAMPLES=(
     Tiny
@@ -133,6 +135,9 @@ ALL_SAMPLES=(
     Https
     CryptoRandom
     Formats
+    Parsing
+    Cultures
+    Dates
     Keys
     Tensors
     TensorsAvx
@@ -141,8 +146,9 @@ ALL_SAMPLES=(
     "${SMALL_SAMPLES[@]}"
 )
 # Samples WebAssembly can't run: the fiber samples switch stacks, which a WebAssembly
-# program has no way to do.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Https "
+# program has no way to do, and Catches, CryptoErrors and Cultures catch exceptions with Catch.Run,
+# which jumps back up the stack, which it can't do either.
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures Https "
 # Programs with kernels for the GPU (Metal): only --gpu builds them.
 GPU_SAMPLES=(Gpu)
 # Simd and Kernels benchmark SIMD instructions, which a 386 doesn't have.
@@ -188,6 +194,9 @@ DOS_SAMPLES=(
     CryptoErrors
     Certificates
     Formats
+    Parsing
+    Cultures
+    Dates
     Keys
     Tensors
     TensorTypes
@@ -196,8 +205,9 @@ DOS_SAMPLES=(
 )
 # A C64 program has about 50 KB for its code, data, heap and stack together,
 # and the default is the samples that fit. Any sample can be asked for by
-# name; the linker says by how much it is too big. C64Demo and Paddles are for
-# the C64 only (lib/C64.cs: the screen, the video chip, the keyboard).
+# name; the linker says by how much it is too big. C64Demo, Paddles and C64Reu
+# are for the C64 only (lib/C64.cs: the screen, the video chip, the keyboard,
+# an REU).
 C64_SAMPLES=(
     Tiny
     Minimal
@@ -209,6 +219,8 @@ C64_SAMPLES=(
     "${SMALL_SAMPLES[@]}"
     C64Demo
     Paddles
+    C64Reu
+    C64RomOut
 )
 # A microcontroller has no SIMD to benchmark, and Vga is a PC game. Blink is
 # for microcontrollers only (lib/Board.cs: the LED, registers, a timer). The Uno R4
@@ -254,6 +266,9 @@ ARM_SAMPLES=(
     CryptoErrors
     Certificates
     Formats
+    Parsing
+    Cultures
+    Dates
     Keys
     Tensors
     TensorTypes
@@ -283,6 +298,8 @@ R4_SAMPLES=(
     Records
     Shapes
     Refs
+    Cultures
+    Dates
     "${SMALL_SAMPLES[@]}"
     Blink
 )
@@ -695,7 +712,7 @@ build_c64_bitcode() {
     check_bflat
     check_dos_ilc
     build_core "$CORE"
-    build_core "$C64_CORE" -d WASM
+    build_core "$C64_CORE" -d WASM -d C64
     build_lib
     for name in "$@"; do
         echo "[c64]   $name -> bitcode"
@@ -1154,7 +1171,7 @@ build_sdk_payload() {
     # The C64: zerocore's build for bitcode targets (single-threaded, 32-bit:
     # the WebAssembly one), which NativeAOT-LLVM compiles against, and the
     # native half llvm-mos links in.
-    build_core "$dir/native/c64/System.Private.CoreLib.dll" -d WASM
+    build_core "$dir/native/c64/System.Private.CoreLib.dll" -d WASM -d C64
     cp c64/runtime.c "$dir/native/c64/"
     # The microcontrollers (pico2, r4): the same zerocore, and arm/'s runtime,
     # boot block and board layouts, which zero-bitcode arm-link compiles.

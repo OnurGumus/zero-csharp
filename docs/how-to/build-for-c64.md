@@ -129,7 +129,7 @@ programs `./test.sh --c64` runs:
 | `SmallIntegers`, `SmallNative`, `QuizStep2` | 17 to 18 KB | 32 to 33 KB |
 | `SmallKeys` | 20 KB | 30 KB |
 | `SmallEncoding`, `SmallStrings`, `SmallDicts` | 26 to 28 KB | 22 to 24 KB |
-| `Refs`, `SmallStrDicts`, `SmallObjects`, `SmallScratchBuffer` | 31 to 32 KB | 18 to 19 KB |
+| `Refs`, `SmallStrDicts`, `SmallObjects`, `SmallScratchBuffer`, `SmallParsing` | 31 to 32 KB | 18 to 19 KB |
 | `SmallDecimalFormats`, `SmallLists`, `SmallText`, `SmallUnicode`, `Paddles`, `C64Demo`, `SmallArena` | 34 to 36 KB | 14 to 16 KB |
 | `SmallBuilders` | 39 KB | 11 KB |
 | `SmallFibers`, `SmallChannels`, `SmallDoubleFormats` | 40 to 41 KB | 9 to 10 KB |
@@ -139,6 +139,31 @@ programs `./test.sh --c64` runs:
 The size includes the 2 KB shadow stack NativeAOT-LLVM's code keeps object references on. The Small
 samples are tests written to fit: each covers a piece of what Strings, Casts, Collections and the
 other large samples check.
+
+A program that keeps few objects in local variables can take some of those 2 KB back, and a program
+whose calls go deep can have more. llvm-mos also keeps 1 KB between the heap and the stack. A project
+sets both, in bytes, and the heap gets what they give back:
+
+```xml
+<ZeroC64ShadowStack>384</ZeroC64ShadowStack>
+<ZeroC64StackReserve>512</ZeroC64StackReserve>
+```
+
+Nothing checks either for overflow, so measure first: fill them with a pattern, run the program, and
+see how much of the pattern is left.
+
+The 6502 can't multiply: each multiplication of two `int`s is a loop of shifts and adds, about 1,100
+processor cycles for two 16-bit numbers. A program that multiplies a lot can trade 1 KB of RAM for a
+table of quarter squares, which takes about 700 (`a * b = f(a + b) - f(a - b)`, with `f(m)` the
+table's `m * m / 4`):
+
+```xml
+<ZeroC64FastMultiply>true</ZeroC64FastMultiply>
+```
+
+It changes every multiplication of 32-bit numbers in the program (C#, F# and the program's own C),
+and gives the same results. A language model in F#, which scales every row of its weights and
+multiplies in its attention, runs 11% faster with it.
 
 What a feature adds to a program, measured as the difference between small programs with and without
 it (the collections and strings on top of an arena):
@@ -157,12 +182,15 @@ it (the collections and strings on top of an arena):
 | Printing a `float` or a `double` (`ToString`) | 24.5 KB |
 | `char.IsLetter`, `IsDigit`, `IsUpper`, `IsLower`, `GetUnicodeCategory` (their Unicode table) | 16.5 KB |
 | `char.ToUpper`, `ToLower` above ASCII (their table) | 2 KB |
+| `int.TryParse` (`int.Parse`, with its exceptions) | 6.5 KB (9.5 KB) |
+| `double.Parse` | 42 KB |
 
 Floating point is the expensive one: the 6502 has none, and the software that stands in for it is far
 larger for `double` than for `float`. Printing either brings the code that prints a value exactly,
 with big-number arithmetic. A program that computes with `double` and prints the result doesn't fit;
-with `float` it does, with about 8 KB to spare. Every kind of collection (each set of type arguments)
-is compiled separately and costs again.
+with `float` it does, with about 8 KB to spare. Reading a `double` from text (`double.Parse`) leaves
+room for little else, as it divides big numbers exactly; `int.TryParse` is cheap. Every kind of
+collection (each set of type arguments) is compiled separately and costs again.
 
 The `char` methods know every Unicode character, so they bring tables. For text typed on a C64, the
 ASCII ones do the same job for free: `char.IsAsciiDigit`, `IsAsciiLetter`, `IsAsciiLetterUpper` and the
@@ -178,6 +206,32 @@ so the arena is sure to have it once the program has loaded (see [An arena in a 
 The build already favors size everywhere: the C# compiler runs with `--Os`, every function is marked
 to be compiled for size, and llvm-mos optimizes the whole program at link time, which makes it a fifth
 smaller again.
+
+### 8 KB more: the RAM under the KERNAL
+
+Under the KERNAL ROM, at `$E000`, there is 8 KB of RAM that a program can't normally see.
+`C64.KernalRom = false` switches the ROM out, and `C64.RamUnderKernal` is that RAM, 8,065 bytes, to
+read and write like any other memory:
+
+<!-- sample: samples/C64RomOut.cs rom-out -->
+```csharp
+C64.KernalRom = false;
+// Now the RAM is there, to read and write like any other memory.
+bool same = true;
+for (int i = 0; i < ram.Length; i++)
+    same &= ram[i] == Pattern(i);
+Console.WriteLine("Printed with the KERNAL ROM out.");
+```
+
+The KERNAL goes on working: printing, `In.ReadLine`, its interrupt (the keyboard, `C64.Ticks`) and
+anything else that calls it. The RAM at the KERNAL's own jump table and interrupt vectors, which the
+6502 reads while the ROM is out, sends each call and each interrupt to a few lines in the program that
+switch the ROM in for it and out again. That costs about 100 cycles a call, and the RAM above `$FF80`,
+which is why the program gets 8,065 bytes rather than 8,192. The program's end switches the ROM back
+in.
+
+Writing to that RAM works with the ROM in too; reading then gives the ROM's bytes. Code of your own
+that switches memory with the processor port at `$01` should put back what it found there.
 
 ## The screen, sprites and the keyboard
 
@@ -289,6 +343,43 @@ The KERNAL's interrupt scans the keyboard, counts `C64.Ticks` and blinks the cur
 at about a tenth of the processor's time. A game that reads keys with `KeyHeld` can switch it off while
 it plays, `C64.KernalInterrupt = false`; `ReadKey` then gets nothing and `Ticks` stands still. The
 program's end switches it back on.
+
+`Clock`, `Stopwatch`, `Environment.TickCount64`, `Fiber.Sleep` and the timers count the same sixtieths,
+and go on while the interrupt is off, a tenth of a second at a time: they then read CIA 2's time-of-day
+clock, which counts the mains' cycles and needs no interrupt. Switching the interrupt off the first time
+starts that clock at 0. CIA 2's timers are left alone, for RS-232 and for NMI routines. The code that
+reads the time-of-day clock is only in programs that switch the interrupt off.
+
+## Memory beyond 64 KB: an REU
+
+A RAM Expansion Unit adds memory the 6502 can't address: the 1700 (128 KB), 1764 (256 KB), 1750 (512
+KB) or the C64 Ultimate's, up to 16 MB. `C64.Reu.Read` and `C64.Reu.Write` copy between it and the
+C64's own memory, by DMA, a byte a cycle (a KB in about a millisecond), so a program can keep far more
+data than fits in 50 KB and bring in what it needs, a piece at a time:
+
+<!-- sample: samples/C64Reu.cs reu -->
+```csharp
+Span<byte> bytes = stackalloc byte[300];
+for (int i = 0; i < bytes.Length; i++)
+    bytes[i] = (byte)(i * 7);
+// Across the boundary between the first and the second 64 KB.
+C64.Reu.Write(0xFF80, bytes);
+
+Span<byte> back = stackalloc byte[300];
+C64.Reu.Read(0xFF80, back);
+```
+
+`C64.Reu.Size` is the size in bytes, 0 without an REU. Measuring it writes a byte at nine addresses and
+puts back what was there. An address past the end of a smaller REU wraps around to 0.
+
+In VICE, `-reu -reusize 512` adds one, and `-reuimage file` fills it from a file first;
+`c64/run.sh` passes them on from `C64_VICE_OPTIONS`:
+
+```bash
+C64_VICE_OPTIONS="-reu -reusize 512" ./run.sh --c64 C64Reu
+```
+
+On a C64 Ultimate, switch the REU on in its menu, and load a file into it from the file browser.
 
 ## A game
 
@@ -448,6 +539,45 @@ Typing `T` at its title screen plays one match computer against computer and rep
 what `./test.sh --c64` runs: the match is the same every time, and the program checks that it ended
 with a winner, that nothing left the field, and that playing allocated nothing.
 
+## A language model
+
+[`samples/C64Llm`](https://github.com/OnurGumus/zero-csharp/tree/master/samples/C64Llm) runs Karpathy's
+stories260K, a language model of 260,000 parameters, on a C64 with a RAM Expansion Unit. It is all
+F#, in integers only, on `C64.Reu`, `C64.KernalRom` and `Kernels.DotI8`. You type the start of a
+story and it goes on with it, about a minute a token:
+
+<video controls preload="none" poster="../img/c64-llm.jpg" style="width:100%;max-width:720px;border-radius:8px" aria-label="An F# language model telling a story on a Commodore 64, in VICE, sped up">
+  <source src="../img/c64-llm.mp4" type="video/mp4" />
+</video>
+
+A 23-token story, 28 minutes of C64 time, recorded in VICE and sped up, with the program's F# along the
+way. Its README says how to build and run it.
+
+## C and assembly of your own
+
+Some loops are too slow, or too big, compiled from C# or F#: their arithmetic is 32-bit, which the
+6502 does a byte at a time. A project can add C (`.c`) or 6502 assembly (`.s`) of its own, which
+llvm-mos compiles and optimizes with the rest of the program:
+
+```xml
+<ItemGroup>
+  <ZeroC64Source Include="kernels.c" />
+</ItemGroup>
+```
+
+A function `cs_<name>` there is what `[DllImport("libc")]` `<name>` calls, with C's `long` for C#'s
+`int` (C's `int` is 16 bits here) and pointers for pointers:
+
+```c
+long cs_sum_bytes(const unsigned char *p, long n)
+{
+    long sum = 0;
+    for (unsigned char i = 0; i < (unsigned char)n; i++)
+        sum += p[i];
+    return sum;
+}
+```
+
 ## Run on a real machine
 
 A `.prg` file is what a C64 loads. An SD card reader for the C64 takes it as it is; for a disk drive or
@@ -457,7 +587,9 @@ another emulator, VICE's `c1541` puts it on a disk image:
 c1541 -format "zero,01" d64 zero.d64 -write bin/c64/QuizStep1.prg quizstep1
 ```
 
-On the C64, `LOAD"*",8,1` and then `RUN`. The program ends at BASIC's `READY.`
+On the C64, `LOAD"*",8,1` and then `RUN`. The program ends at BASIC's `READY.`, and `RUN` runs it again.
+A program bigger than BASIC's 38,911 bytes ends with BASIC empty, as after `NEW`, and all of BASIC's
+memory free; load it again to run it again.
 
 ## How it works
 
@@ -493,7 +625,8 @@ that `c64/runtime.c` defines with 32-bit parameters: C#'s `calloc` is `cs_calloc
   date.
 - **Failure messages go to the screen.** A failed cast or an index out of range ends the program with
   exit code 134, which only an emulator sees.
-- **C# can call only the C functions `c64/runtime.c` defines,** as `cs_<name>`.
+- **C# can call only the C functions `c64/runtime.c` defines,** as `cs_<name>`, and a project's own
+  ([`ZeroC64Source`](#c-and-assembly-of-your-own)).
 
 ## Watch out for
 

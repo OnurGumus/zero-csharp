@@ -219,7 +219,9 @@ Check("TryFormat that doesn't fit writes nothing",
     && written == 0);
 ```
 
-Every overload takes an `IFormatProvider` and ignores it: there are no cultures. A custom format such
+Every overload takes an `IFormatProvider`, such as `CultureInfo.InvariantCulture`: whichever you
+pass, the result is the invariant culture's, the only one there is (see
+[Cultures](../concepts/strings.html#cultures)). A custom format such
 as `"0.00"` or `"#,##0"` isn't supported and ends the program with a `FormatException`, as does a
 malformed hole such as `"{0:F2"`. `samples/Formats.cs` checks these results on every target, and
 `scripts/format-check/check-formats.sh` compares the formatting with .NET's over millions of values.
@@ -228,7 +230,7 @@ malformed hole such as `"{0:F2"`. `samples/Formats.cs` checks these results on e
 
 - **No holes of other types.** A struct or class in a hole doesn't compile, unless it implements
   `ISpanFormattable`. Format its fields instead, or call its `ToString()`, which allocates.
-- **No culture, and no custom formats.** Formatting is invariant: `.` as the decimal point, `,` between
+- **Only the invariant culture, and no custom formats.** Formatting is invariant: `.` as the decimal point, `,` between
   thousands. A custom format such as `{x:0.00}` ends the program with a `FormatException`; use a
   standard one such as `{x:F2}`.
 - **`ToString`, `string.Format`, plain `$"..."` and numbers in `+`** (`"n=" + 5`) work, but

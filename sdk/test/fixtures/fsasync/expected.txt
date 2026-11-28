@@ -1,0 +1,49 @@
+addLater: 5
+sumTo: 705082704
+whenAll: 2,4
+body
+finally
+disposed resource
+cleanUp: 1
+task over async: 42
+while: 3
+parallel: 1,4,9,16,25
+sequential: 1,4,9
+count: 100000
+child: 25
+for: 100000
+awaitTask: 9
+fromContinuations: 42
+canceled: true
+ticker ran: true, canceled: true
+safeFetch: 4
+failed: no name
+safeFetch: -1
+outer got: after the inner try
+finally ran
+caught boom
+disposed async resource
+use: inside use
+catch: error no name
+parallel: no name
+parallelFails: 0
+child: no name
+childFails: 0
+callbackFails: 13
+task caught task boom
+task finally ran
+task: no name
+taskFinally: 0
+finally on cancel
+canceled with finally: true
+task faulted: true
+awaited, message has it: yes
+StartAsTask faulted: true
+task awaited: task fault
+counter: 5050
+counter: 105050
+scan: a first, b second
+tryReceive: timed out
+impatient: receive timed out
+ping-pong: 0
+agents: 500500

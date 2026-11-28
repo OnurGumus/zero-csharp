@@ -20,6 +20,8 @@
 # When standard input is a file or a pipe, its text is typed into the C64's
 # keyboard for the program to read (as lines, with In.ReadLine).
 # Env:   C64_EMULATOR, C64_TOOLS (see ../env.sh)
+#        C64_VICE_OPTIONS  more options for VICE, such as an REU:
+#                      "-reu -reusize 512 -reuimage /abs/path/image.reu"
 #        C64_TIMEOUT   seconds of C64 time before a run without a window is
 #                      stopped (default 600; it passes much faster than that)
 set -euo pipefail
@@ -61,6 +63,8 @@ cp "$program" "$work/program.prg"
 # -default: this machine's saved VICE settings don't apply.
 # -autostartprgmode 1: put the program into memory directly, no disk drive.
 options=(-default +saveres +confirmonexit -autostartprgmode 1 -autostart "$work/program.prg")
+# shellcheck disable=SC2206 # split on purpose: a list of options
+[ -n "${C64_VICE_OPTIONS:-}" ] && options+=(${C64_VICE_OPTIONS})
 
 # The ROMs ./setup.sh --c64 fetched on Linux, before VICE's own system files.
 if [ -d "$C64_ROMS/C64" ]; then

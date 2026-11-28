@@ -45,6 +45,48 @@ Parallel.For(0, 100000, counter,
     static (c, i) => Interlocked.Increment(ref c.Hits[0]));
 ```
 
+## Lock shared data
+
+When iterations share more than a counter, `lock` lets one thread at a time into a block, as in
+.NET. It works on any object through `Monitor` (`lib/Monitor.cs`), and on C# 13's
+`System.Threading.Lock`, which keeps its state in itself and costs less:
+
+<!-- sample: samples/Threads.cs lock -->
+```csharp
+// A plain counter and an array filled in turn, shared by every thread of
+// a Parallel.For: `lock` lets one thread at a time in.
+public sealed class Shared
+{
+    public readonly object Gate = new();
+    public readonly Lock Gate2 = new();
+    public int Count;
+    public int[] Items = new int[2000];
+    public int Added;
+}
+```
+
+<!-- sample: samples/Threads.cs lock-loop -->
+```csharp
+Parallel.For(0, 20000, shared, static (s, i) =>
+{
+    lock (s.Gate)
+    {
+        s.Count++;
+        if (i % 10 == 0)
+            s.Items[s.Added++] = i;
+    }
+});
+```
+
+The thread that holds a lock may take it again, and must leave it as many times. `Monitor.TryEnter`
+and `Lock.TryEnter` take a timeout. A thread that finds the lock taken spins until it's free, so keep
+what's locked short. `Monitor.Wait` and `Pulse` aren't there.
+
+Between fibers, the holder is the fiber, and one that finds the lock taken yields, so the others run
+(see [Run green threads](use-fibers.html)). C# allows no `await` inside a `lock`. Two waits that
+could never end stop the program with a message instead of hanging: a fiber waiting for a lock its
+thread took outside the fibers, and code outside the fibers waiting for a lock one of its fibers holds.
+
 ## Give each thread its own arena
 
 Arenas and `lib/`'s collections aren't thread-safe. Split the work into one part per processor and
@@ -124,6 +166,6 @@ starts instead.
 - **Arenas and collections**: one per thread, as above.
 - **Output**: `Console` buffers, so write results after the loop rather than from inside it.
 
-Allocation with `new`, interface calls, `Interlocked`, `Volatile` and static constructors are safe
+Allocation with `new`, interface calls, `lock`, `Interlocked`, `Volatile` and static constructors are safe
 on any thread: the first thread to reach a type runs its static constructor, and the others wait for
 it to finish.

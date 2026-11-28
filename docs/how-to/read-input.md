@@ -117,10 +117,54 @@ while (true)
 
 ## Parse numbers
 
-`Str.TryParse` has overloads for `int`, `long`, `ulong` and `double`, and `Str.TryParseHex` reads hex
-digits with an optional `0x`. They take a `ReadOnlySpan<char>`, so the slice goes straight in. Parsing
-is strict and invariant: no surrounding whitespace (call `Trim()` first), no thousands separators. On
-malformed input or overflow they return `false` and set the value to 0.
+`int.Parse`, `double.TryParse` and the rest work as in .NET, on every integer type, `double`, `float`
+and `Half`, with every overload: a `string` or a `ReadOnlySpan<char>` (so the slice goes straight in),
+a `NumberStyles`, and an `IFormatProvider` such as `CultureInfo.InvariantCulture`. The culture is
+always the invariant one, the only one there is (see [Cultures](../concepts/strings.html#cultures)):
+the decimal point is `.` and the group separator `,`.
+
+<!-- sample: samples/Parsing.cs integers -->
+```csharp
+int answer = int.Parse("42");
+Check("int.Parse", answer == 42);
+Check("whitespace and a sign", int.Parse(" -17 ") == -17);
+Check("thousands", int.Parse("1,234,567", NumberStyles.Number) == 1234567);
+Check("hex", int.Parse("ff", NumberStyles.HexNumber) == 255);
+Check("hex is the bits", sbyte.Parse("FF", NumberStyles.HexNumber) == -1);
+
+Check("TryParse", int.TryParse("12345", out int parsed) && parsed == 12345);
+Check("not a number", !int.TryParse("12a", out parsed) && parsed == 0);
+Check("too large", !int.TryParse("2147483648", out parsed));
+Check("null", !int.TryParse((string)null, out parsed));
+```
+
+`double`, `float` and `Half` are correctly rounded from every digit given, as in .NET, so the text
+`ToString` writes reads back to the same value:
+
+<!-- sample: samples/Parsing.cs doubles -->
+```csharp
+double pi = double.Parse("3.14159");
+Check("double.Parse", pi == 3.14159);
+Check("exponent", double.Parse("6.02e23") == 6.02e23);
+Check("thousands by default", double.Parse("1,000.5") == 1000.5);
+Check("too large is Infinity",
+    double.Parse("1e400") == double.PositiveInfinity);
+Check("too small is 0", double.Parse("1e-400") == 0);
+Check("symbols", double.IsNaN(double.Parse("NaN"))
+    && double.Parse("-Infinity") == double.NegativeInfinity);
+Check("TryParse", double.TryParse("2.5", out double half) && half == 2.5);
+Check("not a number", !double.TryParse("2.5.1", out half));
+```
+
+Text that isn't a number makes `Parse` throw `FormatException`, and a number too large for the type
+`OverflowException`, which end the program unless a [`Catch.Run`](recover-from-errors.html) is waiting
+for them. So for input, use `TryParse`: it returns `false` and sets the value to 0. Only a
+`NumberStyles` .NET refuses, such as `AllowHexSpecifier` for a `double`, makes it throw.
+
+`Str.TryParse` is the stricter choice, for `int`, `long`, `ulong` and `double`: no whitespace around
+the number (call `Trim()` first) and no thousands separators. `Str.TryParseHex`
+reads hex digits with an optional `0x`. `scripts/parse-check/check-parsing.sh` compares the parsing
+with .NET's over millions of strings.
 
 ## What reaches the program
 

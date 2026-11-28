@@ -2,10 +2,11 @@ PASS a doubly linked list (3 checks)
 PASS a ring (2 checks)
 PASS a tree (2 checks)
 PASS Ptr itself (3 checks)
+PASS pool basics (1 checks)
 PASS a pool (6 checks)
 PASS moving (5 checks)
 PASS a scratch pool (1 checks)
-PASS LinkedList (6 checks)
+PASS LinkedList (7 checks)
 PASS a map (11 checks)
 
 All checks passed.

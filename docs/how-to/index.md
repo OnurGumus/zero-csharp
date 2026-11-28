@@ -37,6 +37,8 @@ the [tutorial](../tutorial/index.html) builds a quiz step by step.
   handshake that checks the server's certificate, then encrypted reads and writes.
 - [Recover from errors](recover-from-errors.html): `Catch.Run` gets back what a `throw` threw, and
   closes the files and sockets left open, instead of the program ending.
+- [Work with dates and times](work-with-dates-and-times.html): `DateTime`, `DateTimeOffset`,
+  `DateOnly`, `TimeOnly`, `TimeSpan` and time zones, as in .NET, with local time from the system.
 - [Use the clock and random numbers](use-the-clock-and-random-numbers.html): measure a duration, tell
   the date and time, and roll dice with numbers that are the same on every target.
 - [Read environment variables and exit](use-the-environment.html): `Environment.GetEnvironmentVariable`,
