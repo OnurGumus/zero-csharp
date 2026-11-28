@@ -52,13 +52,15 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 /// <summary>Green threads: functions that take turns on one system thread, each on its own stack.</summary>
-public static class Fiber
+public static partial class Fiber
 {
+#if !ZERO_DOTNET // real .NET: threads that take turns (dotnet/ZeroCompat/Fibers.cs)
     [DllImport("*"), SuppressGCTransition]
     static unsafe extern void ZeroFiberSwitch(void** save, void* resume);
 
     [DllImport("*"), SuppressGCTransition]
     static unsafe extern void* ZeroFiberInit(void* top, void* bottom, delegate*<void*, void> entry, void* argument);
+#endif
 
     [DllImport("libc")] static unsafe extern void* malloc(nuint size);
     [DllImport("libc")] static unsafe extern void free(void* memory);
@@ -120,8 +122,16 @@ public static class Fiber
         public Record* Next;        // in the run queue, the sleepers or a channel's waiters
         public long WakeAt;         // Clock.Monotonic, while sleeping; while waiting on input or
                                     // output, when that times out (0: never)
+#if ZERO_DOTNET
+        // This record is in malloc'd memory, where real .NET's GC neither
+        // sees a reference nor updates it when the object moves: GC handles.
+        nint _run, _body;
+        public Runner Run { get => (Runner)Held(_run); set => Hold(ref _run, value); }
+        public object Body { get => Held(_body); set => Hold(ref _body, value); }
+#else
         public Runner Run;          // Runner<TState>.Instance
         public object Body;         // the Action<TState>
+#endif
         public void* State;         // where the TState is
         public delegate*<void*, nuint, void*> Allocate; // its ObjectAllocator setting
         public void* AllocateContext;
@@ -271,8 +281,13 @@ public static class Fiber
             f->Guard = guard;
             f->GuardSize = page;
             f->State = top + recordSize;
+#if ZERO_DOTNET
+            // The state may hold references too: kept in an object, with the body.
+            f->Body = new Start<TState>(body, state);
+#else
             *(TState*)f->State = state;
             f->Body = body;
+#endif
             f->Run = Runner<TState>.Instance;
             f->Id = ++s->NextId;
             f->Bottom = (ulong*)(guard + page);
@@ -325,8 +340,19 @@ public static class Fiber
                 Environment.FailFast("Fiber.Run: called from a fiber");
             // SAFETY: every record in the queues is a live fiber's; a fiber's
             // memory is freed here, on Run's own stack, after it has ended.
+#if ZERO_DOTNET_BCL
+            // Real .NET's tasks: async methods' continuations run here, between
+            // fibers, and Run goes on while timers and tasks are still out
+            // (dotnet/ZeroCompat/Async.cs).
+            while ((s->Live > 0 || WorkOutside()) && (until == null || !until.IsCompleted))
+#else
             while (s->Live > 0 && (until == null || !until.IsCompleted))
+#endif
             {
+#if ZERO_DOTNET_BCL
+                if (!BeforeRound(s, until))
+                    break;
+#endif
                 Record* f = Dequeue(s);
                 if (f == null)
                 {
@@ -855,7 +881,12 @@ public static class Fiber
             f->Body = null;
             Scheduler* s = This;
             s->Live--;
+#if ZERO_DOTNET
+            f->Run = null; // frees its GC handle, as Body = null did
+            ZeroFiberEnd(s->MainStack); // and this returns: the fiber's thread ends
+#else
             ZeroFiberSwitch(&f->StackPointer, s->MainStack);
+#endif
         }
     }
 
@@ -875,6 +906,11 @@ public static class Fiber
 
         public override void Run(Record* f)
         {
+#if ZERO_DOTNET
+            Start<TState> start;
+            unsafe { start = (Start<TState>)f->Body; } // SAFETY: Spawn stored it
+            start.Body(start.State);
+#else
             Action<TState> body;
             TState state;
             unsafe
@@ -884,6 +920,7 @@ public static class Fiber
                 state = *(TState*)f->State;
             }
             body(state);
+#endif
         }
     }
 }

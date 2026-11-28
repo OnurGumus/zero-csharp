@@ -16,6 +16,7 @@
 // another one, so copy it into a long-lived arena before adding it.
 
 using System;
+using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 
 public struct RefList<T> where T : class
@@ -111,7 +112,21 @@ public struct RefList<T> where T : class
         public T Current => _list.Get(_index);
     }
 
+#if ZERO_DOTNET
+    // Real .NET's GC moves objects and frees what nothing it can see refers
+    // to, so an address won't do: a GC handle keeps the object and finds it.
+    // (Never freed: a spike.)
+    static nint ToAddress(T item) => item is null ? 0 : GCHandle.ToIntPtr(GCHandle.Alloc(item));
+
+    static T FromAddress(nint address)
+    {
+        if (address == 0)
+            return default;
+        unsafe { return (T)GCHandle.FromIntPtr(address).Target; } // SAFETY: every nonzero address came from ToAddress
+    }
+#else
     static nint ToAddress(T item) => Unsafe.As<T, nint>(ref item);
 
     static T FromAddress(nint address) => Unsafe.As<nint, T>(ref address);
+#endif
 }

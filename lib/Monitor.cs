@@ -158,7 +158,11 @@ struct LockOwner
     // This thread, by an address only it has.
     internal static nint ThisThread
     {
+#if ZERO_DOTNET
+        get => Fiber.ThreadIdentity; // real .NET: each fiber is a thread, and they count as one
+#else
         get { unsafe { return (nint)Unsafe.AsPointer(ref t_marker); } } // SAFETY: only compared, never read through
+#endif
     }
 
     // The fiber running, or, outside fibers, this thread.
@@ -285,7 +289,16 @@ static class MonitorTable
     static unsafe Entry* s_entries;
     static int s_count, s_capacity;
 
+#if ZERO_DOTNET
+    // Real .NET's GC moves objects, so an address doesn't name one: a number
+    // given to each object the first time it's locked does.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> s_ids = new();
+    static long s_nextId;
+
+    static nint Address(object obj) => (nint)(long)s_ids.GetValue(obj, static _ => Interlocked.Increment(ref s_nextId));
+#else
     static nint Address(object obj) => Unsafe.As<object, nint>(ref obj);
+#endif
 
     static void Guard()
     {

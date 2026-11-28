@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A measurement (2026-11-28): one sample for real .NET with lib/'s own Task,
+       timers, streams and sockets instead of the BCL's, so async code behaves
+       as in zero mode (Task.Run on a fiber, sockets that let other fibers
+       run). lib/ is compiled into the program: its types take the place of
+       the BCL's of the same name (CS0436), which a referenced assembly can't do. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>$(Sample)</AssemblyName>
+    <SampleFile Condition="'$(SampleFile)' == ''">$(Sample)</SampleFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
+    <NoWarn>$(NoWarn);CS0436;CS8500</NoWarn>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>false</TieredPGO>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../samples/$(SampleFile).cs" />
+    <Compile Include="../../bin/gen/Stories260K.cs" Condition="'$(Sample)' == 'Llama'" />
+    <Compile Include="../../libs/**/*.cs" />
+    <Compile Include="../../lib/*.cs" />
+    <Compile Include="../ZeroCompat/Shims.cs;../ZeroCompat/Fibers.cs;../ZeroCompat/Additions.cs" />
+    <Compile Include="*.cs" />
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />
+    <None Include="../out/libzerocompat.dylib" Link="libzerocompat.dylib" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

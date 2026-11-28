@@ -286,7 +286,8 @@ public static class Program
             zero &= ByteOf(ref value, b) == 0;
         for (int count = 0; count <= 40; count++)
         {
-            Span<byte> all = System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref Unsafe.As<T, byte>(ref items[0]), 42 * size);
+            Span<byte> all;
+            unsafe { all = System.Runtime.InteropServices.MemoryMarshal.CreateSpan(ref Unsafe.As<T, byte>(ref items[0]), 42 * size); } // SAFETY: items has 42 of them
             for (int i = 0; i < all.Length; i++)
                 all[i] = 0xAB;
             Span<T> middle = items.Slice(1, count);
@@ -305,7 +306,10 @@ public static class Program
         return true;
     }
 
-    static byte ByteOf<T>(ref T value, int index) => Unsafe.Add(ref Unsafe.As<T, byte>(ref value), index);
+    static byte ByteOf<T>(ref T value, int index)
+    {
+        unsafe { return Unsafe.Add(ref Unsafe.As<T, byte>(ref value), index); } // SAFETY: callers pass an index below the size of T
+    }
 
     // docs:native-buffer-use
     static bool GrowsAndFrees(int count)

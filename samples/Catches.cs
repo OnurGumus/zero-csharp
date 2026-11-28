@@ -128,7 +128,9 @@ public static class Program
         var lazy = new Lazy<int>(() => ++tries == 1 ? throw new IOException("not yet") : 42);
         e = Catch.Run(() => lazy.Value, out int early);
         Check(e is IOException && !lazy.IsValueCreated, "a Lazy whose factory threw has no value");
-        Check(lazy.Value == 42 && tries == 2, "and its next read runs the factory again");
+        // (Read inside a Catch.Run: .NET's Lazy keeps the exception and throws it again.)
+        e = Catch.Run(() => lazy.Value, out int again);
+        Check(e == null && again == 42 && tries == 2, "and its next read runs the factory again");
 
         // State by ref, without a closure; what changed before the throw stays.
         // docs:state

@@ -228,7 +228,8 @@ static class FileSystem
     internal static string ToString(ReadOnlySpan<byte> bytes)
     {
         string result = string.Allocate(bytes.Length);
-        Span<char> chars = MemoryMarshal.CreateSpan(ref result.FirstChar, bytes.Length);
+        Span<char> chars;
+        unsafe { chars = MemoryMarshal.CreateSpan(ref result.FirstChar, bytes.Length); } // SAFETY: the string is new, nothing else has it yet, and the span covers its length chars.
         int used = Utf8.Decode(bytes, chars);
         return used == bytes.Length ? result : string.FromChars(chars.Slice(0, used));
     }

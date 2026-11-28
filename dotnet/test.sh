@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# The samples of ../test.sh, built for real .NET (CoreCLR, the BCL) against
+# dotnet/ZeroCompat (lib/ minus what .NET has), run, and checked the same way:
+# exit code 0, and the output tests/expected holds.
+#
+# Two lists say where real .NET can't give zero mode's answer:
+# - HEAP_MEASURED samples print how many bytes the heap grew, which is 0 only
+#   where objects go to arenas: only their exit code is checked.
+# - dotnet/known-differences.txt names checks that fail on .NET for a reason
+#   given there ("Sample|check|reason"). A sample with entries passes when
+#   exactly those checks fail; an entry whose check passes is an error, so
+#   the list can't go stale.
+#
+# Usage:  dotnet/test.sh [--lib-types] [Sample...]   (default: every sample ../test.sh runs)
+#   --lib-types   with lib/'s own Task, timers, streams and sockets in place of
+#                 the BCL's (dotnet/Faithful): async code behaves as in zero
+#                 mode, but those types aren't .NET's. Its list of known
+#                 differences is dotnet/known-differences-lib.txt.
+# Env:    JOBS (parallel builds, default 6), ZERO_TEST_TIMEOUT (seconds, default 120)
+set -uo pipefail
+cd "$(dirname "$0")/.."
+ROOT=$PWD
+
+# test.sh's SAMPLES list, without running test.sh.
+mapfile_samples() {
+    awk '/^SMALL_SAMPLES=\(/{s=1;next} s&&/^\)/{s=0} s{print $1}' test.sh > /tmp/.zs.$$
+    awk '/^SAMPLES=\(/{s=1;next} s&&/^\)/{s=0} s&&$1!~/"/{print $1}' test.sh
+    cat /tmp/.zs.$$; rm -f /tmp/.zs.$$
+}
+PROJECT=dotnet/Sample/Sample.csproj
+BIN=dotnet/Sample/bin
+KNOWN=dotnet/known-differences.txt
+if [ "${1:-}" = --lib-types ]; then
+    shift
+    PROJECT=dotnet/Faithful/Faithful.csproj
+    BIN=dotnet/Faithful/bin
+    KNOWN=dotnet/known-differences-lib.txt
+fi
+export PROJECT
+if [ $# -gt 0 ]; then SAMPLES=("$@"); else SAMPLES=($(mapfile_samples)); fi
+TIMED=" Simd Kernels Fibers Tasks "
+HEAP_MEASURED=" Arena Collections TensorTypes "
+
+# The checks a run reported as failed, one per line, sorted ("  failed: x").
+# The samples print "  failed: <check>", "  FAIL: <check>" (Core) or "FAIL <check>"
+# (Catches); a "FAIL <section> (n checks)" line isn't a check.
+failed_checks() { grep -vE '^FAIL .* \([0-9]+ checks\)$' | sed -nE -e 's/^ *failed: (.*)$/\1/p' -e 's/^ *FAIL: (.*)$/\1/p' -e 's/^FAIL (.*)$/\1/p' | sort -u; }
+# Compares the failed checks (standard input) with a sample's entries ($1) and
+# prints what doesn't agree; nothing if all is as listed. An entry ending in
+# "*" stands for every check that starts so (for names with a number in
+# them); one starting with "?" may fail or not (it tests what .NET leaves
+# open, such as what fresh memory holds).
+compare_known() {
+    perl -e '
+        my @known = split /\n/, shift;
+        my (%hit, @extra);
+        while (my $failed = <STDIN>) {
+            chomp $failed;
+            my $found;
+            for my $entry (@known) {
+                (my $want = $entry) =~ s/^\?//;
+                my $match = $want =~ s/\*$// ? index($failed, $want) == 0 : $failed eq $want;
+                if ($match) { $hit{$entry} = 1; $found = 1; last; }
+            }
+            push @extra, $failed unless $found;
+        }
+        print "fails, not listed: $_\n" for @extra;
+        print "listed, passes: $_\n" for grep { !/^\?/ && !$hit{$_} } @known;
+    ' "$1"
+}
+# The checks the list expects to fail for sample $1.
+known_checks() { awk -F'|' -v s="$1" '$1 == s { print $2 }' "$KNOWN" | sort -u; }
+TIMEOUT=${ZERO_TEST_TIMEOUT:-120}
+OUT=dotnet/out
+mkdir -p "$OUT"
+
+echo "[dotnet] native"
+dotnet/native/build.sh
+echo "[dotnet] ZeroCompat"
+if ! dotnet build -v q -c Release dotnet/ZeroCompat/ZeroCompat.csproj > "$OUT/ZeroCompat.build.txt" 2>&1; then
+    grep -E " error " "$OUT/ZeroCompat.build.txt" | sort -u | head -20
+    exit 1
+fi
+
+build_one() {
+    local name=$1 extra=
+    [ "$name" = TensorsAvx ] && extra="-p:SampleFile=Tensors"
+    dotnet build -v q -c Release "$PROJECT" -p:Sample="$name" $extra \
+        -p:BuildProjectReferences=false > "$OUT/$name.build.txt" 2>&1 && echo ok > "$OUT/$name.built" || rm -f "$OUT/$name.built"
+}
+export -f build_one; export OUT
+for name in "${SAMPLES[@]}"; do
+    [ "$name" = Llama ] && scripts/llama-model-cs.sh bin/gen/Stories260K.cs
+done
+echo "[dotnet] building ${#SAMPLES[@]} samples"
+printf '%s\n' "${SAMPLES[@]}" | xargs -P "${JOBS:-6}" -I{} bash -c 'build_one {}'
+
+pass=0; fail=0; nobuild=0
+for name in "${SAMPLES[@]}"; do
+    if [ ! -f "$OUT/$name.built" ]; then
+        echo "BUILD $name: $(grep -cE ' error ' "$OUT/$name.build.txt" | tr -d ' ') errors"
+        grep -E " error " "$OUT/$name.build.txt" | sed -E 's#.*/([A-Za-z0-9]+\.cs)\(([0-9]+),[0-9]+\).*error (CS[0-9]+): (.*) \[.*#       \1:\2 \3 \4#' | sort -u | head -4
+        nobuild=$((nobuild + 1)); continue
+    fi
+    input=tests/input/$name.txt; [ -f "$input" ] || input=/dev/null
+    status=0
+    out=$(perl -e 'alarm shift; exec @ARGV' "$TIMEOUT" dotnet "$BIN/$name/Release/net11.0/$name.dll" < "$input" 2>&1) || status=$?
+    echo "$out" > "$OUT/$name.out.txt"
+    expected=tests/expected/$name.txt
+    known=$(known_checks "$name")
+    if [ "$status" = 142 ]; then echo "FAIL $name: timed out"; fail=$((fail + 1))
+    elif [ -n "$known" ]; then
+        # Exactly the listed checks must fail (and nothing may crash: a
+        # sample's exit code is its number of failed checks).
+        verdict=$(echo "$out" | failed_checks | compare_known "$known")
+        if [ -z "$verdict" ] && [ "$status" -lt 100 ]; then
+            echo "ok   $name ($(echo "$known" | grep -vc '^?') known differences)"; pass=$((pass + 1))
+        else
+            echo "FAIL $name: exit code $status; failed checks aren't the ones in $KNOWN"
+            echo "$verdict" | head -8 | sed 's/^/       /'
+            echo "$out" | tail -2 | sed 's/^/       /'
+            fail=$((fail + 1))
+        fi
+    elif [ "$status" != 0 ]; then
+        echo "FAIL $name: exit code $status"
+        { echo "$out" | grep -E '^ *(failed:|FAIL )' | head -5; echo "$out" | tail -3; } | sed 's/^/       /'
+        fail=$((fail + 1))
+    elif [[ "$TIMED$HEAP_MEASURED" == *" $name "* ]]; then echo "ok   $name (exit code only)"; pass=$((pass + 1))
+    elif [ "$out" != "$(cat "$expected" 2>/dev/null)" ]; then
+        echo "FAIL $name: output differs from $expected"
+        diff <(echo "$out") "$expected" | head -8 | sed 's/^/       /'
+        fail=$((fail + 1))
+    else echo "ok   $name"; pass=$((pass + 1)); fi
+done
+echo
+echo "pass $pass, fail $fail, don't build $nobuild (of ${#SAMPLES[@]})"

@@ -12,6 +12,7 @@
 // arena before storing it.
 
 using System;
+using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 
 public struct RefDict<TKey, TValue>
@@ -79,7 +80,21 @@ public struct RefDict<TKey, TValue>
         }
     }
 
+#if ZERO_DOTNET
+    // Real .NET's GC moves objects and frees what nothing it can see refers
+    // to, so an address won't do: a GC handle keeps the object and finds it.
+    // (Never freed: a spike.)
+    static nint ToAddress(TValue value) => value is null ? 0 : GCHandle.ToIntPtr(GCHandle.Alloc(value));
+
+    static TValue FromAddress(nint address)
+    {
+        if (address == 0)
+            return default;
+        unsafe { return (TValue)GCHandle.FromIntPtr(address).Target; } // SAFETY: every nonzero address came from ToAddress
+    }
+#else
     static nint ToAddress(TValue value) => Unsafe.As<TValue, nint>(ref value);
 
     static TValue FromAddress(nint address) => Unsafe.As<nint, TValue>(ref address);
+#endif
 }

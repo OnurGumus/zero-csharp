@@ -25,6 +25,8 @@ using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 
+// Real .NET (dotnet/ZeroCompat) has all of this block already.
+#if !ZERO_DOTNET
 namespace System.Runtime.CompilerServices
 {
     // The compiler finds these by name; the core library doesn't define them.
@@ -332,6 +334,7 @@ namespace System
         }
     }
 }
+#endif
 
 public static class Str
 {
@@ -539,14 +542,13 @@ public static class Str
         unsafe
         {
             // SAFETY: the caller guarantees obj has room for the header, length chars
-            // and a terminator.
+            // and a terminator; with them written, obj is a string object.
             *(nint*)obj = s_stringMethodTable;
             *(int*)(obj + sizeof(nint)) = length;
             ((char*)(obj + RuntimeHelpers.OffsetToStringData))[length] = '\0';
+            nint address = (nint)obj;
+            return Unsafe.As<nint, string>(ref address);
         }
-
-        nint address = (nint)obj;
-        return Unsafe.As<nint, string>(ref address);
     }
 }
 

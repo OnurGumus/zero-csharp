@@ -322,6 +322,8 @@ sealed class FileThread : Fiber.IoWaiter
     }
 }
 
+// Real .NET (dotnet/ZeroCompat) has its own FileStream async methods.
+#if !ZERO_DOTNET_BCL
 namespace System.IO
 {
     public partial class FileStream
@@ -472,6 +474,7 @@ namespace System.IO
         }
     }
 }
+#endif
 
 public partial struct File
 {

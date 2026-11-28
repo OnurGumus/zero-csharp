@@ -107,7 +107,9 @@ public static class Path
     {
         int length = CombinedLength(first, second);
         string result = string.Allocate(length);
-        TryCombine(first, second, MemoryMarshal.CreateSpan(ref result.FirstChar, length), out _);
+        Span<char> chars;
+        unsafe { chars = MemoryMarshal.CreateSpan(ref result.FirstChar, length); } // SAFETY: the string is new, nothing else has it yet, and the span covers its length chars.
+        TryCombine(first, second, chars, out _);
         return result;
     }
 
@@ -116,7 +118,11 @@ public static class Path
     {
         int length = CombinedLength(first, second);
         Span<char> buffer = stackalloc char[512];
-        Span<char> both = length <= buffer.Length ? buffer.Slice(0, length) : MemoryMarshal.CreateSpan(ref string.Allocate(length).FirstChar, length);
+        scoped Span<char> both;
+        if (length <= buffer.Length)
+            both = buffer.Slice(0, length);
+        else
+            unsafe { both = MemoryMarshal.CreateSpan(ref string.Allocate(length).FirstChar, length); } // SAFETY: a new string, used only as a buffer here.
         TryCombine(first, second, both, out _);
         return Combine(both, third);
     }
@@ -164,7 +170,8 @@ public static class Path
         bool addDot = !extension.IsEmpty && extension[0] != '.';
         int length = keep + (addDot ? 1 : 0) + extension.Length;
         string result = string.Allocate(length);
-        Span<char> chars = MemoryMarshal.CreateSpan(ref result.FirstChar, length);
+        Span<char> chars;
+        unsafe { chars = MemoryMarshal.CreateSpan(ref result.FirstChar, length); } // SAFETY: the string is new, nothing else has it yet, and the span covers its length chars.
         path.Slice(0, keep).CopyTo(chars);
         if (addDot)
             chars[keep] = '.';
@@ -185,7 +192,11 @@ public static class Path
         // Never longer than the path, except that "" becomes ".".
         int capacity = path.Length + 1;
         Span<char> buffer = stackalloc char[512];
-        Span<char> chars = capacity <= buffer.Length ? buffer.Slice(0, capacity) : MemoryMarshal.CreateSpan(ref string.Allocate(capacity).FirstChar, capacity);
+        scoped Span<char> chars;
+        if (capacity <= buffer.Length)
+            chars = buffer.Slice(0, capacity);
+        else
+            unsafe { chars = MemoryMarshal.CreateSpan(ref string.Allocate(capacity).FirstChar, capacity); } // SAFETY: a new string, used only as a buffer here.
         TryNormalize(path, chars, out int written);
         return string.FromChars(chars.Slice(0, written));
     }

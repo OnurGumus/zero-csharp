@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- lib/ for real .NET: the parts that aren't .NET types already.
+       Files that only re-declare BCL types (System.Console, Task, Stream,
+       Socket, SHA256, ...) are left out: real .NET's own serve. CS0436 is an
+       error, so a lib/ type can't quietly shadow a BCL one. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);ZERO_DOTNET;ZERO_DOTNET_BCL</DefineConstants>
+    <WarningsAsErrors>$(WarningsAsErrors);CS0436</WarningsAsErrors>
+    <NoWarn>$(NoWarn);CS8500</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../lib/*.cs" />
+    <!-- Only .NET types: real .NET has them. -->
+    <Compile Remove="../../lib/Cancellation.cs;../../lib/Console.cs;../../lib/CryptoChaCha.cs;../../lib/CryptoHashes.cs;../../lib/CryptoRandom.cs;../../lib/Monitor.cs;../../lib/Net.cs;../../lib/SemaphoreSlim.cs;../../lib/Sockets.cs;../../lib/SocketsAsync.cs;../../lib/Streams.cs;../../lib/ThreadTasks.cs;../../lib/TimeProvider.cs;../../lib/Timers.cs;../../lib/ValueTasks.cs;../../lib/Tasks.cs" />
+    <!-- Built on lib/Tasks.cs's continuations. -->
+    <Compile Remove="../../lib/ChannelAsync.cs;../../lib/ThreadCompletion.cs;../../lib/FileAsync.cs" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../out/libzerocompat.dylib" Link="libzerocompat.dylib" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../out/libzerocompat.dylib')" />
+  </ItemGroup>
+</Project>

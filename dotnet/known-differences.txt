@@ -1,0 +1,17 @@
+Numerics|Tan near a pole|.NET's Complex.Tan loses accuracy next to the pole: 3041875.68 for 3043234.85 (zerocore's is right to 1e-9)
+Tensors|SoftMax|.NET's TensorPrimitives.SoftMax overflows for large scores: NaN for {1000, 1001, 1002} (zerocore subtracts the largest first)
+Tensors|Sigmoid|.NET's Sigmoid(-100) is 0; the right answer is a subnormal, 3.7e-44
+Tensors|Tanh, vectors, exact near 0|.NET's vector Tanh(-4e-20) is 5.96e-08; the right answer is -4e-20
+TensorsAvx|SoftMax|as Tensors
+TensorsAvx|Sigmoid|as Tensors
+TensorsAvx|Tanh, vectors, exact near 0|as Tensors
+Queries|the same lambda in an object scope leaves nothing behind|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Threads|workers' allocations went to their arenas|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Streams|the buffer came from the arena|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Catches|and its next read runs the factory again|.NET's Lazy keeps a factory's exception and throws it again on every read; zerocore's runs the factory again (the exception may be in an arena freed meanwhile)
+Catches|what was flushed is in it; what was still buffered isn't|a throw runs the using's Dispose on .NET, which writes the stream's buffer out; zero mode jumps over it and the buffer is lost
+Catches|and disposing it then does nothing|as above: the file already holds all five bytes
+Catches|Copy copies|as above: the file it copies holds five bytes, not three
+Catches|a file in use on the I/O thread is closed once its write is done|Catch.Run closes lib/'s File handles left open after a throw; a BCL FileStream opened without a using stays open until the GC finalizes it
+Catches|1000 failed attempts in an arena leave nothing behind|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
+Core|?AlignedAlloc, AlignedFree|the check expects NativeMemory.AlignedAlloc's memory zeroed, which zerocore's is; .NET's is whatever was there, zero or not

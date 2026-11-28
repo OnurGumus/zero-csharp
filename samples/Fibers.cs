@@ -94,7 +94,9 @@ public static class Program
     {
         Span<byte> first = scratch.AllocSpan<byte>(12_000);
         Span<byte> second = scratch.AllocSpan<byte>(12_000);
-        if (Unsafe.AreSame(ref Unsafe.Add(ref first[0], 12_000), ref second[0]))
+        bool adjacent;
+        unsafe { adjacent = Unsafe.AreSame(ref Unsafe.Add(ref first[0], 12_000), ref second[0]); } // SAFETY: one past the end, compared and never read
+        if (adjacent)
             s.log.Add(s.id);
     }
 
