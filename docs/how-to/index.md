@@ -74,6 +74,9 @@ the [tutorial](../tutorial/index.html) builds a quiz step by step.
   them in QEMU, and booting a real PC from a USB stick.
 - [Build for microcontrollers](build-for-microcontrollers.html): the Raspberry Pi Pico 2 and the
   Arduino Uno R4, in QEMU; what fits in their RAM and flash, and why `float` beats `double` there.
+- [Build for .NET](build-for-dotnet.html): the same project as an ordinary .NET program, for .NET's
+  debugger and profilers, two modes for whose `Task` it gets, libraries any .NET project can use,
+  and what differs.
 
 ## Windows and games
 
