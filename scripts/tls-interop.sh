@@ -5,7 +5,7 @@
 # (TLS 1.2 only, a P-256 key share only, a wrong host name, an unknown root).
 #
 # Usage:  scripts/tls-interop.sh [--mac | other ./run.sh target flags]
-# Needs:  OpenSSL 3.4 or newer, and the Https sample built for the target
+# Needs:  OpenSSL 3.0 or newer (CI uses Ubuntu 24.04's), and the Https sample built for the target
 #         (./build.sh [--mac] Https). Ports 44330 and up on 127.0.0.1.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
