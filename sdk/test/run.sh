@@ -2797,6 +2797,7 @@ FSHARP_DOC_SAMPLES=(
     Collections
     Files
     Streams
+    Catches
 )
 test_fsharp_doc_samples() {
     local name="F# doc samples" s dir input out expected code
