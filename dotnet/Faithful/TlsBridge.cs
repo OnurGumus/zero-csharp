@@ -131,7 +131,8 @@ namespace System.Net.Security
             catch (Exception e) when (e is AuthenticationException or BclIOException or IOException
                 or System.Security.Cryptography.CryptographicException or System.ComponentModel.Win32Exception)
             {
-                error = e.InnerException != null ? e.Message + " " + e.InnerException.Message : e.Message;
+                // As lib's reasons are: "SslStream: " and why (here, .NET's words).
+                error = "SslStream: " + (e.InnerException != null ? e.Message + " " + e.InnerException.Message : e.Message);
                 return false;
             }
         }

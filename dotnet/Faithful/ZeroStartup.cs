@@ -3,7 +3,24 @@ static class ZeroStartup
 {
     // lib/'s DllImports are this assembly's: NativeResolver registers for it.
     [System.Runtime.CompilerServices.ModuleInitializer]
-    internal static void Start() => StressGC();
+    internal static void Start()
+    {
+        StartInvariant();
+        StressGC();
+    }
+
+    // zerocore starts in the invariant culture, whatever the system's locale
+    // (CultureInfo's own cultures, ~80 of them from ICU's data, are there to
+    // switch to): .NET would start in the user's, and format numbers and
+    // dates in it. On threads too, which lib/'s fibers are here.
+    static void StartInvariant()
+    {
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        System.Globalization.CultureInfo.DefaultThreadCurrentCulture = invariant;
+        System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = invariant;
+        System.Globalization.CultureInfo.CurrentCulture = invariant;
+        System.Globalization.CultureInfo.CurrentUICulture = invariant;
+    }
 
     // dotnet/test.sh --gc-stress: .NET's GC collecting and compacting every
     // couple of milliseconds, on a thread of its own, so objects move under

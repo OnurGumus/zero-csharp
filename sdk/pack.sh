@@ -48,6 +48,8 @@ dotnet pack sdk/ZeroCSharp.Sdk/ZeroCSharp.Sdk.csproj -o sdk/feed -v:q -nologo
 # packed: staged with the version filled in, the model generated next to it,
 # restored from sdk/feed (and nuget.org, for the SDK's compiler package) into
 # its own packages folder: a cached SDK of the same version could be an older build.
+# That folder is beside the project, not in it, or the project's **/*.cs would
+# take in the C# sources the SDK carries (payload/dotnet).
 stage=sdk/ZeroCSharp.Stories260K/obj/stage
 rm -rf "$stage" && mkdir -p "$stage"
 sed "s/@ZERO_SDK_VERSION@/$version/g" sdk/ZeroCSharp.Stories260K/ZeroCSharp.Stories260K.csproj > "$stage/ZeroCSharp.Stories260K.csproj"
@@ -61,7 +63,8 @@ cat > "$stage/nuget.config" <<EOF
   </packageSources>
 </configuration>
 EOF
-NUGET_PACKAGES=$PWD/$stage/packages dotnet pack "$stage/ZeroCSharp.Stories260K.csproj" -o sdk/feed -v:q -nologo
+rm -rf "$stage-packages"
+NUGET_PACKAGES=$PWD/$stage-packages dotnet pack "$stage/ZeroCSharp.Stories260K.csproj" -o sdk/feed -v:q -nologo
 # ZeroCSharp.SDL3, the SDL 3 bindings, the same way, with SDL's own Windows
 # files (fetch-windows-sdl.sh: a pinned release, checked by its SHA-256).
 sdk/ZeroCSharp.SDL3/fetch-windows-sdl.sh
@@ -71,7 +74,8 @@ sed "s/@ZERO_SDK_VERSION@/$version/g" sdk/ZeroCSharp.SDL3/ZeroCSharp.SDL3.csproj
 cp sdk/ZeroCSharp.SDL3/SDL.cs "$sdl_stage/"
 cp -R sdk/ZeroCSharp.SDL3/native "$sdl_stage/"
 cp "$stage/nuget.config" "$sdl_stage/"
-NUGET_PACKAGES=$PWD/$sdl_stage/packages dotnet pack "$sdl_stage/ZeroCSharp.SDL3.csproj" -o sdk/feed -v:q -nologo
+rm -rf "$sdl_stage-packages"
+NUGET_PACKAGES=$PWD/$sdl_stage-packages dotnet pack "$sdl_stage/ZeroCSharp.SDL3.csproj" -o sdk/feed -v:q -nologo
 # dotnet new zerollama's Program.cs is the Llama sample, with a header for a
 # project instead of the repo's build.sh.
 mkdir -p sdk/ZeroCSharp.Templates/obj/zerollama

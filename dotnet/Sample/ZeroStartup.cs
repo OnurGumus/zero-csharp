@@ -1,6 +1,5 @@
 // Compiled into every program dotnet/ builds: what a zero-mode program starts
-// with, where real .NET starts otherwise. (zerocore's cultures are .NET's
-// invariant globalization mode: InvariantGlobalization in Sample.csproj.)
+// with, where real .NET starts otherwise.
 using ZeroCompatNative = NativeResolver;
 
 static class ZeroStartup
@@ -14,7 +13,21 @@ static class ZeroStartup
         // Async methods' continuations run on the main thread, one at a time,
         // as in zero mode (dotnet/ZeroCompat/Async.cs).
         Fiber.UseThisThreadForContinuations();
+        StartInvariant();
         StressGC();
+    }
+
+    // zerocore starts in the invariant culture, whatever the system's locale
+    // (CultureInfo's own cultures, ~80 of them from ICU's data, are there to
+    // switch to): .NET would start in the user's, and format numbers and
+    // dates in it. On threads too, which lib/'s fibers are here.
+    static void StartInvariant()
+    {
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        System.Globalization.CultureInfo.DefaultThreadCurrentCulture = invariant;
+        System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = invariant;
+        System.Globalization.CultureInfo.CurrentCulture = invariant;
+        System.Globalization.CultureInfo.CurrentUICulture = invariant;
     }
 
     // dotnet/test.sh --gc-stress: .NET's GC collecting and compacting every

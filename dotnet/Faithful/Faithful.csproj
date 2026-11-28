@@ -17,7 +17,6 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
     <NoWarn>$(NoWarn);CS0436;CS8500</NoWarn>
-    <InvariantGlobalization>true</InvariantGlobalization>
     <TieredPGO>false</TieredPGO>
   </PropertyGroup>
   <ItemGroup>
