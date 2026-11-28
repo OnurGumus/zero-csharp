@@ -2790,6 +2790,9 @@ FSHARP_DOC_SAMPLES=(
     Quiz
     Strings
     Unicode
+    Parsing
+    Pipe
+    Keys
 )
 test_fsharp_doc_samples() {
     local name="F# doc samples" s dir input out expected code
