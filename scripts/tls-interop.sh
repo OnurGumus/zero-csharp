@@ -9,7 +9,9 @@
 #
 # Usage:  scripts/tls-interop.sh [--mac | other ./run.sh target flags]
 # Needs:  OpenSSL 3.0 or newer (CI uses Ubuntu 24.04's), and the Https sample built for the target
-#         (./build.sh [--mac] Https). Ports 44330 and up on 127.0.0.1.
+#         (./build.sh [--mac] Https). Ports 24330 and up on 127.0.0.1: below Linux's
+#         ephemeral range (32768-60999), where a client socket from an earlier
+#         case can still hold the port, so the server can't bind it.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
@@ -38,7 +40,7 @@ printf '%s\n' "[x]" "basicConstraints=critical,CA:FALSE" "subjectAltName=DNS:loc
 leaf named -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1
 
 export SSL_CERT_FILE=$work/root.pem
-port=44330
+port=24330
 pass=0
 fail=0
 
@@ -91,6 +93,8 @@ run_client() {
         fail=$((fail + 1))
         echo "FAIL $name (expected $expect)"
         printf '%s\n' "$out" | sed 's/^/     /' | tail -5
+        echo "     server log:"
+        tail -5 server.log | sed 's/^/     /'
     fi
     if [ "$expect" = fail ]; then
         printf '%s\n' "$out" | head -1 | sed 's/^/     -> /'
