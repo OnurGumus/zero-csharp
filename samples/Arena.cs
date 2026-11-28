@@ -273,6 +273,7 @@ public static class Program
 
         InBuffer();
         ObjectScopeEdges();
+        WithGuardPages();
 
         // docs:debug-checks
         // Debugging aid: arenas created while DebugChecks is on fill freed memory
@@ -296,6 +297,104 @@ public static class Program
         unsafe { debug.Destroy(); } // SAFETY: stale is not used after this.
         Arena.DebugChecks = false;
         return 0;
+    }
+
+    // Correct code must run the same with guard pages on: what a scope frees
+    // is taken away, and everything older stays readable. (On a system
+    // without page protection GuardPages stays off, and this checks the
+    // same things without it.) Guards.cs has the mistakes it catches.
+    static void WithGuardPages()
+    {
+        // docs:guard-pages
+        // Debugging aid: arenas created while GuardPages is on give freed
+        // memory back to the system for good, so using it stops the program.
+        Arena.GuardPages = true;
+        Arena guarded = Arena.Create(256, "guarded");
+        // docs:end
+
+        // Data from before a scope survives it, at every nesting level, while
+        // the arena grows by several blocks inside.
+        bool intact = true;
+        int* outer = guarded.AllocArray<int>(8);
+        unsafe { for (int i = 0; i < 8; i++) outer[i] = 100 + i; }
+        for (int round = 0; round < 50; round++)
+        {
+            Arena.Scope first;
+            unsafe { first = guarded.OpenScope(); } // SAFETY: nothing from inside is used after it.
+            using (first)
+            {
+                int* middle = guarded.AllocArray<int>(300);
+                unsafe { middle[0] = round; middle[299] = -round; }
+                Arena.Scope second;
+                unsafe { second = guarded.OpenScope(); } // SAFETY: as above.
+                using (second)
+                {
+                    byte* big = guarded.AllocArray<byte>(40_000);
+                    unsafe { big[0] = 1; big[39_999] = 2; }
+                }
+                unsafe { intact &= middle[0] == round && middle[299] == -round; }
+            }
+            unsafe { for (int i = 0; i < 8; i++) intact &= outer[i] == 100 + i; }
+        }
+
+        // Objects: made and freed a thousand times, a list growing inside.
+        long total = 0;
+        for (int round = 0; round < 1000; round++)
+        {
+            Arena.ObjectScope objects;
+            unsafe { objects = guarded.OpenObjectScope(); } // SAFETY: only total, a number, leaves.
+            using (objects)
+            {
+                int[] cells = new int[16];
+                cells[round % 16] = round;
+                int offset = round;
+                Func<int, int> shift = x => x + offset;
+                string text = Opaque("round ") + round.ToString();
+                var list = List<int>.Create(guarded);
+                for (int i = 0; i < 40; i++)
+                    list.Add(i);
+                total += shift(cells[round % 16]) + text.Length + list.Get(39);
+            }
+        }
+        unsafe { for (int i = 0; i < 8; i++) intact &= outer[i] == 100 + i; }
+
+        // Reset, both ways, then use again.
+        unsafe { guarded.Reset(); } // SAFETY: outer isn't used again.
+        int* again = guarded.AllocArray<int>(2000);
+        unsafe { again[1999] = 7; guarded.Reset(keepCapacity: false); } // SAFETY: nor is again.
+        again = guarded.AllocArray<int>(10);
+        unsafe { again[9] = 9; intact &= again[9] == 9; }
+
+        // A budget still means the memory in use, not the pages given back.
+        Arena budget = Arena.Create(4096, "budget", maxCapacity: 64 * 1024);
+        bool withinBudget = true;
+        for (int round = 0; round < 200; round++)
+        {
+            Arena.Scope temp;
+            unsafe { temp = budget.OpenScope(); } // SAFETY: nothing from inside is used after it.
+            using (temp)
+                withinBudget &= budget.AllocArray<byte>(20_000) != null;
+        }
+
+        // Arena.Scratch, nested.
+        int scratchSum = Arena.Scratch(static (scoped ScratchScope scratch) =>
+        {
+            Span<int> a = scratch.AllocSpan<int>(100);
+            a[99] = 40;
+            int inner = Arena.Scratch(static (scoped ScratchScope nested) =>
+            {
+                Span<int> b = nested.AllocSpan<int>(5000);
+                b[4999] = 2;
+                return b[4999];
+            });
+            return a[99] + inner;
+        });
+
+        unsafe { guarded.Destroy(); budget.Destroy(); } // SAFETY: nothing of theirs is used again.
+        Arena.GuardPages = false;
+
+        Console.WriteLine();
+        Console.WriteLine($"With guard pages: older data intact: {intact}, object rounds total {total}, budget kept: {withinBudget}, scratch {scratchSum}");
     }
 
     static int[] s_kept;
@@ -355,6 +454,9 @@ public static class Program
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     static object Opaque(object value) => value;
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static string Opaque(string value) => value;
 
     static void InBuffer()
     {

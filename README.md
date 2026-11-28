@@ -176,6 +176,11 @@ used after `Restore()`) stops the program with a message. For an arena an object
 `Reset`, `Restore` and `Destroy` also check that no static field points into what they free. Raw pointers carry nothing to check against, so with the
 checks off a stale one goes unnoticed.
 
+`Arena.GuardPages` catches those too, on Linux, macOS and Windows: arenas created after it is set take
+their blocks as pages from the system, and freed pages lose all access for good, so the first use of
+freed memory through any pointer, span or object stops the program with a message naming the arena.
+`ZERO_GUARD_PAGES=1 ./test.sh` runs every sample with it on.
+
 See [Memory without a GC](https://onurgumus.github.io/zero-csharp/concepts/memory.html) and
 [Strings without a GC](https://onurgumus.github.io/zero-csharp/concepts/strings.html).
 

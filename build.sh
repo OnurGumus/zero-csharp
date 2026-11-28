@@ -51,7 +51,8 @@
 #         ./build.sh --sdk-payload <dir>     what the ZeroCSharp.Sdk package carries (sdk/)
 #         ./build.sh --must-not-compile      check that tests/must-not-compile/*.cs are refused
 # Env:    BFLAT_DIR, BFLAT_FORK, BFLAT_ARCH, WASM_TOOLS, DOS_CLANG (see env.sh),
-#         BFLAT_EXTRA_FLAGS (see bflat_flags), KEEP_SYMBOLS (see LINK_FLAGS)
+#         BFLAT_EXTRA_FLAGS (see bflat_flags), KEEP_SYMBOLS (see LINK_FLAGS),
+#         ZERO_GUARD_PAGES (see CSHARP_FLAGS)
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./env.sh
@@ -326,6 +327,13 @@ done
 
 # Language version and memory safety rules for every sample.
 CSHARP_FLAGS=(--langversion preview --compiler-feature updated-memory-safety-rules)
+
+# ZERO_GUARD_PAGES=1 builds lib/ with Arena.GuardPages on from the start, for
+# running every sample with it: memory an arena frees is taken away, so any
+# use of it afterwards stops the program (lib/ArenaGuard.cs). A build switch,
+# not a variable the programs read: reading one would put the guard-page code
+# in every program.
+[ -z "${ZERO_GUARD_PAGES:-}" ] || CSHARP_FLAGS+=(-d ZERO_GUARD_PAGES)
 
 # zerocore/ is the core library: object, string, Span<T>, and the runtime code
 # the compiler expects to find (allocation, casts, static fields). bflat only
@@ -1505,7 +1513,7 @@ in_container() {
         -v "$PWD:/w" -v "$(cd "$BFLAT_DIR" && pwd):/bflat:ro" -w /w \
         -e BFLAT_DIR=/bflat -e BFLAT_ARCH="$BFLAT_ARCH" -e ARM64_MAX_PAGE_SIZE="$ARM64_MAX_PAGE_SIZE" \
         -e WASM_TOOLS="$WASM_TOOLS" -e BFLAT_EXTRA_FLAGS="${BFLAT_EXTRA_FLAGS:-}" \
-        -e KEEP_SYMBOLS="${KEEP_SYMBOLS:-}" \
+        -e KEEP_SYMBOLS="${KEEP_SYMBOLS:-}" -e ZERO_GUARD_PAGES="${ZERO_GUARD_PAGES:-}" \
         "$IMAGE" ./build.sh "$@"
 }
 

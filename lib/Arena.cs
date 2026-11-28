@@ -44,6 +44,9 @@
 //   afterwards fill freed memory with 0xDD bytes, and makes List, Dict and
 //   StrBuilder stop the program when used after their memory was freed. See
 //   DebugChecks for what that does and doesn't catch.
+// - Arena.GuardPages = true (ArenaGuard.cs) goes further on a system with
+//   memory protection: freed memory is taken away for good, so any use of it
+//   stops the program at that very access.
 // - For finding out what an arena does: give it a name in Create (failure
 //   messages then say which arena), print its blocks with Dump(), and read
 //   PeakUsed after a run to choose the first block's size.
@@ -89,6 +92,7 @@ public partial struct Arena
         public bool Poison;        // DebugChecks was on when the arena was created
         public bool StopOnOutOfMemory;
         public bool InBuffer;      // from FromBuffer: the caller owns the memory
+        public bool Guard;         // GuardPages was on when the arena was created
         public nuint Used;         // bytes handed out, padding excluded
         public nuint Capacity;     // sum of all block sizes
         public nuint PeakUsed;     // the highest Used and Capacity so far;
@@ -156,6 +160,29 @@ public partial struct Arena
     // What a pointer read from poisoned memory looks like.
     static nuint PoisonPointer => sizeof(nuint) == 8 ? unchecked((nuint)0xDDDDDDDDDDDDDDDD) : 0xDDDDDDDD;
 
+    // Guard pages (ArenaGuard.cs). The GuardPages setter fills these in, so a
+    // program that never turns them on links none of that file's code:
+    // - s_guardMap returns that many bytes of new, zeroed pages (the size is
+    //   a multiple of s_guardPage), or null;
+    // - s_guardRetire takes the pages in [from, to) away for good: any later
+    //   access stops the program, and the addresses are never handed out
+    //   again. `what` says who freed them (the Freed* constants).
+    static delegate*<nuint, byte*> s_guardMap;
+    static delegate*<State*, byte*, byte*, int, void> s_guardRetire;
+    static nuint s_guardPage;
+
+    const int FreedByRestore = 0, FreedByReset = 1, FreedByDestroy = 2, DestroyedArena = 3, NeverHandedOut = 4;
+
+    // Whether the arena's blocks are pages of their own. Never on a 32-bit
+    // or smaller machine, whose address space is too small to retire what
+    // is freed: there the test is a constant, and the code behind it goes.
+    static bool Guarded(State* state)
+    {
+        unsafe { return sizeof(nuint) == 8 && state->Guard; } // SAFETY: callers pass a live state.
+    }
+
+    static nuint GuardPageUp(nuint size) => (size + (s_guardPage - 1)) & ~(s_guardPage - 1);
+
     [DllImport("libc")]
     static safe extern void* malloc(nuint size);
 
@@ -183,7 +210,20 @@ public partial struct Arena
     public static Arena Create(nuint blockSize = 4096, string name = null, bool stopOnOutOfMemory = false,
         nuint maxCapacity = 0)
     {
-        State* state = (State*)malloc((nuint)sizeof(State));
+#if ZERO_GUARD_PAGES
+        // Built with ZERO_GUARD_PAGES=1 (build.sh): on before the first arena.
+        GuardPages = true;
+#endif
+        // With guard pages the state gets a page of its own, taken away by
+        // Destroy: a handle used after that stops the program.
+        bool guard;
+        State* state;
+        unsafe
+        {
+            // SAFETY: s_guardMap, when set, is ArenaGuard.cs's MapPages.
+            guard = sizeof(nuint) == 8 && s_guardMap != null;
+            state = guard ? (State*)s_guardMap(GuardPageUp((nuint)sizeof(State))) : (State*)malloc((nuint)sizeof(State));
+        }
         if (state == null)
         {
             if (stopOnOutOfMemory)
@@ -195,6 +235,7 @@ public partial struct Arena
         {
             // SAFETY: state holds sizeof(State) bytes.
             memset(state, 0, (nuint)sizeof(State));
+            state->Guard = guard;
             state->InitialSize = blockSize == 0 ? 4096 : blockSize;
             if (maxCapacity != 0 && state->InitialSize > maxCapacity)
                 state->InitialSize = maxCapacity;
@@ -207,7 +248,7 @@ public partial struct Arena
             if (AddBlock(state, state->InitialSize) == null)
             {
                 OutOfMemory(state);
-                free(state);
+                FreeState(state);
                 return default;
             }
         }
@@ -570,6 +611,12 @@ public partial struct Arena
 
         unsafe
         {
+            // With guard pages, a mark ends the current block, so everything
+            // allocated after it is in blocks of its own, which Restore
+            // takes away whole.
+            if (Guarded(state))
+                EndBlock(state);
+
             return new Mark
             {
                 Owner = state,
@@ -631,11 +678,12 @@ public partial struct Arena
                 Block* next = block->Next;
                 state->BlockCount--;
                 state->Capacity -= block->Size;
-                Poison(state, block->Start, block->End);
-                free(block);
+                FreeBlock(state, block, block->End, FreedByRestore);
                 block = next;
             }
             keep->Next = null;
+            // (With guard pages the mark is the end of its block: Save saw to
+            // that, and nothing is left to fill.)
             Poison(state, mark.Ptr, keep == state->Current ? state->Ptr : keep->End);
 
             state->Current = keep;
@@ -1084,7 +1132,9 @@ public partial struct Arena
             state->Used = 0;
             state->Generation++;
 
-            if (state->BlockCount == 1 && (keepCapacity || state->Capacity == state->InitialSize))
+            // With guard pages the block is never used again: the arena gets
+            // new pages below.
+            if (!Guarded(state) && state->BlockCount == 1 && (keepCapacity || state->Capacity == state->InitialSize))
             {
                 Poison(state, state->First->Start, state->Ptr);
                 state->Ptr = state->First->Start;
@@ -1097,7 +1147,11 @@ public partial struct Arena
             }
 
             nuint total = state->Capacity;
-            FreeAllBlocks(state);
+            // Save, with guard pages, takes the rest of a block out of the
+            // capacity.
+            if (total < state->InitialSize && Guarded(state))
+                total = state->InitialSize;
+            FreeAllBlocks(state, FreedByReset);
 
             if (keepCapacity && AddBlock(state, total) != null)
             {
@@ -1138,14 +1192,72 @@ public partial struct Arena
             else
             {
                 // SAFETY: the state and its blocks come from malloc and are freed exactly once here.
-                FreeAllBlocks(state);
-                free(state);
+                FreeAllBlocks(state, FreedByDestroy);
+                FreeState(state);
             }
         }
         _state = null;
     }
 
-    static unsafe void FreeAllBlocks(State* state)
+    // For Save() with guard pages: ends the current block where the arena
+    // stands, so the next allocation gets a new block. The whole pages
+    // nothing was allocated in go back to the system; the bytes left on the
+    // last page in use are never handed out. Neither counts as capacity any
+    // more, so a block's Size is then what it holds, and a maxCapacity stays
+    // a limit on memory the arena can still use.
+    static unsafe void EndBlock(State* state)
+    {
+        unsafe
+        {
+            // SAFETY: callers pass a live, guarded state. A guarded block
+            // ends on a page boundary, so the cut is inside it.
+            Block* block = state->Current;
+            byte* ptr = state->Ptr;
+            if (ptr == block->End)
+                return;
+            byte* cut = AlignUp(ptr, s_guardPage);
+            if (cut < block->End)
+                s_guardRetire(state, cut, block->End, NeverHandedOut);
+            nuint left = (nuint)(block->End - ptr);
+            block->End = cut;
+            block->Size -= left;
+            state->Capacity -= left;
+            state->Ptr = cut;
+        }
+    }
+
+    // Frees a state whose blocks are gone.
+    static unsafe void FreeState(State* state)
+    {
+        unsafe
+        {
+            // SAFETY: the state came from s_guardMap or malloc in Create, and
+            // is freed once.
+            if (Guarded(state))
+                s_guardRetire(state, (byte*)state, (byte*)state + GuardPageUp((nuint)sizeof(State)), DestroyedArena);
+            else
+                free(state);
+        }
+    }
+
+    // Frees one block, of which [Start, usedEnd) may have been handed out.
+    static unsafe void FreeBlock(State* state, Block* block, byte* usedEnd, int what)
+    {
+        unsafe
+        {
+            // SAFETY: the block came from s_guardMap or malloc in AddBlock,
+            // and its callers free it once.
+            if (Guarded(state))
+            {
+                s_guardRetire(state, (byte*)block, block->End, what);
+                return;
+            }
+            Poison(state, block->Start, usedEnd);
+            free(block);
+        }
+    }
+
+    static unsafe void FreeAllBlocks(State* state, int what)
     {
         unsafe
         {
@@ -1154,8 +1266,7 @@ public partial struct Arena
             while (block != null)
             {
                 Block* next = block->Next;
-                Poison(state, block->Start, block == state->Current ? state->Ptr : block->End);
-                free(block);
+                FreeBlock(state, block, block == state->Current ? state->Ptr : block->End, what);
                 block = next;
             }
             state->First = null;
@@ -1177,16 +1288,33 @@ public partial struct Arena
                 return null; // over the limit: leave the arena exactly as it was
         }
 
-        byte* memory = (byte*)malloc((nuint)sizeof(Block) + size);
+        byte* memory;
+        byte* start;
+        if (Guarded(state))
+        {
+            // Pages of its own, with the data at their end, so the block ends
+            // on a page boundary whatever its size.
+            nuint mapped = GuardPageUp((nuint)sizeof(Block) + size);
+            if (mapped < size)
+                return null;
+            unsafe { memory = s_guardMap(mapped); } // SAFETY: ArenaGuard.cs's MapPages.
+            start = memory + (mapped - size);
+        }
+        else
+        {
+            memory = (byte*)malloc((nuint)sizeof(Block) + size);
+            start = memory + sizeof(Block);
+        }
         if (memory == null)
             return null; // leave the arena exactly as it was
 
         Block* block = (Block*)memory;
         unsafe
         {
-            // SAFETY: memory holds sizeof(Block) + size bytes.
+            // SAFETY: memory holds sizeof(Block) + size bytes, and the size
+            // bytes from start are the last of them.
             block->Next = null;
-            block->Start = memory + sizeof(Block);
+            block->Start = start;
             block->End = block->Start + size;
             block->Size = size;
             Poison(state, block->Start, block->End);

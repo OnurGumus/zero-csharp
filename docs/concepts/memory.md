@@ -1173,5 +1173,18 @@ used after its arena was reset, and the Restore hazard above.
 
 It can't catch a stale pointer into memory that has since been handed out again. And it costs a fill on
 every free and a check on every collection operation, so leave it off in release builds.
-[Catch arena mistakes](../how-to/catch-arena-mistakes.html) shows it in use, and the
+
+`Arena.GuardPages` goes further on Linux, macOS and Windows. Arenas created while it is on take their
+blocks as whole pages from the system, and what they free loses all access, for good. Any use of freed
+memory then stops the program at that access, raw pointers and objects from object scopes included:
+
+<!-- sample: samples/Arena.cs guard-pages -->
+```csharp
+// Debugging aid: arenas created while GuardPages is on give freed
+// memory back to the system for good, so using it stops the program.
+Arena.GuardPages = true;
+Arena guarded = Arena.Create(256, "guarded");
+```
+
+[Catch arena mistakes](../how-to/catch-arena-mistakes.html) shows both in use, and the
 [Arena reference](../reference/arena.html) lists every member.

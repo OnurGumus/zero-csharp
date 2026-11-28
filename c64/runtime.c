@@ -2856,6 +2856,21 @@ i32 cs_mprotect(void *address, u32 length, i32 protection)
     return 0;
 }
 
+// lib/ArenaGuard.cs (Arena.GuardPages) asks for pages with mmap and for
+// faults with sigaction. A 6502 has no pages to protect, so mmap fails,
+// and GuardPages stays off.
+void *cs_mmap(void *address, u32 length, i32 protection, i32 flags, i32 file, i64 offset)
+{
+    (void)address; (void)length; (void)protection; (void)flags; (void)file; (void)offset;
+    return (void *)-1;
+}
+
+i32 cs_sigaction(i32 signal, const void *action, void *previous)
+{
+    (void)signal; (void)action; (void)previous;
+    return -1;
+}
+
 // Waits on the clock above, so with keep_time on it returns with
 // interrupts off too.
 i32 cs_usleep(u32 microseconds)

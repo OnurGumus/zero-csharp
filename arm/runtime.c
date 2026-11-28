@@ -392,6 +392,21 @@ int mprotect(void *address, size_t length, int protection)
     return 0;
 }
 
+// lib/ArenaGuard.cs (Arena.GuardPages) asks for pages with mmap and for
+// faults with sigaction. A microcontroller has no pages, so mmap fails,
+// and GuardPages stays off.
+void *mmap(void *address, size_t length, int protection, int flags, int file, long long offset)
+{
+    (void)address; (void)length; (void)protection; (void)flags; (void)file; (void)offset;
+    return (void *)-1;
+}
+
+int sigaction(int signal, const void *action, void *previous)
+{
+    (void)signal; (void)action; (void)previous;
+    return -1;
+}
+
 int usleep(unsigned microseconds)
 {
     struct { int64_t seconds, nanoseconds; } now;

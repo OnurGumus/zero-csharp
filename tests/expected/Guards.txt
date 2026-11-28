@@ -48,3 +48,10 @@ Usage: Guards <case>, where the case is one of:
   native-out-of-memory NativeMemory.Alloc of more than the system can give
   native-bad-alignment NativeMemory.AlignedAlloc with an alignment that isn't a power of two
   native-aligned-overflow  NativeMemory.AlignedAlloc of a size that overflows with the alignment
+  pages-pointer-after-reset  a pointer used after its arena was reset (GuardPages)
+  pages-object-after-scope   an object made in an object scope, used after it (GuardPages)
+  pages-field-after-scope    the same, kept in a field of an older object (GuardPages)
+  pages-span-after-scope     a span allocated in a scope, read after it (GuardPages)
+  pages-scratch-pointer      a pointer into Arena.Scratch's memory, used after the callback (GuardPages)
+  pages-after-destroy        memory used after its arena was destroyed (GuardPages)
+  pages-arena-after-destroy  a copy of an arena's handle used after Destroy (GuardPages)

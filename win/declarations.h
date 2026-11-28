@@ -50,6 +50,9 @@ IMPORT int TlsSetValue(u32 index, void *value);
 IMPORT u32 GetActiveProcessorCount(unsigned short group);
 IMPORT int SwitchToThread(void);
 IMPORT int VirtualProtect(void *address, u64 size, u32 protection, u32 *old);
+IMPORT void *VirtualAlloc(void *address, u64 size, u32 type, u32 protection);
+IMPORT int VirtualFree(void *address, u64 size, u32 type);
+IMPORT void *AddVectoredExceptionHandler(u32 first, int (*handler)(void *pointers));
 IMPORT void Sleep(u32 milliseconds);
 IMPORT int *_errno(void);
 
@@ -94,6 +97,9 @@ IMPORT void *GetProcAddress(Handle module, const char *name);
 
 #define PAGE_NOACCESS 0x01
 #define PAGE_READWRITE 0x04
+#define MEM_COMMIT 0x1000
+#define MEM_RESERVE 0x2000
+#define MEM_DECOMMIT 0x4000
 #define CP_UTF8 65001
 #define STD_INPUT_HANDLE ((u32)-10)
 #define STD_OUTPUT_HANDLE ((u32)-11)

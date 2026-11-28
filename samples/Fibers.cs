@@ -424,8 +424,9 @@ public static class Program
         Arena.ScratchSize = 0;
         Fiber.Spawn((together, 3), static s => Arena.Scratch(s, TwoSpans));
         Fiber.Run();
+        // (With Arena.GuardPages on, each Scratch call gets blocks of its own.)
         Check("ScratchSize sets the first block",
-            together.Count == 1 && together.Entries[0] == 2);
+            (together.Count == 1 && together.Entries[0] == 2) || Arena.GuardPages);
         // Each fiber waits inside a Scratch call in a buffer of its own,
         // which stands in for its scratch arena until the call returns; then
         // it does the same in its own arena.

@@ -326,7 +326,8 @@ public static class Program
                 throw new InvalidOperationException("in scratch");
             });
         }));
-        Check(e != null && ScratchStart() == before, "scratch memory from the calls jumped out of is freed");
+        // (Not with Arena.GuardPages on, which never hands an address out twice.)
+        Check(e != null && (ScratchStart() == before || Arena.GuardPages), "scratch memory from the calls jumped out of is freed");
 
         // The object allocator is put back.
         // (The exception itself was made inside the scope, so it's in the arena.)

@@ -620,6 +620,21 @@ int mprotect(void *address, size_t length, int protection)
     return 0;
 }
 
+// lib/ArenaGuard.cs (Arena.GuardPages) asks for pages with mmap and for
+// faults with sigaction. No page can be protected here, so mmap fails,
+// and GuardPages stays off.
+void *mmap(void *address, size_t length, int protection, int flags, int file, i64 offset)
+{
+    (void)address; (void)length; (void)protection; (void)flags; (void)file; (void)offset;
+    return (void *)-1;
+}
+
+int sigaction(int signal, const void *action, void *previous)
+{
+    (void)signal; (void)action; (void)previous;
+    return -1;
+}
+
 int usleep(u32 microseconds)
 {
     dos_sleep((microseconds + 999) / 1000);

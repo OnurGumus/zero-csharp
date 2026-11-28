@@ -71,6 +71,13 @@ public static class Program
             Console.WriteLine("  native-out-of-memory NativeMemory.Alloc of more than the system can give");
             Console.WriteLine("  native-bad-alignment NativeMemory.AlignedAlloc with an alignment that isn't a power of two");
             Console.WriteLine("  native-aligned-overflow  NativeMemory.AlignedAlloc of a size that overflows with the alignment");
+            Console.WriteLine("  pages-pointer-after-reset  a pointer used after its arena was reset (GuardPages)");
+            Console.WriteLine("  pages-object-after-scope   an object made in an object scope, used after it (GuardPages)");
+            Console.WriteLine("  pages-field-after-scope    the same, kept in a field of an older object (GuardPages)");
+            Console.WriteLine("  pages-span-after-scope     a span allocated in a scope, read after it (GuardPages)");
+            Console.WriteLine("  pages-scratch-pointer      a pointer into Arena.Scratch's memory, used after the callback (GuardPages)");
+            Console.WriteLine("  pages-after-destroy        memory used after its arena was destroyed (GuardPages)");
+            Console.WriteLine("  pages-arena-after-destroy  a copy of an arena's handle used after Destroy (GuardPages)");
             return 0;
         }
 
@@ -127,6 +134,13 @@ public static class Program
             case "native-out-of-memory": NativeOutOfMemory(); break;
             case "native-bad-alignment": NativeBadAlignment(); break;
             case "native-aligned-overflow": NativeAlignedOverflow(); break;
+            case "pages-pointer-after-reset": PagesPointerAfterReset(); break;
+            case "pages-object-after-scope": PagesObjectAfterScope(); break;
+            case "pages-field-after-scope": PagesFieldAfterScope(); break;
+            case "pages-span-after-scope": PagesSpanAfterScope(); break;
+            case "pages-scratch-pointer": PagesScratchPointer(); break;
+            case "pages-after-destroy": PagesAfterDestroy(); break;
+            case "pages-arena-after-destroy": PagesArenaAfterDestroy(); break;
             default:
                 Console.WriteLine("Unknown case");
                 return 0;
@@ -599,6 +613,127 @@ public static class Program
     static void NativeAlignedOverflow()
     {
         unsafe { System.Runtime.InteropServices.NativeMemory.AlignedAlloc(~(nuint)0 - 8, 64); }
+    }
+
+    // The GuardPages cases use freed memory in ways nothing else notices:
+    // without guard pages each of them reads its old data and carries on.
+
+    static void PagesPointerAfterReset()
+    {
+        // docs:pages-pointer-after-reset
+        Arena.GuardPages = true;
+        Arena frame = Arena.Create(4096, "frame");
+        unsafe
+        {
+            int* count = frame.Alloc<int>();
+            *count = 7;
+            frame.Reset();
+            Console.WriteLine(*count);   // stops here
+        }
+        // docs:end
+    }
+
+    sealed class Player
+    {
+        public string Name;
+        public int Score;
+    }
+
+    static void PagesObjectAfterScope()
+    {
+        // docs:pages-object-after-scope
+        Arena.GuardPages = true;
+        Arena frame = Arena.Create(4096, "frame");
+        Player best;
+        Arena.ObjectScope objects;
+        unsafe { objects = frame.OpenObjectScope(); }
+        using (objects)
+        {
+            best = new Player { Name = "Ada", Score = Opaque(90) };
+        }   // best's memory is freed here
+        Console.WriteLine(ScoreOf(best));   // stops here
+        // docs:end
+    }
+
+    // A call the compiler can't see through: reading best.Score in place, it
+    // may still have the 90 at hand and never look at the freed memory.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static int ScoreOf(Player player) => player.Score;
+
+    sealed class Team
+    {
+        public Player Captain;
+    }
+
+    static void PagesFieldAfterScope()
+    {
+        Arena.GuardPages = true;
+        Arena frame = Arena.Create(4096, "frame");
+        var team = new Team();
+        Arena.ObjectScope objects;
+        unsafe { objects = frame.OpenObjectScope(); }
+        using (objects)
+        {
+            team.Captain = new Player { Name = "Ada", Score = Opaque(90) };
+        }
+        Console.WriteLine(ScoreOf(team.Captain));
+    }
+
+    static void PagesSpanAfterScope()
+    {
+        Arena.GuardPages = true;
+        Arena arena = Arena.Create(4096, "spans");
+        Span<int> numbers;
+        Arena.Scope temp;
+        unsafe
+        {
+            temp = arena.OpenScope();
+            using (temp)
+            {
+                numbers = arena.AllocSpan<int>(8);
+                numbers[3] = Opaque(5);
+            }
+        }
+        Console.WriteLine(numbers[3]);
+    }
+
+    static void PagesScratchPointer()
+    {
+        Arena.GuardPages = true;
+        nint kept = 0;
+        Arena.Scratch(ref kept, static (scoped ScratchScope scratch, scoped ref nint state) =>
+        {
+            Span<int> numbers = scratch.AllocSpan<int>(8);
+            numbers[0] = Opaque(5);
+            unsafe
+            {
+                fixed (int* first = numbers)
+                    state = (nint)first;
+            }
+        });
+        unsafe { Console.WriteLine(*(int*)kept); }
+    }
+
+    static void PagesAfterDestroy()
+    {
+        Arena.GuardPages = true;
+        Arena arena = Arena.Create(4096, "short-lived");
+        unsafe
+        {
+            int* count = arena.Alloc<int>();
+            *count = 7;
+            arena.Destroy();
+            Console.WriteLine(*count);
+        }
+    }
+
+    static void PagesArenaAfterDestroy()
+    {
+        Arena.GuardPages = true;
+        Arena arena = Arena.Create(4096, "short-lived");
+        Arena copy = arena;
+        unsafe { arena.Destroy(); }
+        Console.WriteLine((long)copy.Used);
     }
 
     static void ScratchSetOuter()

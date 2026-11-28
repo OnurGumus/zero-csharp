@@ -53,7 +53,7 @@ exports:
                    _putchar, _puts, _qsort, _raise, _rand, _read, _readdir,
                    _realloc, _recvfrom, _remove, _rename, _rewind, _rint,
                    _rintf, _rmdir, _round, _roundf, _scanf, _sched_yield,
-                   _sendto, _setenv, _setsockopt, _setvbuf, _shutdown, _signal,
+                   _sendto, _setenv, _setsockopt, _setvbuf, _shutdown, _sigaction, _signal,
                    _sin, _sinf, _sinh, _sinhf, _sleep, _snprintf, _socket,
                    _sprintf, _sqrt, _sqrtf, _srand, _sscanf, _stat, _strcat,
                    _strchr, _strcmp, _strcpy, _strcspn, _strdup, _strerror,

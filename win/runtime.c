@@ -520,6 +520,75 @@ int mprotect(void *address, u64 length, int protection)
     return VirtualProtect(address, length, protection == 0 ? PAGE_NOACCESS : PAGE_READWRITE, &old) ? 0 : -1;
 }
 
+// ---- guard pages for arenas -------------------------------------------------
+//
+// lib/ArenaGuard.cs gets an arena's blocks with mmap and hears of faults
+// through sigaction, with Linux's arguments and structures.
+//
+// mmap without an address is new, zeroed pages. mmap over pages it gave
+// before, with MAP_FIXED (0x10) and no access rights, is how ArenaGuard
+// gives memory up for good. Decommitting does that here: the memory goes
+// back to the system, the addresses stay reserved, and touching them is an
+// access violation.
+void *mmap(void *address, u64 length, int protection, int flags, int file, i64 offset)
+{
+    (void)file; (void)offset;
+    if (!address)
+    {
+        address = VirtualAlloc(0, length, MEM_RESERVE | MEM_COMMIT, protection == 0 ? PAGE_NOACCESS : PAGE_READWRITE);
+        return address ? address : (void *)-1;
+    }
+    if ((flags & 0x10) && protection == 0 && VirtualFree(address, length, MEM_DECOMMIT))
+        return address;
+    return (void *)-1;
+}
+
+// sigaction for SIGSEGV (11) only: the handler, the first field of Linux's
+// struct sigaction, is called for an access violation, with the address
+// where Linux's siginfo_t has it, 16 bytes in. When it returns, Windows
+// goes on looking for a handler, and ends the program if there is none.
+// A null handler (SIG_DFL) stops the calls.
+typedef void (*FaultHandler)(int signal, void *information, void *context);
+static FaultHandler fault_handler;
+static int fault_filter_added;
+
+typedef struct ExceptionRecord {
+    u32 code, flags;
+    struct ExceptionRecord *next;
+    void *address;
+    u32 count;
+    u64 information[15];
+} ExceptionRecord; // EXCEPTION_RECORD
+typedef struct { ExceptionRecord *record; void *context; } ExceptionPointers;
+
+static int fault_filter(void *pointers)
+{
+    ExceptionRecord *record = ((ExceptionPointers *)pointers)->record;
+    FaultHandler handler = fault_handler;
+    if (handler && record->code == 0xC0000005u && record->count >= 2)
+    {
+        u64 information[4] = { 0, 0, record->information[1], 0 };
+        handler(11, information, 0);
+    }
+    return 0; // EXCEPTION_CONTINUE_SEARCH
+}
+
+int sigaction(int signal, const void *action, void *previous)
+{
+    if (previous)
+        for (int i = 0; i < 152; i++)
+            ((char *)previous)[i] = 0;
+    if (signal != 11)
+        return 0;
+    fault_handler = action ? *(FaultHandler *)action : 0;
+    if (fault_handler && !fault_filter_added)
+    {
+        fault_filter_added = 1;
+        AddVectoredExceptionHandler(1, fault_filter);
+    }
+    return 0;
+}
+
 int usleep(u32 microseconds)
 {
     Sleep((microseconds + 999) / 1000);

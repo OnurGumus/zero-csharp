@@ -52,5 +52,7 @@ Arena "local": 16 of 864 bytes used (peak 16 of 864), 1 block, in a buffer
 Static kept from a scope on a lasting arena: True, a second Dispose left the newer scope: True
 Comparers and encodings first made inside a scope: True
 
+With guard pages: older data intact: True, object rounds total 1046890, budget kept: True, scratch 42
+
 DebugChecks: pointer is live before Reset: True
 After Reset the stale pointer reads 0xDDDDDDDD, IsLive: False
