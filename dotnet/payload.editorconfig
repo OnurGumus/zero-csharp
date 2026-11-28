@@ -14,6 +14,9 @@ dotnet_diagnostic.CS8669.severity = none
 # RuntimeHelpers.OffsetToStringData: obsolete in .NET, and what lib/ lays out
 # strings in arena memory by.
 dotnet_diagnostic.CS0618.severity = none
+# Pointers to lib/'s own structs with references in them: each such struct is
+# on a stack, or keeps its references as GC handles on .NET (dotnet/README.md).
+dotnet_diagnostic.CS8500.severity = none
 # Comparing function pointers (lib/ compares the ones it stored itself).
 dotnet_diagnostic.CS8909.severity = none
 # Fields only one of the two builds reads.

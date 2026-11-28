@@ -99,6 +99,9 @@ public partial struct Arena
         public nuint PeakCapacity; // Reset and Restore don't lower them
         public nuint MaxCapacity;  // 0: no limit
         public nint Name;          // address of the name string, or 0
+#if ZERO_DOTNET
+        public nint Pinned;        // FromBuffer(byte[]): the GC handle that keeps the array where it is, or 0
+#endif
         // Set once an object scope has sent objects here: runs before memory
         // is freed (a mark: Restore; null: everything, for Reset or Destroy).
         // A pointer, so programs without object scopes don't link the checks.
@@ -326,10 +329,33 @@ public partial struct Arena
         return new Arena { _state = state };
     }
 
+#if ZERO_DOTNET
+    /// <summary>FromBuffer over an array, which real .NET's GC would move: pinned until Destroy.</summary>
+    /// <safety>As for FromBuffer(void*, nuint), and the arena must be destroyed to let the array go.</safety>
+    public static unsafe Arena FromBuffer(byte[] buffer, string name = null, bool stopOnOutOfMemory = false)
+    {
+        if (buffer == null)
+            return default;
+        GCHandle pin = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+        Arena arena;
+        unsafe { arena = FromBuffer((void*)pin.AddrOfPinnedObject(), (nuint)buffer.Length, name, stopOnOutOfMemory); } // SAFETY: pinned for as long as the arena lives
+        if (arena._state == null)
+            unsafe { pin.Free(); } // SAFETY: made above, and nothing kept it
+        else
+            unsafe { arena._state->Pinned = GCHandle.ToIntPtr(pin); } // SAFETY: the state FromBuffer just made
+        return arena;
+    }
+#endif
+
     /// <summary>FromBuffer over a span's memory.</summary>
     /// <safety>
     /// As for FromBuffer(void*, nuint): the span's memory must outlive the
     /// arena and everything allocated from it, and be used for nothing else.
+    /// On real .NET (ZeroTarget=dotnet) it must also be memory the GC doesn't
+    /// move: stackalloc, NativeMemory, a static struct's fixed buffer, or an
+    /// array passed as an array (the overload above pins it). A span over a
+    /// plain array is not: the GC moves the array and the arena keeps writing
+    /// where it was.
     /// </safety>
     public static unsafe Arena FromBuffer(Span<byte> buffer, string name = null, bool stopOnOutOfMemory = false)
     {
@@ -1191,18 +1217,26 @@ public partial struct Arena
         {
             if (state->BeforeFree != null)
                 state->BeforeFree(state, null, true);
+#if ZERO_DOTNET
+            // The GC handles this arena holds: its name, and the array under it.
+            Kept.Free(state->Name);
+            state->Name = 0;
+            nint pinned = state->Pinned;
+            state->Pinned = 0;
+#endif
             if (state->InBuffer)
             {
                 // The memory is the caller's: nothing to free, but a stale
                 // pointer into it should still stand out.
                 Poison(state, state->First->Start, state->Ptr);
+#if ZERO_DOTNET
+                if (pinned != 0)
+                    unsafe { GCHandle.FromIntPtr(pinned).Free(); } // SAFETY: from FromBuffer(byte[]), freed once
+#endif
             }
             else
             {
                 // SAFETY: the state and its blocks come from malloc and are freed exactly once here.
-#if ZERO_DOTNET
-                Kept.Free(state->Name);
-#endif
                 FreeAllBlocks(state, FreedByDestroy);
                 FreeState(state);
             }

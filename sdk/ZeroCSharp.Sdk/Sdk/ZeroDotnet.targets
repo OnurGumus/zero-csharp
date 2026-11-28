@@ -10,18 +10,29 @@
   hashes, ciphers and random numbers are .NET's own, which are the platform's.
 
   What differs from zero mode is in the repository's dotnet/ folder
-  (known-differences.txt): objects are the garbage collector's, not an
-  arena's; a throw runs catch and finally blocks on its way to Catch.Run;
-  fibers are threads that take turns.
+  (README.md, known-differences.txt): objects are the garbage collector's,
+  not an arena's; a throw runs catch and finally blocks on its way to
+  Catch.Run; fibers are threads that take turns.
+
+  And objects move. In zero mode an object stays where it was made, so code
+  may keep its address (Unsafe.AsPointer on a field, a pointer kept after
+  `fixed`, a reference stored as a number). .NET's collector moves objects,
+  and such an address then points at other memory: the program compiles, and
+  fails rarely. lib/ was changed where it did this; a project's own code is
+  the project's to check. Running the program with ZERO_GC_STRESS=1 in the
+  environment makes the collector move everything every few milliseconds,
+  which shows most of it (dotnet/README.md).
 -->
 <Project>
   <PropertyGroup>
     <!-- Nothing native is built: .NET runs the IL. -->
     <ZeroBuildsNative>false</ZeroBuildsNative>
     <DefineConstants>$(DefineConstants);ZERO_DOTNET</DefineConstants>
-    <!-- CS0436: lib/'s types in place of .NET's, at every use. CS8500: lib/
-         takes addresses of its own structs with references in them. -->
-    <NoWarn>$(NoWarn);CS0436;CS8500</NoWarn>
+    <!-- CS0436: lib/'s types in place of .NET's, at every use. (Not CS8500,
+         a pointer to something with references in it: lib/'s own are
+         answered for in zero.editorconfig, and in the project's code the
+         warning is worth having here, see below.) -->
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
     <!-- zerocore's cultures: the invariant one only, as this mode of .NET's. -->
     <InvariantGlobalization Condition="'$(InvariantGlobalization)' == ''">true</InvariantGlobalization>
     <ZeroDotnetDir>$(ZeroSdkRoot)payload/dotnet/</ZeroDotnetDir>

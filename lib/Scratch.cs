@@ -847,9 +847,14 @@ public partial struct Arena
     /// </safety>
     public static unsafe void Scratch(Span<byte> buffer, ScratchAction action)
     {
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        action(new ScratchScope(thread));
-        LeaveBuffer(thread, previous);
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            action(new ScratchScope(thread));
+            LeaveBuffer(thread, previous);
+        }
     }
 
     /// <summary>The same, with a state the action can read and change, passed by ref.</summary>
@@ -857,19 +862,29 @@ public partial struct Arena
     public static unsafe void Scratch<TState>(Span<byte> buffer, ref TState state, ScratchAction<TState> action)
         where TState : allows ref struct
     {
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        action(new ScratchScope(thread), ref state);
-        LeaveBuffer(thread, previous);
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            action(new ScratchScope(thread), ref state);
+            LeaveBuffer(thread, previous);
+        }
     }
 
     /// <summary>The same, returning the action's result, which can't come from the scope's memory.</summary>
     /// <safety>As for Scratch(Span&lt;byte&gt;, ScratchAction).</safety>
     public static unsafe TResult Scratch<TResult>(Span<byte> buffer, ScratchFunc<TResult> func)
     {
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        TResult result = func(new ScratchScope(thread));
-        LeaveBuffer(thread, previous);
-        return result;
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            TResult result = func(new ScratchScope(thread));
+            LeaveBuffer(thread, previous);
+            return result;
+        }
     }
 
     /// <summary>The same, with a state and a result.</summary>
@@ -877,10 +892,15 @@ public partial struct Arena
     public static unsafe TResult Scratch<TState, TResult>(Span<byte> buffer, ref TState state, ScratchFunc<TState, TResult> func)
         where TState : allows ref struct
     {
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        TResult result = func(new ScratchScope(thread), ref state);
-        LeaveBuffer(thread, previous);
-        return result;
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            TResult result = func(new ScratchScope(thread), ref state);
+            LeaveBuffer(thread, previous);
+            return result;
+        }
     }
 
     /// <summary>The same, with an input the action gets a copy of.</summary>
@@ -888,9 +908,14 @@ public partial struct Arena
     public static unsafe void Scratch<TInput>(Span<byte> buffer, TInput input, ScratchActionIn<TInput> action)
         where TInput : allows ref struct
     {
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        action(new ScratchScope(thread), input);
-        LeaveBuffer(thread, previous);
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            action(new ScratchScope(thread), input);
+            LeaveBuffer(thread, previous);
+        }
     }
 
     /// <summary>The same, returning the action's result.</summary>
@@ -898,10 +923,15 @@ public partial struct Arena
     public static unsafe TResult Scratch<TInput, TResult>(Span<byte> buffer, TInput input, ScratchFuncIn<TInput, TResult> func)
         where TInput : allows ref struct
     {
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        TResult result = func(new ScratchScope(thread), input);
-        LeaveBuffer(thread, previous);
-        return result;
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            TResult result = func(new ScratchScope(thread), input);
+            LeaveBuffer(thread, previous);
+            return result;
+        }
     }
 
     /// <summary>
@@ -921,9 +951,14 @@ public partial struct Arena
     public static void ScratchOnStack(int bytes, ScratchAction action)
     {
         Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        action(new ScratchScope(thread));
-        LeaveBuffer(thread, previous);
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            action(new ScratchScope(thread));
+            LeaveBuffer(thread, previous);
+        }
     }
 
     /// <summary>The same, with a state the action can read and change, passed by ref.</summary>
@@ -932,9 +967,14 @@ public partial struct Arena
         where TState : allows ref struct
     {
         Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        action(new ScratchScope(thread), ref state);
-        LeaveBuffer(thread, previous);
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            action(new ScratchScope(thread), ref state);
+            LeaveBuffer(thread, previous);
+        }
     }
 
     /// <summary>The same, returning the action's result, which can't come from the scope's memory.</summary>
@@ -942,10 +982,15 @@ public partial struct Arena
     public static TResult ScratchOnStack<TResult>(int bytes, ScratchFunc<TResult> func)
     {
         Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        TResult result = func(new ScratchScope(thread));
-        LeaveBuffer(thread, previous);
-        return result;
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            TResult result = func(new ScratchScope(thread));
+            LeaveBuffer(thread, previous);
+            return result;
+        }
     }
 
     /// <summary>The same, with a state and a result.</summary>
@@ -954,10 +999,15 @@ public partial struct Arena
         where TState : allows ref struct
     {
         Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        TResult result = func(new ScratchScope(thread), ref state);
-        LeaveBuffer(thread, previous);
-        return result;
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            TResult result = func(new ScratchScope(thread), ref state);
+            LeaveBuffer(thread, previous);
+            return result;
+        }
     }
 
     /// <summary>The same, with an input the action gets a copy of.</summary>
@@ -966,9 +1016,14 @@ public partial struct Arena
         where TInput : allows ref struct
     {
         Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        action(new ScratchScope(thread), input);
-        LeaveBuffer(thread, previous);
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            action(new ScratchScope(thread), input);
+            LeaveBuffer(thread, previous);
+        }
     }
 
     /// <summary>The same, returning the action's result.</summary>
@@ -977,10 +1032,15 @@ public partial struct Arena
         where TInput : allows ref struct
     {
         Span<byte> buffer = stackalloc byte[StackBytes(bytes)];
-        ScratchThread* thread = EnterBuffer(buffer, out void* previous);
-        TResult result = func(new ScratchScope(thread), input);
-        LeaveBuffer(thread, previous);
-        return result;
+#if ZERO_DOTNET
+        fixed (byte* pinned = buffer) // real .NET: its GC moves arrays; not this one while the call uses it
+#endif
+        {
+            ScratchThread* thread = EnterBuffer(buffer, out void* previous);
+            TResult result = func(new ScratchScope(thread), input);
+            LeaveBuffer(thread, previous);
+            return result;
+        }
     }
 
     // ScratchOnStack's size, checked: a negative one would be a stackalloc

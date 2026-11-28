@@ -68,6 +68,8 @@ public struct Llama
             // SAFETY: the caller keeps model and tokenizer alive and unmoved
             // (a file in memory, or a literal compiled into the program, which
             // never moves), and every read below is checked against their length.
+            // (On real .NET a byte[] does move: there, pass a literal, native
+            // memory, or an array from GC.AllocateArray(pinned: true).)
             fixed (byte* m = model)
             fixed (byte* t = tokenizer)
             {
