@@ -13,6 +13,10 @@
 // Han ideographs are a block: one element for where the block goes, then
 // the ideograph's rank in the culture's order (pinyin, strokes, Japanese
 // order; Korean puts many with the Hangul syllable of their reading).
+//
+// The tables match the ICU of the machine this runs on (macOS, Linux and
+// Windows ship their own, and each version changes some rules): the
+// generated file names it.
 
 using System.Collections.Concurrent;
 using System.Globalization;
@@ -22,6 +26,22 @@ static class Collation
 {
     const CompareOptions Primary = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace | CompareOptions.IgnoreKanaType | CompareOptions.IgnoreWidth;
     const CompareOptions Variant = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+
+    static void AddRank(CompareInfo ci, Table table, List<string> group, CompareOptions options, int shift)
+    {
+        var sorted = group.ToList();
+        sorted.Sort((x, y) => ci.Compare(x, y, options) is int c && c != 0 ? c : ci.Compare(x, y, CompareOptions.None));
+        int rank = 0;
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            if (i > 0 && ci.Compare(sorted[i - 1], sorted[i], options) != 0)
+                rank++;
+            if (rank > 3)
+                throw new Exception($"{sorted[i]}: too many kana or width variants");
+            var e = table.Map[sorted[i]][0];
+            table.Map[sorted[i]] = [e with { F = e.F | (rank << shift) }];
+        }
+    }
     const CompareOptions Secondary = CompareOptions.IgnoreCase | CompareOptions.IgnoreKanaType | CompareOptions.IgnoreWidth;
     const long Spacing = 1 << 15;
 
@@ -37,6 +57,52 @@ static class Collation
         public long[] GroupWeights = [];
         public List<List<string>> Groups = [];
     }
+
+    // .NET's pairs of normal and full or half width characters (its
+    // pal_collation.c, g_HalfFullLowerChars and g_HalfFullHigherChars):
+    // IgnoreWidth makes each second one sort as the first.
+    static readonly int[] WidthLower =
+    {
+        0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2C,
+        0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+        0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44,
+        0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50,
+        0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5D,
+        0x5E, 0x5F, 0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+        0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75,
+        0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0xA2, 0xA3, 0xAC,
+        0xAF, 0xA6, 0xA5, 0x20A9, 0x3002, 0x300C, 0x300D, 0x3001, 0x30FB, 0x30F2, 0x30A1, 0x30A3,
+        0x30A5, 0x30A7, 0x30A9, 0x30E3, 0x30E5, 0x30E7, 0x30C3, 0x30A2, 0x30A4, 0x30A6, 0x30A8, 0x30AA,
+        0x30AB, 0x30AD, 0x30AF, 0x30B1, 0x30B3, 0x30B5, 0x30B7, 0x30B9, 0x30BB, 0x30BD, 0x30BF, 0x30C1,
+        0x30C4, 0x30C6, 0x30C8, 0x30CA, 0x30CB, 0x30CC, 0x30CD, 0x30CE, 0x30CF, 0x30D2, 0x30D5, 0x30D8,
+        0x30DB, 0x30DE, 0x30DF, 0x30E0, 0x30E1, 0x30E2, 0x30E4, 0x30E6, 0x30E8, 0x30E9, 0x30EA, 0x30EB,
+        0x30EC, 0x30ED, 0x30EF, 0x30F3, 0x3164, 0x3131, 0x3132, 0x3133, 0x3134, 0x3135, 0x3136, 0x3137,
+        0x3138, 0x3139, 0x313A, 0x313B, 0x313C, 0x313D, 0x313E, 0x313F, 0x3140, 0x3141, 0x3142, 0x3143,
+        0x3144, 0x3145, 0x3146, 0x3147, 0x3148, 0x3149, 0x314A, 0x314B, 0x314C, 0x314D, 0x314E, 0x314F,
+        0x3150, 0x3151, 0x3152, 0x3153, 0x3154, 0x3155, 0x3156, 0x3157, 0x3158, 0x3159, 0x315A, 0x315B,
+        0x315C, 0x315D, 0x315E, 0x315F, 0x3160, 0x3161, 0x3162, 0x3163,
+    };
+    static readonly int[] WidthHigher =
+    {
+        0xFF01, 0xFF02, 0xFF03, 0xFF04, 0xFF05, 0xFF06, 0xFF07, 0xFF08, 0xFF09, 0xFF0A, 0xFF0B, 0xFF0C,
+        0xFF0D, 0xFF0E, 0xFF0F, 0xFF10, 0xFF11, 0xFF12, 0xFF13, 0xFF14, 0xFF15, 0xFF16, 0xFF17, 0xFF18,
+        0xFF19, 0xFF1A, 0xFF1B, 0xFF1C, 0xFF1D, 0xFF1E, 0xFF1F, 0xFF20, 0xFF21, 0xFF22, 0xFF23, 0xFF24,
+        0xFF25, 0xFF26, 0xFF27, 0xFF28, 0xFF29, 0xFF2A, 0xFF2B, 0xFF2C, 0xFF2D, 0xFF2E, 0xFF2F, 0xFF30,
+        0xFF31, 0xFF32, 0xFF33, 0xFF34, 0xFF35, 0xFF36, 0xFF37, 0xFF38, 0xFF39, 0xFF3A, 0xFF3B, 0xFF3D,
+        0xFF3E, 0xFF3F, 0xFF40, 0xFF41, 0xFF42, 0xFF43, 0xFF44, 0xFF45, 0xFF46, 0xFF47, 0xFF48, 0xFF49,
+        0xFF4A, 0xFF4B, 0xFF4C, 0xFF4D, 0xFF4E, 0xFF4F, 0xFF50, 0xFF51, 0xFF52, 0xFF53, 0xFF54, 0xFF55,
+        0xFF56, 0xFF57, 0xFF58, 0xFF59, 0xFF5A, 0xFF5B, 0xFF5C, 0xFF5D, 0xFF5E, 0xFFE0, 0xFFE1, 0xFFE2,
+        0xFFE3, 0xFFE4, 0xFFE5, 0xFFE6, 0xFF61, 0xFF62, 0xFF63, 0xFF64, 0xFF65, 0xFF66, 0xFF67, 0xFF68,
+        0xFF69, 0xFF6A, 0xFF6B, 0xFF6C, 0xFF6D, 0xFF6E, 0xFF6F, 0xFF71, 0xFF72, 0xFF73, 0xFF74, 0xFF75,
+        0xFF76, 0xFF77, 0xFF78, 0xFF79, 0xFF7A, 0xFF7B, 0xFF7C, 0xFF7D, 0xFF7E, 0xFF7F, 0xFF80, 0xFF81,
+        0xFF82, 0xFF83, 0xFF84, 0xFF85, 0xFF86, 0xFF87, 0xFF88, 0xFF89, 0xFF8A, 0xFF8B, 0xFF8C, 0xFF8D,
+        0xFF8E, 0xFF8F, 0xFF90, 0xFF91, 0xFF92, 0xFF93, 0xFF94, 0xFF95, 0xFF96, 0xFF97, 0xFF98, 0xFF99,
+        0xFF9A, 0xFF9B, 0xFF9C, 0xFF9D, 0xFFA0, 0xFFA1, 0xFFA2, 0xFFA3, 0xFFA4, 0xFFA5, 0xFFA6, 0xFFA7,
+        0xFFA8, 0xFFA9, 0xFFAA, 0xFFAB, 0xFFAC, 0xFFAD, 0xFFAE, 0xFFAF, 0xFFB0, 0xFFB1, 0xFFB2, 0xFFB3,
+        0xFFB4, 0xFFB5, 0xFFB6, 0xFFB7, 0xFFB8, 0xFFB9, 0xFFBA, 0xFFBB, 0xFFBC, 0xFFBD, 0xFFBE, 0xFFC2,
+        0xFFC3, 0xFFC4, 0xFFC5, 0xFFC6, 0xFFC7, 0xFFCA, 0xFFCB, 0xFFCC, 0xFFCD, 0xFFCE, 0xFFCF, 0xFFD2,
+        0xFFD3, 0xFFD4, 0xFFD5, 0xFFD6, 0xFFD7, 0xFFDA, 0xFFDB, 0xFFDC,
+    };
 
     // Unified ideographs among the compatibility ones.
     static readonly int[] UnifiedCompatibility = [0xFA0E, 0xFA0F, 0xFA11, 0xFA13, 0xFA14, 0xFA1F, 0xFA21, 0xFA23, 0xFA24, 0xFA27, 0xFA28, 0xFA29];
@@ -374,23 +440,14 @@ static class Collation
                 table.Map[group[i]] = [new Element(weights[g], 4 + secondaryRank * 4, 4 + tertiaryRank * 4, Flags(ci, group[i]))];
             }
 
-            // .NET's own rules for the options besides None and IgnoreSymbols
-            // make hiragana and katakana, and full and half width, differ at
-            // the first level: a rank within the group for those (flags bits 4-7).
+            // .NET's own rules for IgnoreCase and IgnoreNonSpace make hiragana
+            // and katakana, and full and half width, differ at the first level
+            // (unless IgnoreKanaType or IgnoreWidth): a rank within the group
+            // for each, kana in flags bits 4-5, width in 6-7.
             if (group.Count == 1)
                 continue;
-            var variants = group.ToList();
-            variants.Sort((x, y) => ci.Compare(x, y, Variant) is int c && c != 0 ? c : ci.Compare(x, y, CompareOptions.None));
-            int variantRank = 0;
-            for (int i = 0; i < variants.Count; i++)
-            {
-                if (i > 0 && ci.Compare(variants[i - 1], variants[i], Variant) != 0)
-                    variantRank++;
-                if (variantRank > 15)
-                    throw new Exception($"{variants[i]}: too many variants");
-                var e = table.Map[variants[i]][0];
-                table.Map[variants[i]] = [e with { F = e.F | (variantRank << 4) }];
-            }
+            AddRank(ci, table, group, Variant | CompareOptions.IgnoreWidth, 4);
+            AddRank(ci, table, group, Variant | CompareOptions.IgnoreKanaType, 6);
         }
 
         // Letters ICU weighs as a base letter and an accent (d with a stroke
@@ -884,6 +941,13 @@ static class Collation
                 throw new Exception($"U+{cp:X4}: digits not in a row");
         }
 
+        var width = new List<byte>();
+        foreach (var (higher, lower) in WidthHigher.Zip(WidthLower).OrderBy(p => p.First))
+        {
+            width.AddRange(BitConverter.GetBytes((ushort)higher));
+            width.AddRange(BitConverter.GetBytes((ushort)lower));
+        }
+
         var combining = new List<byte>();
         foreach (var (cp, rank) in CombiningRanks())
         {
@@ -1004,7 +1068,9 @@ static class Collation
         var sb = new StringBuilder();
         sb.Append($$"""
 // <auto-generated>
-// Written by scripts/gen-cultures from .NET {{Environment.Version}}'s ICU collation.
+// Written by scripts/gen-cultures from .NET {{Environment.Version}}'s ICU collation (sort version
+// {{CultureInfo.InvariantCulture.CompareInfo.Version.FullVersion:X}}, {{System.Runtime.InteropServices.RuntimeInformation.OSDescription}}): other ICU versions sort
+// some text differently, so rerunning this elsewhere may change the tables.
 // Don't edit; rerun: dotnet run --project scripts/gen-cultures
 // </auto-generated>
 
@@ -1019,6 +1085,7 @@ namespace System.Globalization
         Emit(sb, "RootRuns", rootRuns, "The root order's single code points, in runs: the first code point (3 bytes), how many (2),\n        // and the first's element: primary weight (4), secondary (2), tertiary (1), flags (1: symbol, 2: upper\n        // case, bits 4-7: kana and width variant); each next code point's primary is a group (1 << 15) more.");
         Emit(sb, "RootSequences", Sequences(rootSequences).ToList(), "The root order's contractions and expansions: entries as in Tailorings.");
         Emit(sb, "Decompositions", decompositions, "NFD: a code point and the up to 4 it decomposes to (0 after the last), 3 bytes each, sorted.");
+        Emit(sb, "WidthFolding", width, "IgnoreWidth, as .NET's rules: a full or half width character (2 bytes) and the one it then sorts\n        // as (2), sorted.");
         Emit(sb, "DecimalZeros", zeros, "Each script's digit zero (3 bytes), sorted: its 1 to 9 follow it.");
         Emit(sb, "CombiningClasses", combining, "Marks NFD reorders: the code point (3 bytes) and its class as a rank (1), sorted.");
         EmitBlobs(sb, "Tailorings", tailorings, "Each culture's differences from the root: entries sorted by their code points, each the number of\n        // code points (1 byte), they (3 each), the number of elements (1) and they (8 bytes each, as in RootRuns).");

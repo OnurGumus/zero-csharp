@@ -51,8 +51,8 @@ namespace System.Globalization
         // 4 a character ICU weighs with two elements (the second of a symbol
         // stays in searches with IgnoreSymbols), 8 in the
         // tables: the rank of the ideograph in the primary goes here, at its
-        // root position if the tertiary is 1, bits 4-7 kana and width
-        // variants).
+        // root position if the tertiary is 1; bits 4-5 and 6-7: the kana and
+        // width ranks, see FirstLevel).
         private const int Symbol = 1, Upper = 2, SearchKept = 4, HanMarker = 8;
         // In searches: the second element of a character ICU weighs with two.
         private const ulong Continuation = 1UL << 31;
@@ -465,20 +465,22 @@ namespace System.Globalization
             return e;
         }
 
-        private void Collate(ReadOnlySpan<char> text, ref Elements into, bool numeric = false)
+        private void Collate(ReadOnlySpan<char> text, ref Elements into, CompareOptions options = CompareOptions.None)
         {
             Buffer none = default;
-            Collate(text, ref into, ref none, ref none, false, numeric);
+            Collate(text, ref into, ref none, ref none, false, options);
         }
 
         // With track, where each element is in the text, as ICU's collation
         // element iterator tells: low, where its char starts (where the char
         // ends for the second and later elements of a char's, as with an
         // expansion) and high, where it ends.
-        // With numeric (NumericOrdering), a run of decimal digits, in any
-        // script, is a number: see Number.
-        private void Collate(ReadOnlySpan<char> text, ref Elements into, ref Buffer lows, ref Buffer highs, bool track, bool numeric = false)
+        // With NumericOrdering, a run of decimal digits, in any script, is a
+        // number (see Number); IgnoreKanaType and IgnoreWidth fold characters
+        // first (see Fold).
+        private void Collate(ReadOnlySpan<char> text, ref Elements into, ref Buffer lows, ref Buffer highs, bool track, CompareOptions options = CompareOptions.None)
         {
+            bool numeric = (options & CompareOptions.NumericOrdering) != 0;
             Buffer cps = default, starts = default, ends = default;
             cps.Items = stackalloc int[64];
             if (track)
@@ -487,6 +489,15 @@ namespace System.Globalization
                 ends.Items = stackalloc int[64];
             }
             CodePoints(text, ref cps, ref starts, ref ends, track);
+            // (Only where .NET's rules make them equal: with None and
+            // IgnoreSymbols. With IgnoreCase or IgnoreNonSpace they're
+            // equal anyway, without rules, but still different characters.)
+            if ((options & (CompareOptions.IgnoreKanaType | CompareOptions.IgnoreWidth)) != 0
+                && (options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) == 0)
+            {
+                for (int i = 0; i < cps.Count; i++)
+                    cps.Items[i] = Fold(cps.Items[i], options);
+            }
             Span<int> key = stackalloc int[16];
             for (int i = 0; i < cps.Count; )
             {
@@ -584,6 +595,40 @@ namespace System.Globalization
             }
         }
 
+        // ---- IgnoreKanaType and IgnoreWidth ----
+
+        // As .NET's rules for them: IgnoreWidth makes a character of its list
+        // of full and half width ones sort as the normal one (！ as !, ｱ as
+        // ア), and IgnoreKanaType katakana as hiragana (ア as あ; accents are
+        // apart by now). Without them, its rules for IgnoreCase and
+        // IgnoreNonSpace keep those apart at the first level, which the
+        // tables have (the kana and width ranks, see FirstLevel).
+        private static int Fold(int cp, CompareOptions options)
+        {
+            if ((options & CompareOptions.IgnoreWidth) != 0 && cp >= 0x21 && cp <= 0xFFFF)
+            {
+                ReadOnlySpan<byte> table = CollationData.WidthFolding;
+                int low = 0, high = table.Length / 4 - 1;
+                while (low <= high)
+                {
+                    int middle = (low + high) >> 1;
+                    int key = table[middle * 4] | (table[middle * 4 + 1] << 8);
+                    if (key == cp)
+                    {
+                        cp = table[middle * 4 + 2] | (table[middle * 4 + 3] << 8);
+                        break;
+                    }
+                    if (key < cp)
+                        low = middle + 1;
+                    else
+                        high = middle - 1;
+                }
+            }
+            if ((options & CompareOptions.IgnoreKanaType) != 0 && (cp >= 0x30A1 && cp <= 0x30F6 || cp == 0x30FD || cp == 0x30FE))
+                cp -= 0x60;
+            return cp;
+        }
+
         // ---- numbers (NumericOrdering) ----
 
         // A decimal digit's value, in any script, or -1.
@@ -615,15 +660,21 @@ namespace System.Globalization
         // digit with NumericOrdering). Starting after the prefix gives the
         // whole texts' answer, but where ICU treats only ASCII digits as
         // digits for that: a culture's own collator ("8٢" against "8m" in
-        // Turkish compares "٢" with "m", the number 2), and the one .NET
-        // builds from rules for IgnoreCase and IgnoreNonSpace.
+        // Turkish compares "٢" with "m", the number 2), and the ones .NET
+        // builds from rules for the kana and width options (by default, for
+        // IgnoreCase and IgnoreNonSpace).
         private void NumericPrefix(ref ReadOnlySpan<char> a, ref ReadOnlySpan<char> b, CompareOptions options)
         {
-            if (!_onlyAsciiDigits && (options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) == 0)
+            // .NET builds the collator from rules when its kana or width rules
+            // apply: kana and width options against the strength (pal_collation.c).
+            bool weak = (options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) != 0;
+            bool kanaRules = ((options & CompareOptions.IgnoreKanaType) != 0) != weak;
+            bool widthRules = ((options & CompareOptions.IgnoreWidth) != 0) != weak;
+            if (!_onlyAsciiDigits && !kanaRules && !widthRules)
                 return;
-            // (The rules-built collator knows full-width digits too, and so
-            // does Japanese's.)
-            bool fullWidth = _fullWidthDigits || (options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) != 0;
+            // (Its width rules make full-width digits digits too, and so does
+            // Japanese's own collator.)
+            bool fullWidth = _fullWidthDigits || widthRules;
             int p = 0;
             while (p < a.Length && p < b.Length && a[p] == b[p])
                 p++;
@@ -916,8 +967,8 @@ namespace System.Globalization
             bool numeric = (options & CompareOptions.NumericOrdering) != 0;
             if (numeric)
                 NumericPrefix(ref a, ref b, options);
-            Collate(a, ref x, numeric);
-            Collate(b, ref y, numeric);
+            Collate(a, ref x, options);
+            Collate(b, ref y, options);
             bool ignoreSymbols = (options & CompareOptions.IgnoreSymbols) != 0;
             Span<ulong> xs = x.Items.Slice(0, x.Count), ys = y.Items.Slice(0, y.Count);
             Filter(xs, ignoreSymbols);
@@ -943,8 +994,16 @@ namespace System.Globalization
             return CompareLevel(x, y, (options & CompareOptions.IgnoreNonSpace) != 0 ? 4 : 3);
         }
 
+        // .NET's rules for IgnoreCase and IgnoreNonSpace keep kana (unless
+        // IgnoreKanaType) and widths (unless IgnoreWidth) apart at the first
+        // level: 0 both, 5 widths only, 6 kana only, 1 neither.
         private static int FirstLevel(CompareOptions options)
-            => (options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) != 0 ? 0 : 1;
+        {
+            if ((options & (CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace)) == 0)
+                return 1;
+            bool kana = (options & CompareOptions.IgnoreKanaType) == 0, width = (options & CompareOptions.IgnoreWidth) == 0;
+            return kana ? (width ? 0 : 6) : (width ? 5 : 1);
+        }
 
         // The weight at a level (0: primary with the variant rank; 1: primary;
         // 2: secondary; 3: tertiary; 4: case, whether a letter is upper case),
@@ -953,7 +1012,9 @@ namespace System.Globalization
         {
             switch (level)
             {
-                case 0: return Primary(e) == 0 ? 0 : ((long)Primary(e) << 4) | (long)(e >> 4 & 0xF);
+                case 0: return Primary(e) == 0 ? 0 : ((long)Primary(e) << 4) | (long)((e >> 2 & 0xC) | (e >> 6 & 0x3));
+                case 5: return Primary(e) == 0 ? 0 : ((long)Primary(e) << 4) | (long)(e >> 6 & 0x3);
+                case 6: return Primary(e) == 0 ? 0 : ((long)Primary(e) << 4) | (long)(e >> 2 & 0xC);
                 case 1: return Primary(e);
                 case 2: return SecondaryOf(e);
                 case 3: return SecondaryOf(e) == 0 && Primary(e) == 0 ? 0 : TertiaryOf(e);
@@ -1010,7 +1071,7 @@ namespace System.Globalization
             Load();
             Elements x = default;
             x.Items = stackalloc ulong[64];
-            Collate(text, ref x, (options & CompareOptions.NumericOrdering) != 0);
+            Collate(text, ref x, options);
             Span<ulong> xs = x.Items.Slice(0, x.Count);
             Filter(xs, (options & CompareOptions.IgnoreSymbols) != 0);
             bool ignoreNonSpace = (options & CompareOptions.IgnoreNonSpace) != 0;
@@ -1086,8 +1147,8 @@ namespace System.Globalization
             Buffer lows = default, highs = default, none = default;
             lows.Items = stackalloc int[64];
             highs.Items = stackalloc int[64];
-            Collate(value, ref v);
-            Collate(source, ref s, ref lows, ref highs, true);
+            Collate(value, ref v, options);
+            Collate(source, ref s, ref lows, ref highs, true, options);
             Span<ulong> vs = v.Items.Slice(0, v.Count), ss = s.Items.Slice(0, s.Count);
             Span<int> low = lows.Items.Slice(0, lows.Count), high = highs.Items.Slice(0, highs.Count);
             matchLength = 0;

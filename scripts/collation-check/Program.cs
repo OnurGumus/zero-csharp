@@ -42,7 +42,15 @@ static class Program
         G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreNonSpace, G.CompareOptions.IgnoreSymbols,
         G.CompareOptions.IgnoreSymbols | G.CompareOptions.IgnoreCase,
         G.CompareOptions.NumericOrdering, G.CompareOptions.NumericOrdering | G.CompareOptions.IgnoreCase,
+        G.CompareOptions.IgnoreKanaType, G.CompareOptions.IgnoreWidth, G.CompareOptions.IgnoreKanaType | G.CompareOptions.IgnoreWidth,
+        G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreKanaType, G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreWidth,
+        G.CompareOptions.IgnoreCase | G.CompareOptions.IgnoreKanaType | G.CompareOptions.IgnoreWidth,
+        G.CompareOptions.IgnoreNonSpace | G.CompareOptions.IgnoreKanaType | G.CompareOptions.IgnoreWidth | G.CompareOptions.IgnoreSymbols,
+        G.CompareOptions.NumericOrdering | G.CompareOptions.IgnoreWidth,
     };
+
+    // Kana and characters of every width, for IgnoreKanaType and IgnoreWidth.
+    static readonly string Kana = "\u3042\u3041\u304B\u304C\u3071\u30A2\u30A1\u30AB\u30AC\u30D1\u30FC\u30FD\u309D\uFF71\uFF76\uFF9E\uFF9F\uFF21\uFF41\uFF10\uFF01\uFFE5\uFFA1\u3131\uFF64\u3001";
 
     // Digits of several scripts, for NumericOrdering.
     static readonly string Digits = "0123456789000\u0660\u0661\u0662\u0669\u0966\u0967\u096F\uFF10\uFF11\uFF19\u0E50\u0E51\u00B2\u2460";
@@ -80,6 +88,8 @@ static class Program
                 sb.Append((char)R.Next(0x4E00, 0xA000));
             else if (k < 18)
                 sb.Append((char)R.Next(0xAC00, 0xD7A4));
+            else if (k < 19 && R.Next(2) == 0)
+                sb.Append(Kana[R.Next(Kana.Length)]);
             else if (k < 19)
             {
                 // A run of digits, sometimes a long one.

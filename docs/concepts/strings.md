@@ -630,6 +630,23 @@ Check("leading zeros don't count",
     american.CompareInfo.Compare("file02", "file2", numeric) == 0);
 ```
 
+`IgnoreKanaType` and `IgnoreWidth` treat hiragana and katakana, and the full and half width forms
+of letters, digits, punctuation, katakana and Hangul, as the same:
+
+<!-- sample: samples/Sorting.cs kana -->
+```csharp
+var japanese = CultureInfo.GetCultureInfo("ja-JP").CompareInfo;
+var noCase = CompareOptions.IgnoreCase;
+Check("hiragana and katakana apart",
+    japanese.Compare("あい", "アイ", noCase) < 0);
+Check("alike with IgnoreKanaType",
+    japanese.Compare("あい", "アイ", noCase | CompareOptions.IgnoreKanaType) == 0);
+Check("full width alike with IgnoreWidth",
+    japanese.Compare("ＡＢＣ", "abc", noCase | CompareOptions.IgnoreWidth) == 0);
+Check("half width katakana found",
+    japanese.IndexOf("ファイル名", "ｲﾙ", CompareOptions.IgnoreWidth) == 2);
+```
+
 ```text
   what costs what
   ------------------------------------  ----------------------------------
@@ -662,11 +679,16 @@ character codes and none of that cost calls `string.CompareOrdinal`, or `==` for
 
 What differs from .NET: the invariant culture still compares by character code, as in .NET's
 invariant mode (with ICU, .NET sorts it in the root order), so programs that don't use cultures
-stay small (and ignores `NumericOrdering`, as .NET's invariant mode does). The kana and width options
-are ignored. Unassigned and private-use
+stay small (and ignores `NumericOrdering`, as .NET's invariant mode does). Unassigned and private-use
 characters sort after all the others. And a few rare runs of combining marks in unusual orders, and
 a few Japanese compatibility characters under `IgnoreCase`, compare differently (the check finds
 about one text in 300,000).
+
+The order is a snapshot of one ICU: the one .NET used on the machine that ran
+`scripts/gen-cultures` (the generated `CollationData.cs` names it). macOS, Linux and Windows ship
+their own ICU, and each version changes some rules, so .NET elsewhere can sort rare characters, new
+emoji or some Asian scripts differently, and running the generator elsewhere can change the tables.
+The cultures' formats are a snapshot in the same way.
 
 ### Formats of your own
 

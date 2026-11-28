@@ -2,7 +2,8 @@
 // answers with ICU: Turkish dotless ı, Swedish ö after z, Czech ch, Danish aa,
 // Chinese by pinyin and by strokes, Japanese, Korean hanja by their reading,
 // what ignoring case and accents means per language, numbers by value
-// (NumericOrdering), and the current culture's string.Compare.
+// (NumericOrdering), kana and widths (IgnoreKanaType, IgnoreWidth), and the
+// current culture's string.Compare.
 // scripts/collation-check compares every culture in the table with .NET's on
 // millions of random texts.
 // Exit code = number of failed checks.
@@ -128,6 +129,23 @@ public static class Program
         Check("the invariant culture ignores it, as .NET's invariant mode",
             CultureInfo.InvariantCulture.CompareInfo.Compare("a2", "a10", numeric) > 0);
         Section("numbers");
+
+        // docs:kana
+        var japanese = CultureInfo.GetCultureInfo("ja-JP").CompareInfo;
+        var noCase = CompareOptions.IgnoreCase;
+        Check("hiragana and katakana apart",
+            japanese.Compare("あい", "アイ", noCase) < 0);
+        Check("alike with IgnoreKanaType",
+            japanese.Compare("あい", "アイ", noCase | CompareOptions.IgnoreKanaType) == 0);
+        Check("full width alike with IgnoreWidth",
+            japanese.Compare("ＡＢＣ", "abc", noCase | CompareOptions.IgnoreWidth) == 0);
+        Check("half width katakana found",
+            japanese.IndexOf("ファイル名", "ｲﾙ", CompareOptions.IgnoreWidth) == 2);
+        // docs:end
+        Check("full width apart without", japanese.Compare("ＡＢＣ", "abc", noCase) > 0);
+        Check("both", japanese.Compare("ｱｲ", "あい", noCase | CompareOptions.IgnoreKanaType | CompareOptions.IgnoreWidth) == 0);
+        Check("half width alone", japanese.Compare("ｱｲ", "アイ", CompareOptions.IgnoreWidth) == 0);
+        Section("kana and widths");
 
         CultureInfo.CurrentCulture = turkish;
         Check("string.Compare follows the current culture", string.Compare("ıa", "ib") < 0);
