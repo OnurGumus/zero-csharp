@@ -81,6 +81,16 @@ namespace System.Diagnostics.CodeAnalysis
     [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Parameter)]
     public sealed class UnscopedRefAttribute : Attribute { }
 
+    // On a static bool property: the build's feature switch of this name
+    // (bflat --feature name=false) replaces the property's value, so code
+    // it guards drops out of the program.
+    [AttributeUsage(AttributeTargets.Property, Inherited = false)]
+    public sealed class FeatureSwitchDefinitionAttribute : Attribute
+    {
+        public FeatureSwitchDefinitionAttribute(string switchName) => SwitchName = switchName;
+        public string SwitchName { get; }
+    }
+
     // For .NET's analyzers; nothing reads it here.
     [AttributeUsage(AttributeTargets.Parameter)]
     public sealed class ConstantExpectedAttribute : Attribute

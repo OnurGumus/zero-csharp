@@ -625,7 +625,20 @@ with .NET's: comparing, `IsPrefix`, `IsSuffix`, `IndexOf` and `LastIndexOf`.
                                         place; the ideograph orders are
                                         unpacked (up to 0.5 MB) the first
                                         time ideographs are compared
+  ZeroIdeographOrders false             about 300 KB less: Chinese,
+                                        Japanese and Korean sort
+                                        ideographs by radical and strokes,
+                                        as the other cultures do
 ```
+
+A program that never sorts Chinese, Japanese or Korean text in its own order can leave those
+orders out with a property in its project:
+
+```xml
+<ZeroIdeographOrders>false</ZeroIdeographOrders>
+```
+
+(With `./build.sh`, it's bflat's `--feature Zero.Globalization.IdeographOrders=false`.)
 
 What differs from .NET: the invariant culture still compares by character code, as in .NET's
 invariant mode (with ICU, .NET sorts it in the root order), so programs that don't use cultures

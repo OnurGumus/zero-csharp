@@ -996,7 +996,8 @@ namespace System.Globalization
         Emit(sb, "Decompositions", decompositions, "NFD: a code point and the up to 4 it decomposes to (0 after the last), 3 bytes each, sorted.");
         Emit(sb, "CombiningClasses", combining, "Marks NFD reorders: the code point (3 bytes) and its class as a rank (1), sorted.");
         EmitBlobs(sb, "Tailorings", tailorings, "Each culture's differences from the root: entries sorted by their code points, each the number of\n        // code points (1 byte), they (3 each), the number of elements (1) and they (8 bytes each, as in RootRuns).");
-        EmitBlobs(sb, "HanOrders", orderBlobs, "The root order of Han ideographs (by radical and strokes), then those cultures put first in an\n        // order of their own (the rest follow in root order): runs of consecutive code points, a zigzag varint\n        // step from the last run's end and a varint length.");
+        Emit(sb, "HanRootOrder", orderBlobs[0].ToList(), "The root order of Han ideographs (by radical and strokes): runs of consecutive code points, a\n        // zigzag varint step from the last run's end and a varint length.");
+        EmitBlobs(sb, "HanOrders", orderBlobs.Skip(1).ToList(), "The ideographs cultures put first in an order of their own (pinyin, strokes, Japan's), the rest\n        // following in root order: runs as in HanRootOrder.");
         EmitBlobs(sb, "KoreanHanja", koreanBlobs, "Hanja Korean sorts with a Hangul syllable: the hanja (3 bytes), the syllable (2) and its step after\n        // it (1), sorted.");
         var perCulture = new List<byte>();
         for (int i = 0; i < names.Count; i++)
@@ -1004,7 +1005,7 @@ namespace System.Globalization
             perCulture.Add((byte)(tailoringOf[i] | flags[i]));
             perCulture.Add((byte)(hanOf[i] | (koreanOf[i] << 4)));
         }
-        Emit(sb, "Cultures", perCulture, "Each culture's two bytes: its tailoring (1 + its index; 0: the root order) with 0x80 if it compares\n        // accents from the end and 0x40 if it puts upper case first; then its Han order (its index; 0: the root's) and,\n        // shifted 4, its hanja (1 + index).");
+        Emit(sb, "Cultures", perCulture, "Each culture's two bytes: its tailoring (1 + its index; 0: the root order) with 0x80 if it compares\n        // accents from the end and 0x40 if it puts upper case first; then its Han order (1 + its index; 0: the root's) and,\n        // shifted 4, its hanja (1 + index).");
         sb.Append("    }\n}\n");
         File.WriteAllText(Path.Combine(root, "zerocore/System/Globalization/CollationData.cs"), sb.ToString());
         int total = rootRuns.Count + decompositions.Count + combining.Count + tailorings.Sum(t => t.Length) + orderBlobs.Sum(b => b.Length) + koreanBlobs.Sum(b => b.Length);

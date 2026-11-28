@@ -30,6 +30,18 @@ namespace System.Globalization
 
     internal enum Search { First, Last, Prefix, Suffix }
 
+    // Build-time switches (bflat --feature, the SDK's properties): ILC puts
+    // the value in place of the property, and what it guards isn't linked.
+    internal static class Switches
+    {
+        // The ideograph orders of Chinese (pinyin, strokes), Japanese and
+        // Korean (hanja with their Hangul reading), about 300 KB: without
+        // them those cultures sort ideographs in the root order, by radical
+        // and strokes. ZeroIdeographOrders=false in a project.
+        [System.Diagnostics.CodeAnalysis.FeatureSwitchDefinition("Zero.Globalization.IdeographOrders")]
+        internal static bool IdeographOrders => true;
+    }
+
     internal sealed unsafe class Collator : Linguistic
     {
         // An element packed into a ulong: primary (bits 32-63), secondary
@@ -83,8 +95,12 @@ namespace System.Globalization
             _backwards = (t & 0x80) != 0;
             _upperFirst = (t & 0x40) != 0;
             t &= 0x3F;
-            _hanOrder = h & 0xF;
-            _hanja = h >> 4;
+            // (Without the ideograph orders, every culture has the root's.)
+            if (Switches.IdeographOrders)
+            {
+                _hanOrder = h & 0xF;
+                _hanja = h >> 4;
+            }
             if (t != 0)
             {
                 ReadOnlySpan<byte> starts = CollationData.TailoringsStarts;
@@ -413,7 +429,7 @@ namespace System.Globalization
         {
             if (IsHan(cp))
             {
-                if (_hanja != 0 && Hanja(cp, out int syllable, out int step))
+                if (Switches.IdeographOrders && _hanja != 0 && Hanja(cp, out int syllable, out int step))
                 {
                     // Korean: the syllable of its reading, a secondary step after.
                     int first = into.Count;
@@ -607,25 +623,26 @@ namespace System.Globalization
         // those by code point.
         private int HanRank(int cp, bool rootPosition = false)
         {
-            if (_hanOrder != 0 && !rootPosition)
+            if (Switches.IdeographOrders && _hanOrder != 0 && !rootPosition)
             {
                 if (_ranks == null)
                     using (System.Runtime.ObjectAllocator.Lasting())
-                        _ranks = new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder));
+                        _ranks = new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder - 1));
                 int r = _ranks.Rank(cp);
                 if (r >= 0)
                     return r;
             }
-            if ((_hanOrder != 0 && _ranks == null) || _rootRanks == null)
+            bool own = Switches.IdeographOrders && _hanOrder != 0;
+            if ((own && _ranks == null) || _rootRanks == null)
             {
                 using (System.Runtime.ObjectAllocator.Lasting())
                 {
-                    if (_hanOrder != 0)
-                        _ranks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder));
-                    _rootRanks ??= s_rootRanks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, 0));
+                    if (own)
+                        _ranks ??= new HanRanks(Blob(CollationData.HanOrders, CollationData.HanOrdersStarts, _hanOrder - 1));
+                    _rootRanks ??= s_rootRanks ??= new HanRanks(CollationData.HanRootOrder);
                 }
             }
-            int skip = _hanOrder != 0 ? _ranks.Count : 0;
+            int skip = own ? _ranks.Count : 0;
             int root = _rootRanks.Rank(cp);
             return skip + (root >= 0 ? root : _rootRanks.Count + cp);
         }

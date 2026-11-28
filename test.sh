@@ -119,6 +119,7 @@ SAMPLES=(
     CustomFormats
     Locales
     Sorting
+    SortingRoot
     Keys
     Tensors
     TensorsAvx
@@ -129,7 +130,8 @@ SAMPLES=(
 
 # Samples WebAssembly can't run (as in build.sh): the fiber samples switch stacks,
 # and Catches, CryptoErrors and Cultures catch exceptions, which Catch.Run can't do there.
-NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures "
+# SortingRoot needs a feature switch the WebAssembly build doesn't pass.
+NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures SortingRoot "
 # Samples UEFI can't run (as in build.sh): lib/ has directories only on Linux,
 # macOS, Windows and WebAssembly.
 NOT_UEFI=" Directories Network "

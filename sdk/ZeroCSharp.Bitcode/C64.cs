@@ -42,11 +42,13 @@ static class C64
     public static void Bitcode(string[] args, string command = "c64-bitcode", string optimize = "--Os", bool entryPoints = false)
     {
         if (args.Length < 3)
-            throw Fail($"usage: zero-bitcode {command} IN.dll OUTDIR CORE.dll [REF.dll...]");
+            throw Fail($"usage: zero-bitcode {command} IN.dll OUTDIR CORE.dll [REF.dll...] [--feature:NAME=VALUE...]");
         string input = Path.GetFullPath(args[0]);
         string outDir = Path.GetFullPath(args[1]);
         string core = Path.GetFullPath(args[2]);
-        string[] references = args[3..].Select(Path.GetFullPath).ToArray();
+        // (Arguments starting --feature: are ILC's feature switches.)
+        string[] features = args[3..].Where(a => a.StartsWith("--feature:")).ToArray();
+        string[] references = args[3..].Where(a => !a.StartsWith("--feature:")).Select(Path.GetFullPath).ToArray();
         string name = Path.GetFileNameWithoutExtension(input);
         string ilcFolder = Tools.Ilc();
 
@@ -71,6 +73,7 @@ static class C64
             "--directpinvoke:libc", "--directpinvoke:libm.so.6"]);
         if (entryPoints)
             ilcArgs.Add($"--generateunmanagedentrypoints:{name}");
+        ilcArgs.AddRange(features);
         ilcArgs.Add($"-o:{Path.Combine(outDir, name + ".bc")}");
         if (OperatingSystem.IsMacOS())
         {

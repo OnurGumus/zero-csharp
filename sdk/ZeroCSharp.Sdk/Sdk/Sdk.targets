@@ -58,6 +58,8 @@
     <ZeroTargetFolder Condition="'$(ZeroTargetChosen)' == 'true' or '$(ZeroTarget)' != '$(ZeroHostRid)'">$(ZeroTarget)/</ZeroTargetFolder>
     <!-- The targets bflat doesn't compile for: it makes IL, NativeAOT-LLVM
          makes LLVM bitcode of that, and zero-bitcode takes it from there. -->
+    <!-- The feature switches for NativeAOT-LLVM (the bitcode targets). -->
+    <_ZeroIlcFeatures Condition="'$(ZeroIdeographOrders)' == 'false'">--feature:Zero.Globalization.IdeographOrders=false</_ZeroIlcFeatures>
     <_ZeroBitcodeTarget Condition="'$(ZeroTarget)' == 'c64' or '$(ZeroTarget)' == 'pico2' or '$(ZeroTarget)' == 'r4'">true</_ZeroBitcodeTarget>
     <!-- Apple's platforms: bflat compiles a Mach-O object (as macOS), and the
          package's ld64.lld links it. The iOS simulator runs the same arm64
@@ -222,7 +224,7 @@
     <MakeDir Directories="$(ZeroBitcodeDir);$([System.IO.Path]::GetDirectoryName('$(ZeroNativeOutput)'))" />
     <Message Text="bflat arguments: $(ZeroNativeArgs)" />
     <Exec Command="&quot;$(ZeroBflatExe)&quot; build-il @&quot;$(ZeroNativeArgsFile)&quot;" />
-    <Exec Command="$(_ZeroBitcode) c64-bitcode &quot;$(ZeroBitcodeIl)&quot; &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$(ZeroNativeDir)System.Private.CoreLib.dll&quot; &quot;$(ZeroRefDir)BflatLib.dll&quot; @(_ZeroBitcodeReference->'&quot;%(Identity)&quot;', ' ') @(ZeroLibraryReference->'&quot;%(FullPath)&quot;', ' ')" />
+    <Exec Command="$(_ZeroBitcode) c64-bitcode &quot;$(ZeroBitcodeIl)&quot; &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$(ZeroNativeDir)System.Private.CoreLib.dll&quot; &quot;$(ZeroRefDir)BflatLib.dll&quot; @(_ZeroBitcodeReference->'&quot;%(Identity)&quot;', ' ') @(ZeroLibraryReference->'&quot;%(FullPath)&quot;', ' ') $(_ZeroIlcFeatures)" />
     <Exec Command="$(_ZeroBitcode) c64-link &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$([System.IO.Path]::GetFileNameWithoutExtension('$(ZeroBitcodeIl)'))&quot; &quot;$(ZeroNativeDir)runtime.c&quot; &quot;$(ZeroNativeOutput)&quot; $(_ZeroC64LinkOptions)" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(ZeroNativeOutput)" />
   </Target>
@@ -253,7 +255,7 @@
     <MakeDir Directories="$(ZeroBitcodeDir);$([System.IO.Path]::GetDirectoryName('$(ZeroNativeOutput)'))" />
     <Message Text="bflat arguments: $(ZeroNativeArgs)" />
     <Exec Command="&quot;$(ZeroBflatExe)&quot; build-il @&quot;$(ZeroNativeArgsFile)&quot;" />
-    <Exec Command="$(_ZeroBitcode) arm-bitcode &quot;$(ZeroBitcodeIl)&quot; &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$(ZeroNativeDir)System.Private.CoreLib.dll&quot; &quot;$(ZeroRefDir)BflatLib.dll&quot; @(_ZeroBitcodeReference->'&quot;%(Identity)&quot;', ' ') @(ZeroLibraryReference->'&quot;%(FullPath)&quot;', ' ')" />
+    <Exec Command="$(_ZeroBitcode) arm-bitcode &quot;$(ZeroBitcodeIl)&quot; &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$(ZeroNativeDir)System.Private.CoreLib.dll&quot; &quot;$(ZeroRefDir)BflatLib.dll&quot; @(_ZeroBitcodeReference->'&quot;%(Identity)&quot;', ' ') @(ZeroLibraryReference->'&quot;%(FullPath)&quot;', ' ') $(_ZeroIlcFeatures)" />
     <Exec Command="$(_ZeroBitcode) arm-link &quot;$(ZeroBitcodeDir)bitcode&quot; &quot;$([System.IO.Path]::GetFileNameWithoutExtension('$(ZeroBitcodeIl)'))&quot; &quot;$(ZeroNativeDir.TrimEnd('/'))&quot; $(ZeroTarget) &quot;$(ZeroArmQemuOutput)&quot; $(_ZeroArmBoard)" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(ZeroNativeOutput)" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(ZeroArmQemuOutput) (for QEMU: dotnet run)" Condition="'$(ZeroTarget)' == 'pico2'" />
@@ -613,6 +615,8 @@
       <_ZeroArg Include="--no-debug-info" Condition="'$(ZeroStripSymbols)' == 'true' and '$(_ZeroApple)' != 'true' and '$(_ZeroBitcodeTarget)' != 'true'" />
       <_ZeroArg Include="--ldflags --strip-all" Condition="'$(ZeroStripSymbols)' == 'true' and ('$(ZeroTarget)' == 'linux-x64' or '$(ZeroTarget)' == 'linux-arm64')" />
       <_ZeroArg Include="-m $(ZeroInstructionSet)" Condition="'$(ZeroInstructionSet)' != '' and '$(_ZeroBitcodeTarget)' != 'true'" />
+      <!-- Feature switches (see zerocore's Switches): ILC drops what they guard. -->
+      <_ZeroArg Include="--feature Zero.Globalization.IdeographOrders=false" Condition="'$(ZeroIdeographOrders)' == 'false' and '$(_ZeroBitcodeTarget)' != 'true'" />
       <_ZeroArg Include="-o &quot;$(ZeroBflatOutput)&quot;" Condition="'$(_ZeroApple)' != 'true' and '$(_ZeroBitcodeTarget)' != 'true'" />
       <_ZeroArg Include="-o &quot;$(ZeroNativeObject)&quot;" Condition="'$(_ZeroApple)' == 'true'" />
       <!-- ld64.lld (macOS 12 or newer, arm64: what bflat's objects ask for). zerocore's module list comes

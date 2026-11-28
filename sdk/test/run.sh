@@ -644,6 +644,24 @@ test_strip_symbols() {
     pass "$name"
 }
 
+# ZeroIdeographOrders=false leaves out Chinese's own order of ideographs
+# (bflat --feature): zh-CN then sorts them by radical and strokes, and the
+# program is smaller.
+test_ideograph_orders() {
+    local name="ideograph orders" dir exe out full
+    can_build "$name" || return
+    dir=$(fixture sorting)
+    exe=$(exe "$dir/bin/Release/$TFM/sorting")
+    if ! run_in "$dir" sorting build -c Release; then fail "$name" "dotnet build failed"; return; fi
+    out=$("$exe" | tr -d '\r'); if [ "$out" != "北京 上海 中国" ]; then fail "$name" "printed '$out', not pinyin order"; return; fi
+    full=$(wc -c < "$exe")
+    if ! run_in "$dir" sorting-root build -c Release -v:n -p:ZeroIdeographOrders=false; then fail "$name" "the build with ZeroIdeographOrders=false failed"; return; fi
+    if ! grep -q 'bflat arguments:.*--feature Zero.Globalization.IdeographOrders=false' "$LOG"; then fail "$name" "bflat wasn't given the feature switch"; return; fi
+    out=$("$exe" | tr -d '\r'); if [ "$out" != "上海 中国 北京" ]; then fail "$name" "printed '$out', not the root order"; return; fi
+    if [ "$(wc -c < "$exe")" -ge $((full - 200000)) ]; then fail "$name" "not smaller ($full, then $(wc -c < "$exe") bytes)"; return; fi
+    pass "$name"
+}
+
 # Debug builds aren't optimized (-O0), for debuggers; Release and a chosen
 # ZeroOptimizeFor are; an unknown ZeroOptimizeFor is an error.
 test_debug_unoptimized() {
@@ -2278,7 +2296,7 @@ test_fsharp_native_library_errors() {
 
 ALL_TESTS=(host_packages payload_complete hello_compiles console_is_an_error old_dotnet_sdk_refused unions_compile plain_packages_refused
     native_hello_runs cross_targets c64_target arm_target gpu_template gpu_errors cuda_build cuda_errors bad_target path_with_spaces compile_items incremental
-    bflat_failure_fails_the_build size strip_symbols debug_unoptimized mac_debug_object_kept windows_debugger macos_error
+    bflat_failure_fails_the_build size strip_symbols ideograph_orders debug_unoptimized mac_debug_object_kept windows_debugger macos_error
     project_reference library_change_rebuilds pack_and_package_reference version_mismatch templates
     custom_packages_folder dotnet_run publish extra_dll_imports library_import inherited_settings clean_and_rebuild
     targets_side_by_side language_settings_forwarded target_framework_is_an_error read_only_packages_folder
