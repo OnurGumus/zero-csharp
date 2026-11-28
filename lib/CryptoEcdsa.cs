@@ -281,6 +281,12 @@ internal sealed class Curve
     readonly uint[] _b;           // Montgomery form
     readonly uint[] _g;           // the base point, affine, Montgomery form
 
+    /// <summary>b, in Montgomery form (for lib/CryptoP256.cs).</summary>
+    internal ReadOnlySpan<uint> B => _b;
+
+    /// <summary>The base point, affine, x then y, Montgomery form.</summary>
+    internal ReadOnlySpan<uint> G => _g;
+
     // Made by static constructors (Curves), so they are allocated outside any
     // object scope a program has open when it first verifies (lib/Arena.cs).
     internal static Curve P256 => Curves.P256;

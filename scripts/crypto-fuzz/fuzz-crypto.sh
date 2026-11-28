@@ -25,7 +25,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 cp "$here"/*.cs "$work/"
-for source in "$root"/lib/{CryptoHashes,CryptoChaCha,CryptoX25519,CryptoAes,EncryptedStream,CryptoBigNumbers,CryptoAsn1,CryptoRsa,CryptoEcdsa,CryptoX509,CryptoX509Chain,TlsRecords,TlsHandshake,SslStream}.cs; do
+for source in "$root"/lib/{CryptoHashes,CryptoChaCha,CryptoX25519,CryptoAes,EncryptedStream,CryptoBigNumbers,CryptoAsn1,CryptoRsa,CryptoEcdsa,CryptoP256,CryptoX509,CryptoX509Chain,TlsRecords,TlsHandshake,SslStream}.cs; do
     # The namespace keeps the types apart from .NET's own.
     perl -pe 's/^namespace System\.Security\.Cryptography(\.X509Certificates)?;$/namespace ZeroTest$1;/;
               s/^namespace System\.Net\.Security/namespace ZeroTest.Net.Security/;

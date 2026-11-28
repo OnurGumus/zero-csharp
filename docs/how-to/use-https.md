@@ -40,7 +40,8 @@ closes. `samples/Https.cs` fetches a page this way: `./run.sh Https github.com /
 
 ## What authenticating checks
 
-The handshake (TLS 1.3, RFC 8446) agrees on fresh keys with X25519, so recording the connection
+The handshake (TLS 1.3, RFC 8446) agrees on fresh keys with X25519 (or P-256, when the server asks
+for it), so recording the connection
 and later learning the server's key doesn't open it. Then it checks the server in three ways, and
 fails if any check fails:
 
@@ -105,7 +106,7 @@ connection inside one is fine.
 |---|---|
 | Versions | TLS 1.3 only. A server that speaks only TLS 1.2 is refused, with a message saying so |
 | Cipher suites | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305 |
-| Key exchange | X25519. A server that only does P-256 is refused (most do both) |
+| Key exchange | X25519, or P-256 when the server asks for it (in constant time, like X25519). Not P-384 or P-521 |
 | Server certificates | RSA (2048 bits and up, signing with PSS) and ECDSA P-256, P-384 |
 | ALPN | `ApplicationProtocols`, an array here (a `List` in .NET) |
 | Client certificates | none: a server that asks gets an empty list, and may still refuse |

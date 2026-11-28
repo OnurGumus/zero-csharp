@@ -7,14 +7,15 @@
 //   int n = tls.Read(buffer);
 //
 // AuthenticateAsClient runs the TLS 1.3 handshake (RFC 8446): it offers
-// AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305 with an X25519 key share,
+// AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305 with an X25519 key share
+// (and a P-256 one if the server asks for it with a HelloRetryRequest),
 // checks the server's certificate chain (X509Chain, with the system's roots
 // unless the options give a chain policy), that the certificate is for the
 // host, and that the server's key signed the handshake. Then Read and Write
 // carry data in encrypted records.
 //
-// Only TLS 1.3, and only as a client. A server that speaks only TLS 1.2 or
-// asks for another key share (HelloRetryRequest, say for P-256) is refused.
+// Only TLS 1.3, and only as a client. A server that speaks only TLS 1.2, or
+// wants a key share other than X25519 or P-256, is refused.
 // No session resumption, no 0-RTT, no client certificates (a server that
 // asks gets an empty Certificate message, as RFC 8446 allows).
 //
@@ -164,6 +165,8 @@ namespace System.Net.Security
         internal byte[] TestClientHello;
         internal byte[] TestPrivateKey;
         internal bool TestNoChangeCipherSpec;
+        internal byte[] TestClientHello2;     // after a HelloRetryRequest
+        internal byte[] TestP256PrivateKey;
 
         public SslStream(Stream innerStream) : this(innerStream, false, null) { }
 

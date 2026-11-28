@@ -2,7 +2,8 @@
 # Runs samples/Https.cs against OpenSSL's s_server on this machine, once per
 # case: each cipher suite, RSA and ECDSA certificates (P-256 and P-384), a
 # server that asks for a client certificate, and the cases that must fail
-# (TLS 1.2 only, a P-256 key share only, a wrong host name, an unknown root).
+# (TLS 1.2 only, a P-384 key share only, a wrong host name, an unknown root),
+# and a server that wants P-256 and asks for it with a HelloRetryRequest.
 #
 # Usage:  scripts/tls-interop.sh [--mac | other ./run.sh target flags]
 # Needs:  OpenSSL 3.0 or newer (CI uses Ubuntu 24.04's), and the Https sample built for the target
@@ -77,7 +78,8 @@ check "RSA certificate (PSS)"  ok   localhost -cert rsa.pem -key rsa.key
 check "IP address"             ok   127.0.0.1 -cert p256.pem -key p256.key
 check "client certificate asked" ok localhost -cert p256.pem -key p256.key -verify 1
 check "TLS 1.2 only"           fail localhost -cert p256.pem -key p256.key -no_tls1_3
-check "P-256 key share only"   fail localhost -cert p256.pem -key p256.key -groups P-256
+check "P-256 (HelloRetryRequest)" ok localhost -cert p256.pem -key p256.key -groups P-256
+check "P-384 key share only"   fail localhost -cert p256.pem -key p256.key -groups P-384
 check "wrong host name"        fail 127.0.0.1 -cert named.pem -key named.key
 check "unknown root"           fail localhost -cert self.pem -key p256.key
 echo "$pass passed, $fail failed"
