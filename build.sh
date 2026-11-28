@@ -1584,7 +1584,7 @@ case "$TARGET" in
         rm "$PAYLOAD_DIR"/dotnet/lib/Crypto*.cs "$PAYLOAD_DIR/dotnet/lib/SslStream.cs" "$PAYLOAD_DIR"/dotnet/lib/Tls*.cs
         cp lib/CryptoX25519.cs "$PAYLOAD_DIR/dotnet/lib/"
         cp dotnet/ZeroCompat/Shims.cs dotnet/ZeroCompat/Fibers.cs dotnet/ZeroCompat/Additions.cs \
-            dotnet/Faithful/CryptoBridge.cs dotnet/Faithful/ZeroStartup.cs "$PAYLOAD_DIR/dotnet/compat/"
+            dotnet/Faithful/CryptoBridge.cs dotnet/Faithful/TlsBridge.cs dotnet/Faithful/ZeroStartup.cs "$PAYLOAD_DIR/dotnet/compat/"
         # The warnings these files give are theirs to answer, not the
         # project's that compiles them in: off for this folder only.
         cp dotnet/payload.editorconfig "$PAYLOAD_DIR/dotnet/zero.editorconfig"

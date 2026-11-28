@@ -270,7 +270,7 @@ test_payload_complete() {
              tools/zero-bitcode/zero-bitcode.dll tools/zero-bitcode/zero-bitcode.runtimeconfig.json \
              tools/zero-bitcode/SharpCompress.dll tools/zero-bitcode/THIRD-PARTY-NOTICES.txt \
              analyzers/ZeroCSharp.LibraryImport.dll \
-             dotnet/lib/Fibers.cs dotnet/lib/Tasks.cs dotnet/compat/{Shims,Fibers,Additions,CryptoBridge,ZeroStartup}.cs \
+             dotnet/lib/Fibers.cs dotnet/lib/Tasks.cs dotnet/compat/{Shims,Fibers,Additions,CryptoBridge,TlsBridge,ZeroStartup}.cs \
              dotnet/zero.editorconfig; do
         if [ ! -s "$payload/$f" ]; then fail "payload complete" "missing $f"; return; fi
     done

@@ -28,8 +28,8 @@
     <!-- Not lib/'s own cryptography: its hashes, HMAC, HKDF, ciphers, random
          numbers, RSA, ECDSA, certificates and TLS. .NET's are the platform's,
          and a program on .NET should get those. X25519 stays: .NET has no
-         type by that name. (.NET's SslStream takes a .NET Stream, which
-         lib/'s sockets don't give: TLS over them doesn't build here yet.) -->
+         type by that name. TlsBridge.cs runs .NET's SslStream over lib/'s
+         sockets. -->
     <Compile Remove="../../lib/Crypto*.cs;../../lib/SslStream.cs;../../lib/Tls*.cs" />
     <Compile Include="../../lib/CryptoX25519.cs" />
     <Compile Include="../ZeroCompat/Shims.cs;../ZeroCompat/Fibers.cs;../ZeroCompat/Additions.cs" />
@@ -37,4 +37,14 @@
     <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />
     <None Include="../out/libzerocompat.dylib" Link="libzerocompat.dylib" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../out/libzerocompat.dylib')" />
   </ItemGroup>
+  <!-- .NET's own assemblies under the alias `bcl` as well: TlsBridge.cs
+       reaches the .NET types lib/'s take the place of (Stream, SslStream)
+       through it. -->
+  <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences">
+    <ItemGroup>
+      <_ZeroBclReference Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
+      <ReferencePath Remove="@(_ZeroBclReference)" />
+      <ReferencePath Include="@(_ZeroBclReference)" Aliases="global,bcl" />
+    </ItemGroup>
+  </Target>
 </Project>

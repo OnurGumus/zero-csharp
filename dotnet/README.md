@@ -28,10 +28,12 @@ can't be handed to a .NET library that expects a `System.Threading.Tasks.Task`.
 Cryptography is the exception. `lib/`'s own hashes, HMAC, HKDF, ciphers (`ChaCha20Poly1305`,
 `AesGcm`), random numbers, `RSA`, `ECDsa`, certificates and TLS stay out of this build: .NET's
 are the platform's, and a program on .NET gets those. `X25519` and `EncryptedStream` are
-`lib/`'s, because .NET has no types by those names. Three things follow, for now:
+`lib/`'s, because .NET has no types by those names. What follows from that:
 
-- `SslStream` is .NET's, which takes a .NET `Stream`. `lib/`'s sockets give `lib/`'s stream, so
-  TLS over them doesn't build on .NET yet.
+- `SslStream` is .NET's TLS, running over `lib/`'s sockets (`Faithful/TlsBridge.cs`). It does
+  more than `lib/`'s client: TLS 1.2 as well as 1.3, and other key shares. It trusts the
+  system's roots, or only those in `SSL_CERT_FILE` when that is set, as `lib/`'s does.
+  `scripts/tls-interop.sh --dotnet` runs it against OpenSSL's server.
 - .NET's `AesGcm` on macOS takes 16-byte tags only (the Crypto and CryptoErrors samples use
   12-byte ones and stop there).
 - `lib/`'s `X509Certificate2.NotBefore` and `NotAfter` are a `CalendarTime` where .NET's are a

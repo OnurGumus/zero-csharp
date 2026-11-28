@@ -6,8 +6,9 @@
   types of the program's own assembly can take the place of .NET's (the
   compiler warns, CS0436, and uses them; the same types in a referenced
   assembly would be an ambiguity, CS0433). So the program behaves as in zero
-  mode: Task.Run starts a fiber, a socket lets the other fibers run. The
-  hashes, ciphers and random numbers are .NET's own, which are the platform's.
+  mode: Task.Run starts a fiber, a socket lets the other fibers run.
+  Cryptography and TLS are .NET's own, which are the platform's (SslStream
+  is .NET's, running over lib/'s sockets: the payload's TlsBridge.cs).
 
   What differs from zero mode is in the repository's dotnet/ folder
   (README.md, known-differences.txt): objects are the garbage collector's,
@@ -56,6 +57,17 @@
   <Target Name="ZeroDotnetAnalyzerConfig" BeforeTargets="GenerateMSBuildEditorConfigFile;CoreCompile">
     <ItemGroup>
       <EditorConfigFiles Include="$(ZeroDotnetDir)zero.editorconfig" />
+    </ItemGroup>
+  </Target>
+
+  <!-- .NET's own assemblies under the alias `bcl` as well: the payload's
+       TlsBridge.cs reaches the .NET types lib/'s take the place of (Stream,
+       SslStream) through it, to run .NET's TLS over lib/'s sockets. -->
+  <Target Name="ZeroBclAlias" AfterTargets="ResolveAssemblyReferences" BeforeTargets="FindReferenceAssembliesForReferences">
+    <ItemGroup>
+      <_ZeroBclReference Include="@(ReferencePath)" Condition="'%(ReferencePath.FrameworkReferenceName)' == 'Microsoft.NETCore.App'" />
+      <ReferencePath Remove="@(_ZeroBclReference)" />
+      <ReferencePath Include="@(_ZeroBclReference)" Aliases="global,bcl" />
     </ItemGroup>
   </Target>
 

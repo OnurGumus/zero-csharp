@@ -8,6 +8,11 @@
 # that wants P-256 and asks for it with a HelloRetryRequest.
 #
 # Usage:  scripts/tls-interop.sh [--mac | other ./run.sh target flags]
+#         scripts/tls-interop.sh --dotnet    the sample built for .NET, where the TLS is the
+#                                            platform's, over lib/'s sockets (dotnet/Faithful/TlsBridge.cs;
+#                                            dotnet build dotnet/Faithful -c Release -p:Sample=Https).
+#                                            The platform's TLS also speaks TLS 1.2 and offers a
+#                                            P-384 key share: those two cases connect there.
 # Needs:  OpenSSL 3.0 or newer (CI uses Ubuntu 24.04's), and the Https sample built for the target
 #         (./build.sh [--mac] Https). Ports 24330 and up on 127.0.0.1: below Linux's
 #         ephemeral range (32768-60999), where a client socket from an earlier
@@ -76,7 +81,11 @@ hangup() {
 # TryAuthenticateAsClient's reason ("SslStream: ..."), not an exception.
 run_client() {
     local name=$1 expect=$2 host=$3 server=$4
-    out=$(cd "$root" && timeout 30 ./run.sh "${TARGET[@]}" Https "$host:$port" / </dev/null 2>&1)
+    if [ -n "$DOTNET" ]; then
+        out=$(cd "$root" && timeout 30 dotnet dotnet/Faithful/bin/Https/Release/net11.0/Https.dll "$host:$port" / </dev/null 2>&1)
+    else
+        out=$(cd "$root" && timeout 30 ./run.sh "${TARGET[@]}" Https "$host:$port" / </dev/null 2>&1)
+    fi
     code=$?
     kill $server 2>/dev/null
     wait $server 2>/dev/null
@@ -101,6 +110,14 @@ run_client() {
     fi
 }
 
+# What lib/'s client refuses and the platform's TLS (--dotnet) accepts.
+DOTNET=
+beyond=fail
+if [ "${1:-}" = --dotnet ]; then
+    DOTNET=1
+    beyond=ok
+    shift
+fi
 TARGET=("$@")
 check "AES-128-GCM"            ok   localhost -cert p256.pem -key p256.key -ciphersuites TLS_AES_128_GCM_SHA256
 check "AES-256-GCM"            ok   localhost -cert p256.pem -key p256.key -ciphersuites TLS_AES_256_GCM_SHA384
@@ -109,9 +126,9 @@ check "P-384 certificate"      ok   localhost -cert p384.pem -key p384.key
 check "RSA certificate (PSS)"  ok   localhost -cert rsa.pem -key rsa.key
 check "IP address"             ok   127.0.0.1 -cert p256.pem -key p256.key
 check "client certificate asked" ok localhost -cert p256.pem -key p256.key -verify 1
-check "TLS 1.2 only"           fail localhost -cert p256.pem -key p256.key -no_tls1_3
+check "TLS 1.2 only"           $beyond localhost -cert p256.pem -key p256.key -no_tls1_3
 check "P-256 (HelloRetryRequest)" ok localhost -cert p256.pem -key p256.key -groups P-256
-check "P-384 key share only"   fail localhost -cert p256.pem -key p256.key -groups P-384
+check "P-384 key share only"   $beyond localhost -cert p256.pem -key p256.key -groups P-384
 check "wrong host name"        fail 127.0.0.1 -cert named.pem -key named.key
 check "unknown root"           fail localhost -cert self.pem -key p256.key
 hangup "hang-up: closed after ClientHello"      close
