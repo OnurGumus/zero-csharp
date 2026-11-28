@@ -275,8 +275,10 @@ test_payload_complete() {
         if [ ! -s "$payload/$f" ]; then fail "payload complete" "missing $f"; return; fi
     done
     # ZeroTarget=dotnet uses .NET's own hashes, ciphers and random numbers: lib/'s aren't in its sources.
-    for f in CryptoHashes CryptoChaCha CryptoRandom; do
-        if [ -e "$payload/dotnet/lib/$f.cs" ]; then fail "payload complete" "dotnet/lib has $f.cs: .NET's own must be used there"; return; fi
+    for f in "$payload"/dotnet/lib/Crypto*.cs "$payload/dotnet/lib/SslStream.cs" "$payload"/dotnet/lib/Tls*.cs; do
+        [ -e "$f" ] || continue
+        [ "$(basename "$f")" = CryptoX25519.cs ] && continue
+        fail "payload complete" "dotnet/lib has $(basename "$f"): .NET's own must be used there"; return
     done
     if ! is_elf "$payload/native/linux-x64/zerocore.o" x86-64; then fail "payload complete" "linux-x64 object isn't x86-64"; return; fi
     if ! is_elf "$payload/native/linux-arm64/zerocore.o" aarch64; then fail "payload complete" "linux-arm64 object isn't aarch64"; return; fi
@@ -599,17 +601,17 @@ test_dotnet_target() {
     pass "$name"
 }
 
-# What ZeroTarget=dotnet doesn't build yet says so (ZERO015), and an older
+# What ZeroTarget=dotnet doesn't build yet says so (ZERO016), and an older
 # .NET SDK is told which one it needs.
 test_dotnet_target_errors() {
     local name="dotnet target errors" dir
     if [ "$HOST_OS" = Windows ]; then skip "$name" "ZeroTarget=dotnet builds on macOS and Linux for now"; return; fi
     dir=$(fixture fsapp dotnet-fsapp)
     if run_in "$dir" dotnet-fsapp build -p:ZeroTarget=dotnet; then fail "$name" "an F# project built"; return; fi
-    if ! grep -q "ZERO015" "$LOG" || ! grep -q "C# projects for now" "$LOG"; then fail "$name" "no ZERO015 for an F# project"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "C# projects for now" "$LOG"; then fail "$name" "no ZERO016 for an F# project"; return; fi
     dir=$(fixture dotnettarget dotnet-oldsdk)
     if run_in "$dir" dotnet-oldsdk build -p:ZeroTarget=dotnet -p:NETCoreSdkVersion=10.0.404; then fail "$name" "the build with the .NET SDK 10 succeeded"; return; fi
-    if ! grep -q "ZERO015" "$LOG" || ! grep -q "11.0.100 or newer" "$LOG"; then fail "$name" "no ZERO015 for the .NET SDK 10"; return; fi
+    if ! grep -q "ZERO016" "$LOG" || ! grep -q "11.0.100 or newer" "$LOG"; then fail "$name" "no ZERO016 for the .NET SDK 10"; return; fi
     pass "$name"
 }
 

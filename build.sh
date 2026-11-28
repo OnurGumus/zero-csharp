@@ -1572,14 +1572,17 @@ case "$TARGET" in
         "$WIN_CLANG" -target x86_64-linux-gnu -ffreestanding -O2 -Wall -Wextra -c gpu/cuda.c -o "$PAYLOAD_DIR/native/linux-x64/cuda.o"
         "$WIN_CLANG" -target aarch64-linux-gnu -ffreestanding -mno-outline-atomics -O2 -Wall -Wextra -c gpu/cuda.c -o "$PAYLOAD_DIR/native/linux-arm64/cuda.o"
         # ZeroTarget=dotnet: lib/ as source, which the project compiles in
-        # (without its hashes, ciphers and random numbers: .NET's own are
+        # (without its hashes, ciphers, certificates and TLS: .NET's own are
         # used), what stands in for zerocore's internals and native code on
         # .NET (dotnet/), and for macOS a library with glibc's names and
         # layouts (mac/runtime.c again, for .NET to load). Linux needs none.
         echo "[cp]    lib/*.cs, dotnet/ -> $PAYLOAD_DIR/dotnet"
         mkdir -p "$PAYLOAD_DIR/dotnet/lib" "$PAYLOAD_DIR/dotnet/compat" "$PAYLOAD_DIR/dotnet/native/osx"
         cp lib/*.cs "$PAYLOAD_DIR/dotnet/lib/"
-        rm "$PAYLOAD_DIR/dotnet/lib/CryptoHashes.cs" "$PAYLOAD_DIR/dotnet/lib/CryptoChaCha.cs" "$PAYLOAD_DIR/dotnet/lib/CryptoRandom.cs"
+        # (As dotnet/Faithful/Faithful.csproj: lib/'s own cryptography and
+        # TLS stay out, all but X25519, which .NET has no type for.)
+        rm "$PAYLOAD_DIR"/dotnet/lib/Crypto*.cs "$PAYLOAD_DIR/dotnet/lib/SslStream.cs" "$PAYLOAD_DIR"/dotnet/lib/Tls*.cs
+        cp lib/CryptoX25519.cs "$PAYLOAD_DIR/dotnet/lib/"
         cp dotnet/ZeroCompat/Shims.cs dotnet/ZeroCompat/Fibers.cs dotnet/ZeroCompat/Additions.cs \
             dotnet/Faithful/CryptoBridge.cs dotnet/Faithful/ZeroStartup.cs "$PAYLOAD_DIR/dotnet/compat/"
         # The warnings these files give are theirs to answer, not the
@@ -1591,7 +1594,7 @@ case "$TARGET" in
                 -o "$PAYLOAD_DIR/dotnet/native/osx/libzerocompat.dylib"
         else
             # Not built here yet (it would take the layout's lld and
-            # mac/libSystem.tbd): a package from this payload gives ZERO015
+            # mac/libSystem.tbd): a package from this payload gives ZERO016
             # for ZeroTarget=dotnet on a Mac.
             echo "Warning: no libzerocompat.dylib in the payload (not on a Mac): ZeroTarget=dotnet won't build on macOS with it." >&2
         fi

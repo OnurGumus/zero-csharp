@@ -25,9 +25,13 @@
     <Compile Include="../../bin/gen/Stories260K.cs" Condition="'$(Sample)' == 'Llama'" />
     <Compile Include="../../libs/**/*.cs" />
     <Compile Include="../../lib/*.cs" />
-    <!-- Not lib/'s own SHA-2, HMAC, HKDF, ChaCha20-Poly1305 and random numbers:
-         .NET's are the platform's, and a program on .NET should get those. -->
-    <Compile Remove="../../lib/CryptoHashes.cs;../../lib/CryptoChaCha.cs;../../lib/CryptoRandom.cs" />
+    <!-- Not lib/'s own cryptography: its hashes, HMAC, HKDF, ciphers, random
+         numbers, RSA, ECDSA, certificates and TLS. .NET's are the platform's,
+         and a program on .NET should get those. X25519 stays: .NET has no
+         type by that name. (.NET's SslStream takes a .NET Stream, which
+         lib/'s sockets don't give: TLS over them doesn't build here yet.) -->
+    <Compile Remove="../../lib/Crypto*.cs;../../lib/SslStream.cs;../../lib/Tls*.cs" />
+    <Compile Include="../../lib/CryptoX25519.cs" />
     <Compile Include="../ZeroCompat/Shims.cs;../ZeroCompat/Fibers.cs;../ZeroCompat/Additions.cs" />
     <Compile Include="*.cs" />
     <PackageReference Include="System.Numerics.Tensors" Version="11.0.0" />

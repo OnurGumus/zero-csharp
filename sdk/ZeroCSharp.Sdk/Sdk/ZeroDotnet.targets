@@ -60,17 +60,17 @@
   </Target>
 
   <Target Name="ZeroCheckDotnetTarget" BeforeTargets="Restore;_CheckForInvalidConfigurationAndPlatform;CoreCompile">
-    <Error Code="ZERO015" Condition="'$(NETCoreSdkVersion)' != '' and $([MSBuild]::VersionLessThan($([System.Text.RegularExpressions.Regex]::Replace('$(NETCoreSdkVersion)', '-.*', '')), '11.0.100'))"
+    <Error Code="ZERO016" Condition="'$(NETCoreSdkVersion)' != '' and $([MSBuild]::VersionLessThan($([System.Text.RegularExpressions.Regex]::Replace('$(NETCoreSdkVersion)', '-.*', '')), '11.0.100'))"
            Text="ZeroTarget=dotnet needs the .NET SDK 11.0.100 or newer (the program targets $(ZeroDotnetFramework)); this build uses $(NETCoreSdkVersion)." />
-    <Error Code="ZERO015" Condition="'$(ZeroLanguage)' == 'FSharp'"
+    <Error Code="ZERO016" Condition="'$(ZeroLanguage)' == 'FSharp'"
            Text="ZeroTarget=dotnet builds C# projects for now: F# projects compile against the SDK's own FSharp.Core, which isn't built for .NET's runtime yet." />
-    <Error Code="ZERO015" Condition="'$(OutputType)' == 'Library'"
+    <Error Code="ZERO016" Condition="'$(OutputType)' == 'Library'"
            Text="ZeroTarget=dotnet builds programs for now, not libraries: lib/ is compiled into the program, and a library of its own would get a second copy of its types." />
-    <Error Code="ZERO015" Condition="'@(ProjectReference)' != ''"
+    <Error Code="ZERO016" Condition="'@(ProjectReference)' != ''"
            Text="ZeroTarget=dotnet doesn't build projects that reference zero libraries yet (@(ProjectReference->'%(Filename)', ', '))." />
-    <Error Code="ZERO015" Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+    <Error Code="ZERO016" Condition="$([MSBuild]::IsOSPlatform('Windows'))"
            Text="ZeroTarget=dotnet builds on macOS and Linux for now: on Windows, lib/'s calls to the C library need the functions win/runtime.c gives a zero-mode program, as a library for .NET to load." />
-    <Error Code="ZERO015" Condition="$([MSBuild]::IsOSPlatform('OSX')) and !Exists('$(ZeroDotnetDir)native/osx/libzerocompat.dylib')"
+    <Error Code="ZERO016" Condition="$([MSBuild]::IsOSPlatform('OSX')) and !Exists('$(ZeroDotnetDir)native/osx/libzerocompat.dylib')"
            Text="This build of ZeroCSharp.Sdk has no libzerocompat.dylib (payload/dotnet/native/osx), which ZeroTarget=dotnet needs on macOS: it was packed on a machine that couldn't build it." />
   </Target>
 </Project>

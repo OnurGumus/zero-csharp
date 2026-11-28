@@ -25,9 +25,17 @@ and `Console` have the names of .NET's, and types in the program's own assembly 
 other fibers run, and code with no locks stays correct. Those types are not .NET's, so they
 can't be handed to a .NET library that expects a `System.Threading.Tasks.Task`.
 
-The hashes, ciphers and random numbers are the exception: `SHA256`, `HMACSHA256`, `HKDF`,
-`ChaCha20Poly1305` and `RandomNumberGenerator` are .NET's own, which are the platform's.
-`X25519` and `EncryptedStream` are `lib/`'s, because .NET has no types by those names.
+Cryptography is the exception. `lib/`'s own hashes, HMAC, HKDF, ciphers (`ChaCha20Poly1305`,
+`AesGcm`), random numbers, `RSA`, `ECDsa`, certificates and TLS stay out of this build: .NET's
+are the platform's, and a program on .NET gets those. `X25519` and `EncryptedStream` are
+`lib/`'s, because .NET has no types by those names. Three things follow, for now:
+
+- `SslStream` is .NET's, which takes a .NET `Stream`. `lib/`'s sockets give `lib/`'s stream, so
+  TLS over them doesn't build on .NET yet.
+- .NET's `AesGcm` on macOS takes 16-byte tags only (the Crypto and CryptoErrors samples use
+  12-byte ones and stop there).
+- `lib/`'s `X509Certificate2.NotBefore` and `NotAfter` are a `CalendarTime` where .NET's are a
+  `DateTime` (the Certificates sample doesn't build on .NET).
 
 **`--bcl-types`** leaves out every file of `lib/` that re-declares a .NET type, so `Task`,
 `Stream` and `Socket` are .NET's. That is for a program that passes them to other .NET code. It
@@ -96,6 +104,6 @@ The collector leaves such objects alone, as it does .NET's own frozen ones.
 
 - Windows (the functions `win/runtime.c` gives a zero-mode program would have to be a library
   for .NET to load).
-- F# projects, libraries, and projects that reference zero libraries (SDK: ZERO015).
+- F# projects, libraries, and projects that reference zero libraries (SDK: ZERO016).
 - The Links sample: .NET's runtime can't load two structs that refer to each other through a
   generic struct (`Town` holds a `Handle<Road>`, `Road` a `Handle<Town>`).
