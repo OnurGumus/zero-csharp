@@ -388,14 +388,18 @@ namespace System
                 state = (pickSecond ? secondDst : firstDst) ? ZoneState.Daylight : ZoneState.Standard;
                 return pickSecond ? second : first;
             }
+            // Daylight saving time or not at the instant itself: a zone can
+            // end it without changing its offset (Istanbul in 2016).
             if (firstWorks)
             {
-                state = firstDst ? ZoneState.Daylight : ZoneState.Standard;
+                OffsetFromUtc(localTicks - first, out bool isDst);
+                state = isDst ? ZoneState.Daylight : ZoneState.Standard;
                 return first;
             }
             if (secondWorks)
             {
-                state = secondDst ? ZoneState.Daylight : ZoneState.Standard;
+                OffsetFromUtc(localTicks - second, out bool isDst);
+                state = isDst ? ZoneState.Daylight : ZoneState.Standard;
                 return second;
             }
             // Skipped: the standard offset of the two.

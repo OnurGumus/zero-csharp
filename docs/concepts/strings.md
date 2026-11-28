@@ -486,17 +486,63 @@ Check("another culture throws", message == InvariantOnly
   CultureInfo.CurrentCulture          the invariant culture
   new CultureInfo("") / (127)         an invariant culture (writable copy)
   new CultureInfo("de-DE")            CultureNotFoundException, as .NET's
-  x.ToString(provider)                invariant, whatever the provider
+  x.ToString(provider)                the provider's formats: invariant, or
+                                      a NumberFormatInfo of your own
   string.CompareTo, Sort()            by character code, as .NET's invariant
                                       mode does
 ```
 
-`CurrentCulture` and `CurrentUICulture` can be set, to an invariant culture since there is no
-other, and each is one setting for the whole program rather than one per thread.
-`NumberFormatInfo` is read-only and has no public constructor, so code that sets its own decimal
-separator doesn't compile, rather than compiling and being ignored. `DateTimeFormatInfo` is the same
-for dates (see [Work with dates and times](../how-to/work-with-dates-and-times.html)). `TextInfo` and
-`CompareInfo` are the invariant culture's (see [Change case and compare](#change-case-and-compare)).
+`TextInfo` and `CompareInfo` are the invariant culture's (see
+[Change case and compare](#change-case-and-compare)).
+
+### Formats of your own
+
+There is no German culture, but there can be German numbers. A `NumberFormatInfo` you make starts as
+a copy of the invariant one, and every property can be set: separators, signs, group sizes, the
+currency and percent symbols and patterns. `ToString`, `TryFormat` and `Parse` given it use them,
+with .NET's results:
+
+<!-- sample: samples/CustomFormats.cs numbers -->
+```csharp
+var turkish = new NumberFormatInfo
+{
+    NumberDecimalSeparator = ",",
+    NumberGroupSeparator = ".",
+    CurrencySymbol = "₺",
+    CurrencyDecimalSeparator = ",",
+    CurrencyGroupSeparator = ".",
+    CurrencyPositivePattern = 2,
+    CurrencyNegativePattern = 1,
+};
+Is("N", 1234567.891.ToString("N2", turkish), "1.234.567,89");
+Is("C", 1234.5m.ToString("C", turkish), "₺ 1.234,50");
+Is("negative C", (-5m).ToString("C", turkish), "-₺5,00");
+Check("Parse", double.Parse("1.234,5", NumberStyles.Number, turkish) == 1234.5);
+```
+
+A culture you make with `new CultureInfo("")` or `Clone()` has writable formats of its own (a
+`DateTimeFormatInfo` for dates too), and once it is `CurrentCulture`, `ToString()` and `Parse`
+without a provider follow it. As in .NET, `CurrentCulture` belongs to each thread; fibers on one
+thread share it.
+
+<!-- sample: samples/CustomFormats.cs culture -->
+```csharp
+CultureInfo mine = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+mine.NumberFormat.NumberDecimalSeparator = ",";
+mine.DateTimeFormat.ShortDatePattern = "dd.MM.yyyy";
+CultureInfo.CurrentCulture = mine;
+Is("ToString follows the current culture", 3.25.ToString(), "3,25");
+Is("so does a date", new DateTime(2026, 11, 28).ToString("d"), "28.11.2026");
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+Is("and back", 3.25.ToString(), "3.25");
+```
+
+A program that never makes a writable `NumberFormatInfo` or `DateTimeFormatInfo` doesn't carry the
+code that reads them: making one is what links it. `Console.WriteLine($"{n}")` with an integer and no
+format writes the digits itself, with `-`, whatever the current culture; give it a format
+(`{n:D}`) or call `n.ToString()` for the culture's negative sign.
+`scripts/culture-check/check-culture.sh` compares formats of your own with .NET's over millions of
+values.
 
 ## What allocates
 

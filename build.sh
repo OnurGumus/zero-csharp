@@ -139,6 +139,7 @@ ALL_SAMPLES=(
     Cultures
     Dates
     Casing
+    CustomFormats
     Keys
     Tensors
     TensorsAvx
@@ -199,6 +200,7 @@ DOS_SAMPLES=(
     Cultures
     Dates
     Casing
+    CustomFormats
     Keys
     Tensors
     TensorTypes
@@ -272,6 +274,7 @@ ARM_SAMPLES=(
     Cultures
     Dates
     Casing
+    CustomFormats
     Keys
     Tensors
     TensorTypes
@@ -304,6 +307,7 @@ R4_SAMPLES=(
     Cultures
     Dates
     Casing
+    CustomFormats
     "${SMALL_SAMPLES[@]}"
     Blink
 )

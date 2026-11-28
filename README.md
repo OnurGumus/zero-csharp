@@ -102,8 +102,8 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - `Span<T>`, arrays, `stackalloc`, pointers and function pointers
 - Strings with `==`, `+` and `switch`, casing and `StringComparison`, numbers' `ToString(format)`,
   `Parse` and `TryParse`; `lib/` adds arena strings and span operations
-- `CultureInfo` and `NumberFormatInfo` with the invariant culture, as .NET has them with
-  `InvariantGlobalization` set
+- `CultureInfo`, `NumberFormatInfo` and `DateTimeFormatInfo` with the invariant culture, as .NET has
+  them with `InvariantGlobalization` set, and formats of your own (separators, patterns, names)
 - Casts (`is`, `as`, `(T)x`), boxing, records, anonymous types, tuples
 - Lambdas and delegates, `try`/`finally`, `using`
 - Static fields and static constructors, `Main(string[] args)`, top-level statements
