@@ -212,6 +212,15 @@ ZeroSystem:
     mov     w0, #2
     ret
 
+// ZeroRootCertificate(previous, data, length), for lib/CryptoX509Chain.cs:
+// the system's trusted roots one at a time. Linux and Android keep them in
+// files, which X509Chain reads itself, so here there are none: null.
+    .global ZeroRootCertificate
+    .type ZeroRootCertificate, %function
+ZeroRootCertificate:
+    mov     x0, #0
+    ret
+
 // fcntl(fd, command, argument), for lib/Sockets.cs. fcntl is variadic; on
 // Linux a variadic call passes its arguments as any other does.
     .text

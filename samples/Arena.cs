@@ -326,7 +326,32 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine($"Static kept from a scope on a lasting arena: {s_kept.Length == 4}, a second Dispose left the newer scope: {stillInFrame}");
         unsafe { frame.Destroy(); } // SAFETY: as above.
+
+        // zerocore's own caches (the default comparers, the encodings) made for
+        // the first time inside a scope: they come from static constructors, so
+        // they live outside it, and DebugChecks finds no static pointing in.
+        Arena.DebugChecks = true;
+        Arena checkedFrame = Arena.Create(1024, "checked");
+        Arena.DebugChecks = false;
+        bool cachesWork;
+        Arena.ObjectScope third;
+        unsafe { third = checkedFrame.OpenObjectScope(); } // SAFETY: nothing made inside is kept.
+        using (third)
+        {
+            cachesWork = SameByDefault(new Point { X = 1, Y = 2 }, new Point { X = 1, Y = 2 })
+                && OrderByDefault("a", "b") < 0
+                && System.Text.Encoding.UTF8.GetByteCount("\u00e9") == 2;
+        }
+        unsafe { checkedFrame.Destroy(); } // SAFETY: as above.
+        Console.WriteLine($"Comparers and encodings first made inside a scope: {cachesWork}");
     }
+
+    // Shared generic code, where the compiler can't tell T: it reads Default itself.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static bool SameByDefault<T>(T a, T b) => System.Collections.Generic.EqualityComparer<T>.Default.Equals(a, b);
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static int OrderByDefault<T>(T a, T b) => System.Collections.Generic.Comparer<T>.Default.Compare(a, b);
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     static object Opaque(object value) => value;

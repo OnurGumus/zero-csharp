@@ -40,7 +40,8 @@ closes. `samples/Https.cs` fetches a page this way: `./run.sh Https github.com /
 
 ## What authenticating checks
 
-The handshake (TLS 1.3, RFC 8446) agrees on fresh keys with X25519, so recording the connection
+The handshake (TLS 1.3, RFC 8446) agrees on fresh keys with X25519 (or P-256, when the server asks
+for it), so recording the connection
 and later learning the server's key doesn't open it. Then it checks the server in three ways, and
 fails if any check fails:
 
@@ -60,11 +61,17 @@ returns false with the reason, for example:
 SslStream: the server's certificate isn't trusted. The certificate isn't for 127.0.0.1.
 ```
 
+That holds whatever the server sends, and also when it hangs up halfway, because lib's
+`NetworkStream` doesn't throw either: a broken connection reads as 0 and drops what is written. Over
+a stream of your own that throws, the throw still ends the program.
+
 ## Choosing what to trust
 
-The roots come from the system's PEM bundle on Linux, macOS and Android, as `X509Chain` reads them.
-Windows' certificate store isn't read yet. On Windows, and anywhere without a bundle, set
-`SSL_CERT_FILE` to a PEM file of roots, or give the roots in code:
+The roots come from the system, as `X509Chain` reads them: Windows' ROOT certificate store, and the
+PEM bundle Linux, macOS and Android keep. Windows fills its store as it goes: it adds a root the
+first time its own TLS code (a browser, say) needs one. So a little-used Windows machine may lack a
+root a site needs, and the connection is refused with `UntrustedRoot` or `PartialChain`. Elsewhere,
+or to choose the roots yourself, set `SSL_CERT_FILE` to a PEM file of roots, or give them in code:
 
 ```csharp no-sample
 var policy = new X509ChainPolicy();
@@ -105,7 +112,7 @@ connection inside one is fine.
 |---|---|
 | Versions | TLS 1.3 only. A server that speaks only TLS 1.2 is refused, with a message saying so |
 | Cipher suites | AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305 |
-| Key exchange | X25519. A server that only does P-256 is refused (most do both) |
+| Key exchange | X25519, or P-256 when the server asks for it (in constant time, like X25519). Not P-384 or P-521 |
 | Server certificates | RSA (2048 bits and up, signing with PSS) and ECDSA P-256, P-384 |
 | ALPN | `ApplicationProtocols`, an array here (a `List` in .NET) |
 | Client certificates | none: a server that asks gets an empty list, and may still refuse |

@@ -164,6 +164,12 @@ jobs:
         env:
           BFLAT_DIR: ${{ github.workspace }}/bflat/layouts/linux-glibc-x64
         run: ./test.sh --win
+      # For windows-native's HTTPS check, which needs Windows' own root store.
+      - name: Build Https for Windows
+        working-directory: zero-csharp
+        env:
+          BFLAT_DIR: ${{ github.workspace }}/bflat/layouts/linux-glibc-x64
+        run: ./build.sh --win Https
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -224,6 +230,17 @@ jobs:
             fi
           done
           exit $failed
+      # SslStream with the roots from Windows' ROOT store (win/runtime.c's
+      # ZeroRootCertificate), which Wine only imitates. Needs the network, so
+      # it tries three hosts before failing.
+      - name: HTTPS with Windows' root store
+        shell: bash
+        run: |
+          for host in github.com www.microsoft.com letsencrypt.org; do
+            # No "/" argument: Git Bash would turn it into a Windows path.
+            if ./bin/win/Https.exe "$host" < /dev/null; then exit 0; fi
+          done
+          exit 1
 
   uefi:
     needs: bflat

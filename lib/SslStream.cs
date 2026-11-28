@@ -7,22 +7,28 @@
 //   int n = tls.Read(buffer);
 //
 // AuthenticateAsClient runs the TLS 1.3 handshake (RFC 8446): it offers
-// AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305 with an X25519 key share,
+// AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305 with an X25519 key share
+// (and a P-256 one if the server asks for it with a HelloRetryRequest),
 // checks the server's certificate chain (X509Chain, with the system's roots
 // unless the options give a chain policy), that the certificate is for the
 // host, and that the server's key signed the handshake. Then Read and Write
 // carry data in encrypted records.
 //
-// Only TLS 1.3, and only as a client. A server that speaks only TLS 1.2 or
-// asks for another key share (HelloRetryRequest, say for P-256) is refused.
+// Only TLS 1.3, and only as a client. A server that speaks only TLS 1.2, or
+// wants a key share other than X25519 or P-256, is refused.
 // No session resumption, no 0-RTT, no client certificates (a server that
 // asks gets an empty Certificate message, as RFC 8446 allows).
 //
 // What differs from .NET:
 // - A throw ends the program unless a Catch.Run is waiting (lib/Catch.cs).
-//   TryAuthenticateAsClient doesn't throw for anything the server does: it
-//   returns false with the error. (Read and Write still throw IOException for
-//   a broken connection, as NetworkStream does.)
+//   TryAuthenticateAsClient returns false with the reason instead, whatever
+//   the server sends and however it hangs up, as long as the inner stream
+//   doesn't throw: lib's NetworkStream doesn't (a broken connection reads as
+//   0 and drops writes, and its Error says why), so over a TcpClient it never
+//   throws (scripts/tls-interop.sh checks hang-ups). A stream of your own that
+//   throws still ends the program. After the handshake, Read and Write throw
+//   IOException for a record that fails its check or an alert, as .NET's do;
+//   a connection that just ends reads as 0.
 // - ApplicationProtocols is an array, not a List.
 // - Dispose doesn't send close_notify, as in .NET; ShutdownAsync does.
 // - EnabledSslProtocols may only be None (the default) or include Tls13.
@@ -164,6 +170,8 @@ namespace System.Net.Security
         internal byte[] TestClientHello;
         internal byte[] TestPrivateKey;
         internal bool TestNoChangeCipherSpec;
+        internal byte[] TestClientHello2;     // after a HelloRetryRequest
+        internal byte[] TestP256PrivateKey;
 
         public SslStream(Stream innerStream) : this(innerStream, false, null) { }
 
@@ -217,7 +225,8 @@ namespace System.Net.Security
 
         /// <summary>
         /// Runs the handshake; false, with the reason, if the server can't be trusted or
-        /// doesn't speak TLS 1.3 as this does. Doesn't throw for anything the server sends.
+        /// doesn't speak TLS 1.3 as this does. Doesn't throw for anything the server sends or does, over lib's NetworkStream
+        /// (a stream of your own that throws still ends the program).
         /// After a failure the stream is of no further use.
         /// </summary>
         public bool TryAuthenticateAsClient(SslClientAuthenticationOptions options, out string error)

@@ -651,6 +651,13 @@ int getentropy(void *buffer, usize length)
     return EFI_ERROR(rng->get_rng(rng, 0, length, buffer)) ? -1 : 0;
 }
 
+// Root certificates: none here, as for directories below.
+const void *ZeroRootCertificate(const void *previous, const unsigned char **data, int *length)
+{
+    (void)previous; (void)data; (void)length;
+    return 0;
+}
+
 // Directories, for lib/Directory.cs: there are none to list here, so opendir
 // finds nothing. (X509Chain's search for the system's root certificates looks
 // for Android's directory of them and links these in.)

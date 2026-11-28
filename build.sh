@@ -147,7 +147,7 @@ ALL_SAMPLES=(
 )
 # Samples WebAssembly can't run: the fiber samples switch stacks, which a WebAssembly
 # program has no way to do, and Catches, CryptoErrors and Cultures catch exceptions with Catch.Run,
-# which jumps back up the stack, which it can't do either.
+# which jumps back up the stack, which it can't do either. Https needs sockets.
 NOT_WASM=" Fibers Timers Tasks SmallFibers SmallChannels SmallScratch SmallCatches Network Catches CryptoErrors Cultures Https "
 # Programs with kernels for the GPU (Metal): only --gpu builds them.
 GPU_SAMPLES=(Gpu)
