@@ -47,13 +47,21 @@ namespace System.Globalization
 
         private CompareInfo() { }
 
-        // A named culture's: its name, and the same ordinal comparisons (there
-        // is no collation data yet).
-        internal CompareInfo(string name, int lcid)
+        // How a named culture sorts (Collator), or null: the invariant
+        // culture compares ordinally.
+        private readonly Linguistic _linguistic;
+
+        internal CompareInfo(string name, int lcid, Linguistic linguistic)
         {
             _name = name;
             _lcid = lcid;
+            _linguistic = linguistic;
         }
+
+        // Whether to compare with the culture's collation: a named culture,
+        // and options that aren't Ordinal or OrdinalIgnoreCase.
+        private bool Linguistic(CompareOptions options)
+            => _linguistic != null && (options & (CompareOptions.Ordinal | CompareOptions.OrdinalIgnoreCase)) == 0;
 
         internal static CompareInfo Invariant => s_invariant ??= new CompareInfo();
 
@@ -103,14 +111,18 @@ namespace System.Globalization
                 return string2 == null ? 0 : -1;
             if (string2 == null)
                 return 1;
-            return Compare(Number.AsSpan(string1), Number.AsSpan(string2), ignoreCase);
+            return Compare(Number.AsSpan(string1), Number.AsSpan(string2), options, ignoreCase);
         }
 
         public int Compare(ReadOnlySpan<char> string1, ReadOnlySpan<char> string2, CompareOptions options = CompareOptions.None)
-            => Compare(string1, string2, IgnoreCase(options, Use.Compare));
+            => Compare(string1, string2, options, IgnoreCase(options, Use.Compare));
 
-        private static int Compare(ReadOnlySpan<char> a, ReadOnlySpan<char> b, bool ignoreCase)
-            => ignoreCase ? TextCasing.CompareIgnoreCase(a, b) : TextCasing.CompareOrdinal(a, b);
+        private int Compare(ReadOnlySpan<char> a, ReadOnlySpan<char> b, CompareOptions options, bool ignoreCase)
+        {
+            if (Linguistic(options))
+                return _linguistic.Compare(a, b, options);
+            return ignoreCase ? TextCasing.CompareIgnoreCase(a, b) : TextCasing.CompareOrdinal(a, b);
+        }
 
         public int Compare(string string1, int offset1, string string2, int offset2)
             => Compare(string1, offset1, string2, offset2, CompareOptions.None);
@@ -131,7 +143,7 @@ namespace System.Globalization
                 return string2 == null ? 0 : -1;
             if (string2 == null)
                 return 1;
-            return Compare(Number.AsSpan(string1).Slice(offset1, length1), Number.AsSpan(string2).Slice(offset2, length2), ignoreCase);
+            return Compare(Number.AsSpan(string1).Slice(offset1, length1), Number.AsSpan(string2).Slice(offset2, length2), options, ignoreCase);
         }
 
         private static bool Fits(string s, int offset, int length)
@@ -163,7 +175,14 @@ namespace System.Globalization
 
         // An empty prefix is one before the options are checked, as in .NET.
         public bool IsPrefix(ReadOnlySpan<char> source, ReadOnlySpan<char> prefix, CompareOptions options = CompareOptions.None)
-            => prefix.Length == 0 || TextCasing.StartsWith(source, prefix, IgnoreCase(options, Use.Affix));
+        {
+            if (prefix.Length == 0)
+                return true;
+            bool ignoreCase = IgnoreCase(options, Use.Affix);
+            if (Linguistic(options))
+                return _linguistic.Find(source, prefix, options, Search.Prefix, out _) >= 0;
+            return TextCasing.StartsWith(source, prefix, ignoreCase);
+        }
 
         public bool IsSuffix(string source, string suffix) => IsSuffix(source, suffix, CompareOptions.None);
 
@@ -177,7 +196,14 @@ namespace System.Globalization
         }
 
         public bool IsSuffix(ReadOnlySpan<char> source, ReadOnlySpan<char> suffix, CompareOptions options = CompareOptions.None)
-            => suffix.Length == 0 || TextCasing.EndsWith(source, suffix, IgnoreCase(options, Use.Affix));
+        {
+            if (suffix.Length == 0)
+                return true;
+            bool ignoreCase = IgnoreCase(options, Use.Affix);
+            if (Linguistic(options))
+                return _linguistic.Find(source, suffix, options, Search.Suffix, out _) >= 0;
+            return TextCasing.EndsWith(source, suffix, ignoreCase);
+        }
 
         // ---- IndexOf ----
 
@@ -213,11 +239,14 @@ namespace System.Globalization
         }
 
         public int IndexOf(ReadOnlySpan<char> source, ReadOnlySpan<char> value, CompareOptions options = CompareOptions.None)
-            => TextCasing.IndexOf(source, value, IgnoreCase(options, Use.Search));
+            => IndexOf(source, value, options, out _);
 
         public int IndexOf(ReadOnlySpan<char> source, ReadOnlySpan<char> value, CompareOptions options, out int matchLength)
         {
-            int found = IndexOf(source, value, options);
+            bool ignoreCase = IgnoreCase(options, Use.Search);
+            if (Linguistic(options) && value.Length != 0)
+                return _linguistic.Find(source, value, options, Search.First, out matchLength);
+            int found = TextCasing.IndexOf(source, value, ignoreCase);
             matchLength = found < 0 ? 0 : value.Length;
             return found;
         }
@@ -305,11 +334,14 @@ namespace System.Globalization
         }
 
         public int LastIndexOf(ReadOnlySpan<char> source, ReadOnlySpan<char> value, CompareOptions options = CompareOptions.None)
-            => TextCasing.LastIndexOf(source, value, IgnoreCase(options, Use.Search));
+            => LastIndexOf(source, value, options, out _);
 
         public int LastIndexOf(ReadOnlySpan<char> source, ReadOnlySpan<char> value, CompareOptions options, out int matchLength)
         {
-            int found = LastIndexOf(source, value, options);
+            bool ignoreCase = IgnoreCase(options, Use.Search);
+            if (Linguistic(options) && value.Length != 0)
+                return _linguistic.Find(source, value, options, Search.Last, out matchLength);
+            int found = TextCasing.LastIndexOf(source, value, ignoreCase);
             matchLength = found < 0 ? 0 : value.Length;
             return found;
         }
@@ -330,6 +362,11 @@ namespace System.Globalization
         }
 
         public int GetHashCode(ReadOnlySpan<char> source, CompareOptions options)
-            => TextCasing.GetHashCode(source, IgnoreCase(options, Use.Compare));
+        {
+            bool ignoreCase = IgnoreCase(options, Use.Compare);
+            if (Linguistic(options))
+                return _linguistic.GetHashCode(source, options);
+            return TextCasing.GetHashCode(source, ignoreCase);
+        }
     }
 }

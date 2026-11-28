@@ -103,7 +103,7 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - Strings with `==`, `+` and `switch`, casing and `StringComparison`, numbers' `ToString(format)`,
   `Parse` and `TryParse`; `lib/` adds arena strings and span operations
 - `CultureInfo` with the invariant culture and about 80 built-in ones (numbers, dates, names,
-  Turkish casing), and formats of your own; comparing stays ordinal
+  Turkish casing, sorting in each language's order), and formats of your own
 - Casts (`is`, `as`, `(T)x`), boxing, records, anonymous types, tuples
 - Lambdas and delegates, `try`/`finally`, `using`
 - Static fields and static constructors, `Main(string[] args)`, top-level statements

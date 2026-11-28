@@ -130,7 +130,7 @@ namespace System.Globalization
                 CultureData.Int(row, CultureData.ANSICodePage), CultureData.Int(row, CultureData.OEMCodePage),
                 CultureData.Int(row, CultureData.MacCodePage), CultureData.Int(row, CultureData.EBCDICCodePage),
                 CultureData.Flag(row, CultureData.IsRightToLeft), isReadOnly);
-            _compareInfo = new CompareInfo(_name, _lcid);
+            _compareInfo = new CompareInfo(_name, _lcid, new Collator(row, _twoLetter == "en"));
         }
 
         // A copy (Clone, ReadOnly).
@@ -207,8 +207,18 @@ namespace System.Globalization
         }
 
         // From now on char.ToUpper(c) and string.ToUpper() ask the current
-        // culture (see TextCasing.s_currentMode).
-        private static unsafe void UseCurrentCasing() => TextCasing.s_currentMode = &CurrentCasingMode;
+        // culture (see TextCasing.s_currentMode), and so do string's culture
+        // comparisons (StringOps.s_current).
+        private static unsafe void UseCurrentCasing()
+        {
+            TextCasing.s_currentMode = &CurrentCasingMode;
+            StringOps.s_current ??= new CurrentComparisons();
+        }
+
+        private sealed class CurrentComparisons : StringOps.CultureComparisons
+        {
+            internal override CompareInfo Current => CurrentCulture.CompareInfo;
+        }
 
         private static int CurrentCasingMode() => CurrentCulture.TextInfo._mode;
 
@@ -334,8 +344,9 @@ namespace System.Globalization
                 throw new InvalidOperationException("Instance is read-only.");
         }
 
-        // Casing by the culture's rules (Turkish i for tr and az); comparing
-        // stays ordinal, as in .NET's invariant mode.
+        // Casing by the culture's rules (Turkish i for tr and az), and
+        // comparing in the culture's order (Collator); the invariant culture
+        // compares ordinally, as in .NET's invariant mode.
         public TextInfo TextInfo => _textInfo ?? TextInfo.Invariant;
         public CompareInfo CompareInfo => _compareInfo ?? CompareInfo.Invariant;
 

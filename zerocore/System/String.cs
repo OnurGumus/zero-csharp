@@ -56,9 +56,10 @@ namespace System
 
         public bool Equals(string other) => Equals(this, other);
 
-        // By UTF-16 code unit, as string.CompareOrdinal does. .NET's CompareTo
-        // uses the current culture's rules; zero mode has no cultures. So
-        // "B" goes before "a" here ('B' is 66, 'a' is 97), not after it.
+        // With the current culture's rules, as in .NET. Until a program sets
+        // CurrentCulture that's the invariant culture's, which here is
+        // ordinal (.NET's invariant mode): "B" goes before "a" ('B' is 66,
+        // 'a' is 97). With a named culture, its collation: "a" before "B".
         public int CompareTo(string other) => StringOps.Compare(this, other, StringComparison.CurrentCulture);
 
         public int CompareTo(object obj) => obj is string other ? CompareTo(other) : obj == null ? 1 : throw new ArgumentException("Object must be of type String.");
