@@ -33,12 +33,12 @@ CryptoErrors|RSA private part|as above: .NET's RSA.Create() has a private key to
 CryptoErrors|chain of null|.NET's X509Chain.Build(null) throws ArgumentException; lib/'s throws ArgumentNullException
 Certificates|no growth|objects go to the GC's heap, not to arenas (AllocateObjectsHere has no effect)
 Certificates|elements in order|.NET's chain holds its own copies of the certificates, so an element isn't the object the program passed; lib/'s is
-Certificates|signed by another key|.NET's chain builder reports a forged certificate with other status flags than lib/'s (the check wants exactly NotSignatureValid and PartialChain)
-Certificates|SHA-1|as above, for a certificate signed with SHA-1
-Certificates|RSA-PSS in a certificate|as above, for a certificate signed with RSA-PSS
-Certificates|element status|.NET puts a date outside a certificate's validity on other elements of the chain than lib/'s does
-Certificates|@macos 1025: key read|macOS's RSA doesn't take a key of 1025 bits
-Certificates|@macos 1025: PSS|as above
-Certificates|@macos 2047: key read|macOS's RSA doesn't take a key of 2047 bits
-Certificates|@macos revocation unknown|macOS's chain builder answers differently for a certificate that names no revocation service
-Certificates|@macos only the leaf overlooked|as above
+Certificates|signed by another key|.NET reports a certificate whose signature doesn't verify as PartialChain alone (seen on Linux and macOS); lib/ reports NotSignatureValid with it
+Certificates|SHA-1|.NET accepts a certificate signed with SHA-1: the chain builds, on Linux and macOS. lib/ has no SHA-1 and refuses it
+Certificates|RSA-PSS in a certificate|.NET accepts a certificate signed with RSA-PSS on Linux, and on macOS reports PartialChain alone; lib/ doesn't verify RSA-PSS in certificates and reports NotSignatureValid and PartialChain
+Certificates|element status|.NET checks a trusted root's dates too: with all three certificates expired, each element carries NotTimeValid. lib/ checks only the certificates below a trusted root, so the root's element has no status
+Certificates|@macos 1025: key read|macOS's RSA reports KeySize in whole bytes: 1032 for a key of 1025 bits (the key is read)
+Certificates|@macos 1025: PSS|the PSS signature made with the 1025-bit key doesn't verify on macOS (not looked into further)
+Certificates|@macos 2047: key read|as 1025: macOS reports 2048 for a key of 2047 bits
+Certificates|@macos revocation unknown|macOS reports RevocationStatusUnknown without OfflineRevocation (Linux reports both, as lib/ does)
+Certificates|@macos only the leaf overlooked|macOS builds the chain with only the leaf's revocation overlooked (Linux refuses it, as lib/ does)
