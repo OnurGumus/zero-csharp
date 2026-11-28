@@ -288,3 +288,29 @@ On Linux, bflat with `--stdlib:none` adds nothing but the system's start files a
 Windows it also adds `shcrt.lib`, built from bflattened/runtime (a fork of dotnet/runtime, MIT).
 zerocore was compared with zerolib mechanically; [its README](zerocore/README.md#where-the-code-comes-from-and-the-license)
 says how and what matched.
+
+### Can I ship a closed-source app built with this?
+
+Yes. Nothing linked into a program is AGPL or GPL, so you never have to publish your source. What
+you owe is the usual courtesy of permissive licenses: ship their notices with the program, in a file
+next to it, its documentation or an about box.
+
+Every program needs zerocore's [`LICENSE`](zerocore/LICENSE) and
+[`THIRD-PARTY-NOTICES.txt`](zerocore/THIRD-PARTY-NOTICES.txt) (.NET's MIT notice, and AMD's BSD notice if
+you use the tensor functions `SinPi`, `CosPi` or `TanPi`). `lib/` and the target runtimes are under the
+same MIT license. Beyond that, it depends on the target:
+
+| Target | Also in the program | What you do |
+|---|---|---|
+| Linux | glibc, linked dynamically (LGPL); gcc's start files (GCC Runtime Library Exception) | nothing |
+| Windows, macOS, iOS, Android | the system's C library | nothing |
+| WebAssembly | wasi-libc (MIT, Apache 2.0, BSD) | include its notice |
+| UEFI | musl's math functions in `efi/libm` (MIT) | include [`efi/libm/COPYRIGHT`](efi/libm/COPYRIGHT) |
+| Pico 2, Uno R4 | picolibc (BSD-style) | include its notices |
+| Commodore 64 | llvm-mos's C library (Apache 2.0 with LLVM exception) | nothing |
+| DOS | the HX DOS extender's runtime, needed next to the program | nothing: HX's license lets it be "freely distributed with any application" |
+
+Libraries you add yourself keep their own licenses (SDL3's zlib license asks for nothing in a binary).
+
+The bflat compiler and the `ZeroCSharp.Bflat.*` packages stay on your machine as tools, so their
+AGPL doesn't reach your program. This isn't legal advice.
