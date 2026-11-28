@@ -1,7 +1,7 @@
 PASS numbers (7 checks)
 PASS dates (6 checks)
 PASS casing (7 checks)
-PASS CurrentCulture (4 checks)
+PASS CurrentCulture (5 checks)
 PASS the table (7 checks)
 
 All checks passed.

@@ -1,7 +1,8 @@
 // Writes zerocore/System/Globalization/CultureData.cs: what zerocore's
 // CultureInfo, NumberFormatInfo, DateTimeFormatInfo and TextInfo need to give
 // .NET's answers for a set of common cultures, read from the .NET this tool
-// runs on (with ICU: InvariantGlobalization is off).
+// runs on (with ICU: InvariantGlobalization is off); and, with Collation.cs,
+// CollationData.cs: how each of them sorts text.
 //
 //   dotnet run --project scripts/gen-cultures
 //
@@ -151,6 +152,10 @@ sb.Append("    }\n}\n");
 string path = Path.Combine(FindRoot(), "zerocore/System/Globalization/CultureData.cs");
 File.WriteAllText(path, sb.ToString());
 Console.WriteLine($"{path}: {names.Count} cultures, {strings.Count} strings, {records.Count + table.Count + pool.Count} bytes of tables");
+
+var collationLog = new StringBuilder();
+Collation.Write(names, FindRoot(), collationLog);
+Console.Write(collationLog);
 
 static void Emit(StringBuilder sb, string name, List<byte> bytes, string comment)
 {
