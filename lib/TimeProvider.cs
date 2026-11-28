@@ -19,8 +19,7 @@
 // and then wait on the timers it creates.
 //
 // What differs from .NET:
-// - GetUtcNow returns a CalendarTime (lib/Clock.cs), as there is no
-//   DateTimeOffset. No LocalTimeZone or GetLocalNow: there are no time zones.
+// - No LocalTimeZone or GetLocalNow.
 // - No Task.WaitAsync(TimeSpan, TimeProvider): a timed-out wait would fault
 //   its task with a TimeoutException, and tasks here can't fault. Use
 //   Task.WhenAny with Task.Delay(timeout, provider) instead.
@@ -38,8 +37,8 @@ namespace System
 
         protected TimeProvider() { }
 
-        /// <summary>The current date and time in UTC (.NET returns a DateTimeOffset).</summary>
-        public virtual CalendarTime GetUtcNow() => Clock.UtcNow;
+        /// <summary>The current date and time in UTC.</summary>
+        public virtual DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow;
 
         /// <summary>Ticks of GetTimestamp per second: 1,000,000,000 for the system's (nanoseconds).</summary>
         public virtual long TimestampFrequency => 1_000_000_000;

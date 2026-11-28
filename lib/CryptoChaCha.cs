@@ -283,7 +283,7 @@ public sealed class ChaCha20Poly1305 : IDisposable
     public ChaCha20Poly1305(ReadOnlySpan<byte> key)
     {
         if (key.Length != KeySizeInBytes)
-            throw new ArgumentException("The key must be 32 bytes.", nameof(key));
+            throw new CryptographicException("The key must be 32 bytes.");
         key.CopyTo(_key);
     }
 

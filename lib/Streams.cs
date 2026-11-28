@@ -682,7 +682,8 @@ public partial class FileStream : Stream
     int _writeLen;           // bytes in _buffer waiting to be written
     bool _read;              // the file was last read, so a write must seek first (C's rule)
     bool _busy;              // an async operation is running (lib/FileAsync.cs)
-    readonly bool _canRead, _canWrite, _canSeek;
+    readonly bool _canRead, _canWrite;
+    readonly long _appendStart = -1; // FileMode.Append: where the file ended when opened
 
     /// <summary>The path the file was opened with.</summary>
     public virtual string Name { get; }
@@ -724,10 +725,23 @@ public partial class FileStream : Stream
         Name = path;
         _canRead = (access & FileAccess.Read) != 0;
         _canWrite = write;
-        _canSeek = mode != FileMode.Append;
         _file = OpenFile(path, mode, write, out error);
         if (error != FileError.None)
             return;
+        if (mode == FileMode.Append)
+        {
+            // As .NET: the stream starts at the end and can seek, though not
+            // back over what the file held. The file is still opened with
+            // fopen's "a", so every write goes to the end wherever Seek
+            // went (two programs can append to one log), where .NET's would
+            // overwrite what this stream itself appended.
+            _appendStart = _file.Length;
+            if (!_file.Seek(_appendStart))
+            {
+                unsafe { _file.Close(); } // SAFETY: not used after this
+                error = FileError.Other;
+            }
+        }
         _file.Unbuffer();
         if (bufferSize > 1)
             _buffer = new byte[bufferSize];
@@ -789,7 +803,7 @@ public partial class FileStream : Stream
     /// <inheritdoc/>
     public override bool CanWrite => _canWrite && IsOpen;
     /// <inheritdoc/>
-    public override bool CanSeek => _canSeek && IsOpen;
+    public override bool CanSeek => IsOpen;
 
     /// <inheritdoc/>
     public override long Length
@@ -860,7 +874,7 @@ public partial class FileStream : Stream
         long position = _file.Position - (_readLen - _readPos);
         _readPos = _readLen = 0;
         _read = false;
-        if (_canSeek && !_file.Seek(position))
+        if (!_file.Seek(position))
         {
             _busy = false; // an async write ends here (see FileAsync.cs's WriteOutAsync)
             throw new IOException(string.Concat("FileStream: couldn't seek in '", Name, "'"));
@@ -921,8 +935,6 @@ public partial class FileStream : Stream
     public override long Seek(long offset, SeekOrigin origin)
     {
         EnsureOpen();
-        if (!_canSeek)
-            throw new NotSupportedException("FileStream: this stream can't seek");
         long from = origin switch
         {
             SeekOrigin.Begin => 0,
@@ -931,6 +943,8 @@ public partial class FileStream : Stream
             _ => throw new ArgumentException(nameof(origin)),
         };
         long target = from + offset;
+        if (target < _appendStart)
+            throw new IOException("FileStream: FileMode.Append can't seek back over what the file held when opened");
         FlushWrites();
         _readPos = _readLen = 0;
         _read = false;

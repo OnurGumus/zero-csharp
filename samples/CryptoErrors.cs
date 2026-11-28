@@ -166,7 +166,7 @@ public static class Program
     static void Arguments()
     {
         byte[] key = Numbered(32, 1);
-        Check("short key", Catch.Run(() => new ChaCha20Poly1305(new byte[16])) is ArgumentException);
+        Check("short key", Catch.Run(() => new ChaCha20Poly1305(new byte[16])) is CryptographicException);
         using var aead = new ChaCha20Poly1305(key);
         Check("short nonce", Catch.Run(() => aead.Encrypt(new byte[8], new byte[4], new byte[4], new byte[16])) is ArgumentException);
         Check("short tag", Catch.Run(() => aead.Encrypt(new byte[12], new byte[4], new byte[4], new byte[12])) is ArgumentException);
@@ -180,7 +180,7 @@ public static class Program
             HKDF.Expand(HashAlgorithmName.SHA256, new byte[32], 255 * 32 + 1)) is ArgumentOutOfRangeException);
         Check("HKDF short key", Catch.Run(() =>
             HKDF.Expand(HashAlgorithmName.SHA256, new byte[16], 32)) is ArgumentException);
-        Check("unknown hash", Catch.Run(() => IncrementalHash.CreateHash(new HashAlgorithmName("MD5"))) is CryptographicException);
+        Check("unknown hash", Catch.Run(() => IncrementalHash.CreateHash(new HashAlgorithmName("MD4"))) is CryptographicException);
         Check("same key both ways", Catch.Run(() =>
             new EncryptedStream(new MemoryStream(), key, new byte[12], key, new byte[12])) is ArgumentException);
         Check("short secret", Catch.Run(() =>

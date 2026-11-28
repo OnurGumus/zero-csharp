@@ -32,8 +32,7 @@
 // - A handler that takes longer than the period delays the next tick
 //   instead of overlapping it; after it, the timer fires once at once and
 //   keeps its rhythm from there, rather than making up every tick it missed.
-// - System.Timers: SignalTime is a CalendarTime (lib/Clock.cs) in UTC, not a
-//   local DateTime. Each timer reuses one ElapsedEventArgs, so a tick
+// - System.Timers: each timer reuses one ElapsedEventArgs, so a tick
 //   allocates nothing: a handler that keeps e finds it changed by the next
 //   tick. Elapsed is a list of handlers kept by the timer (delegates here
 //   can't be combined); -= removes the same delegate object that += added.
@@ -191,12 +190,12 @@ namespace System.Timers
     {
         internal long _unixMilliseconds;
 
-        public ElapsedEventArgs(CalendarTime signalTime) => _unixMilliseconds = signalTime.ToUnixMilliseconds();
+        public ElapsedEventArgs(DateTime signalTime) => _unixMilliseconds = new DateTimeOffset(signalTime.ToUniversalTime()).ToUnixTimeMilliseconds();
 
         internal ElapsedEventArgs() { }
 
-        /// <summary>When the timer fired, in UTC (.NET gives a local DateTime).</summary>
-        public CalendarTime SignalTime => CalendarTime.FromUnixMilliseconds(_unixMilliseconds);
+        /// <summary>When the timer fired, in local time.</summary>
+        public DateTime SignalTime => DateTimeOffset.FromUnixTimeMilliseconds(_unixMilliseconds).LocalDateTime;
     }
 
     /// <summary>
