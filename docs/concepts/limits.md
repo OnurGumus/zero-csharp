@@ -24,11 +24,13 @@ With zerocore, as `build.sh` builds it:
   which run once even when several threads reach a type at the same time.
 - **Strings**: `==`, `+` (with numbers too: `"n=" + 5`), `switch`, `ToString()` and `string.Format`
   with .NET's standard format strings (`"X4"`, `"F2"`, `"N0"`, `"{0,8:E2}"`), `Parse` and `TryParse`
-  on every number type, with `NumberStyles`, plus `lib/` for the rest (see
+  on every number type, with `NumberStyles`, `ToUpper`/`ToLower`, `ToTitleCase` and the
+  `StringComparison` overloads (ordinal, as .NET's invariant mode), plus `lib/` for the rest (see
   [Strings without a GC](strings.html)).
-- **Cultures**: `CultureInfo` and `NumberFormatInfo`, with the invariant culture as the only one, as
-  in .NET with `InvariantGlobalization` set: any other culture throws `CultureNotFoundException` (see
-  [Cultures](strings.html#cultures)).
+- **Cultures**: the invariant culture and about 80 common cultures from .NET's data, with their
+  numbers, dates, names and casing (Turkish i); others throw `CultureNotFoundException`. Formats of
+  your own work, and `CurrentCulture` is per thread. Comparing and sorting stay ordinal: there is no
+  collation (see [Cultures](strings.html#cultures)).
 - **Dates and times**: `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`,
   `TimeZoneInfo`, `ISOWeek` and `Stopwatch`, with .NET's results, messages and formats; local time
   from the system's zone (see [Work with dates and times](../how-to/work-with-dates-and-times.html)).

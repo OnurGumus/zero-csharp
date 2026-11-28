@@ -18,8 +18,9 @@ trap 'rm -rf "$work"' EXIT
 cp "$here/Program.cs" "$work/"
 # In a namespace of its own, so it can't reach .NET's internals by name, and
 # with the C library found by name instead of at link time.
-for f in TimeSpan DateTime DateTimeKind DateTimeOffset DateOnly DateTimeFormat TimeZoneInfo Globalization/ISOWeek; do
-    perl -pe 'print "using System;\nusing System.Runtime.InteropServices;\n" if $. == 1;
+for f in TimeSpan DateTime DateTimeKind DateTimeOffset DateOnly DateTimeFormat TimeZoneInfo Globalization/ISOWeek \
+         Globalization/DateTimeFormatInfo Globalization/TextCasing Globalization/CharUnicodeInfo Globalization/UnicodeData; do
+    perl -pe 'print "using System;\nusing System.Globalization;\nusing System.Runtime.InteropServices;\n" if $. == 1;
               s/^namespace System(\.Globalization)?$/namespace ZeroTest/;
               s/DllImport\("\*"\)/DllImport("libc")/' \
         "$root/zerocore/System/$f.cs" > "$work/$(basename "$f").cs"

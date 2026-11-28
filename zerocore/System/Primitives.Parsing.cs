@@ -1,7 +1,7 @@
 // Parse and TryParse for the numbers, with .NET's overloads; the parsing
 // itself is in Number.Parsing.cs. A null string is an ArgumentNullException
-// for Parse and false for TryParse; the IFormatProvider is accepted and
-// ignored, as there are no cultures here.
+// for Parse and false for TryParse. The provider's NumberFormatInfo (or the
+// current culture's) gives the symbols; the invariant culture's by default.
 
 using System.Globalization;
 
@@ -21,11 +21,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out sbyte result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static sbyte Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((sbyte)Number.ParseInteger(s, style, true, 8, 3, "Value was either too large or too small for a signed byte."));
+            unchecked((sbyte)Number.ParseInteger(s, style, true, 8, 3, "Value was either too large or too small for a signed byte.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out sbyte result)
         {
-            bool parsed = Number.TryParseInteger(s, style, true, 8, 3, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, true, 8, 3, provider, out ulong raw);
             result = unchecked((sbyte)raw);
             return parsed;
         }
@@ -45,11 +45,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out byte result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static byte Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((byte)Number.ParseInteger(s, style, false, 8, 3, "Value was either too large or too small for an unsigned byte."));
+            unchecked((byte)Number.ParseInteger(s, style, false, 8, 3, "Value was either too large or too small for an unsigned byte.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out byte result)
         {
-            bool parsed = Number.TryParseInteger(s, style, false, 8, 3, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, false, 8, 3, provider, out ulong raw);
             result = unchecked((byte)raw);
             return parsed;
         }
@@ -69,11 +69,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out short result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static short Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((short)Number.ParseInteger(s, style, true, 16, 5, "Value was either too large or too small for an Int16."));
+            unchecked((short)Number.ParseInteger(s, style, true, 16, 5, "Value was either too large or too small for an Int16.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out short result)
         {
-            bool parsed = Number.TryParseInteger(s, style, true, 16, 5, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, true, 16, 5, provider, out ulong raw);
             result = unchecked((short)raw);
             return parsed;
         }
@@ -93,11 +93,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out ushort result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static ushort Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((ushort)Number.ParseInteger(s, style, false, 16, 5, "Value was either too large or too small for a UInt16."));
+            unchecked((ushort)Number.ParseInteger(s, style, false, 16, 5, "Value was either too large or too small for a UInt16.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out ushort result)
         {
-            bool parsed = Number.TryParseInteger(s, style, false, 16, 5, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, false, 16, 5, provider, out ulong raw);
             result = unchecked((ushort)raw);
             return parsed;
         }
@@ -117,11 +117,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out int result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static int Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((int)Number.ParseInteger(s, style, true, 32, 10, "Value was either too large or too small for an Int32."));
+            unchecked((int)Number.ParseInteger(s, style, true, 32, 10, "Value was either too large or too small for an Int32.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out int result)
         {
-            bool parsed = Number.TryParseInteger(s, style, true, 32, 10, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, true, 32, 10, provider, out ulong raw);
             result = unchecked((int)raw);
             return parsed;
         }
@@ -141,11 +141,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out uint result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static uint Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((uint)Number.ParseInteger(s, style, false, 32, 10, "Value was either too large or too small for a UInt32."));
+            unchecked((uint)Number.ParseInteger(s, style, false, 32, 10, "Value was either too large or too small for a UInt32.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out uint result)
         {
-            bool parsed = Number.TryParseInteger(s, style, false, 32, 10, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, false, 32, 10, provider, out ulong raw);
             result = unchecked((uint)raw);
             return parsed;
         }
@@ -165,11 +165,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out long result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static long Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((long)Number.ParseInteger(s, style, true, 64, 19, "Value was either too large or too small for an Int64."));
+            unchecked((long)Number.ParseInteger(s, style, true, 64, 19, "Value was either too large or too small for an Int64.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out long result)
         {
-            bool parsed = Number.TryParseInteger(s, style, true, 64, 19, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, true, 64, 19, provider, out ulong raw);
             result = unchecked((long)raw);
             return parsed;
         }
@@ -189,11 +189,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out ulong result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static ulong Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((ulong)Number.ParseInteger(s, style, false, 64, 20, "Value was either too large or too small for a UInt64."));
+            unchecked((ulong)Number.ParseInteger(s, style, false, 64, 20, "Value was either too large or too small for a UInt64.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out ulong result)
         {
-            bool parsed = Number.TryParseInteger(s, style, false, 64, 20, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, false, 64, 20, provider, out ulong raw);
             result = unchecked((ulong)raw);
             return parsed;
         }
@@ -213,11 +213,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out nint result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static nint Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((nint)Number.ParseInteger(s, style, true, sizeof(nint) * 8, sizeof(nint) == 8 ? 19 : 10, sizeof(nint) == 8 ? "Value was either too large or too small for an Int64." : "Value was either too large or too small for an Int32."));
+            unchecked((nint)Number.ParseInteger(s, style, true, sizeof(nint) * 8, sizeof(nint) == 8 ? 19 : 10, sizeof(nint) == 8 ? "Value was either too large or too small for an Int64." : "Value was either too large or too small for an Int32.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out nint result)
         {
-            bool parsed = Number.TryParseInteger(s, style, true, sizeof(nint) * 8, sizeof(nint) == 8 ? 19 : 10, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, true, sizeof(nint) * 8, sizeof(nint) == 8 ? 19 : 10, provider, out ulong raw);
             result = unchecked((nint)raw);
             return parsed;
         }
@@ -237,11 +237,11 @@ namespace System
         public static bool TryParse(string s, NumberStyles style, IFormatProvider provider, out nuint result) => TryParse(Number.AsSpan(s), style, provider, out result);
 
         public static nuint Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Integer, IFormatProvider provider = null) =>
-            unchecked((nuint)Number.ParseInteger(s, style, false, sizeof(nuint) * 8, sizeof(nuint) == 8 ? 20 : 10, sizeof(nuint) == 8 ? "Value was either too large or too small for a UInt64." : "Value was either too large or too small for a UInt32."));
+            unchecked((nuint)Number.ParseInteger(s, style, false, sizeof(nuint) * 8, sizeof(nuint) == 8 ? 20 : 10, sizeof(nuint) == 8 ? "Value was either too large or too small for a UInt64." : "Value was either too large or too small for a UInt32.", provider));
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out nuint result)
         {
-            bool parsed = Number.TryParseInteger(s, style, false, sizeof(nuint) * 8, sizeof(nuint) == 8 ? 20 : 10, out ulong raw);
+            bool parsed = Number.TryParseInteger(s, style, false, sizeof(nuint) * 8, sizeof(nuint) == 8 ? 20 : 10, provider, out ulong raw);
             result = unchecked((nuint)raw);
             return parsed;
         }
@@ -262,13 +262,13 @@ namespace System
 
         public static float Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands, IFormatProvider provider = null)
         {
-            ulong bits = Number.ParseFloat(s, style, Number.SingleFormat);
+            ulong bits = Number.ParseFloat(s, style, Number.SingleFormat, provider);
             return BitConverter.UInt32BitsToSingle((uint)bits);
         }
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out float result)
         {
-            bool parsed = Number.TryParseFloat(s, style, Number.SingleFormat, out ulong bits);
+            bool parsed = Number.TryParseFloat(s, style, Number.SingleFormat, provider, out ulong bits);
             result = BitConverter.UInt32BitsToSingle((uint)bits);
             return parsed;
         }
@@ -289,13 +289,13 @@ namespace System
 
         public static double Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands, IFormatProvider provider = null)
         {
-            ulong bits = Number.ParseFloat(s, style, Number.DoubleFormat);
+            ulong bits = Number.ParseFloat(s, style, Number.DoubleFormat, provider);
             return BitConverter.UInt64BitsToDouble(bits);
         }
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out double result)
         {
-            bool parsed = Number.TryParseFloat(s, style, Number.DoubleFormat, out ulong bits);
+            bool parsed = Number.TryParseFloat(s, style, Number.DoubleFormat, provider, out ulong bits);
             result = BitConverter.UInt64BitsToDouble(bits);
             return parsed;
         }
@@ -316,13 +316,13 @@ namespace System
 
         public static Half Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands, IFormatProvider provider = null)
         {
-            ulong bits = Number.ParseFloat(s, style, Number.HalfFormat);
+            ulong bits = Number.ParseFloat(s, style, Number.HalfFormat, provider);
             return BitConverter.UInt16BitsToHalf((ushort)bits);
         }
 
         public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider provider, out Half result)
         {
-            bool parsed = Number.TryParseFloat(s, style, Number.HalfFormat, out ulong bits);
+            bool parsed = Number.TryParseFloat(s, style, Number.HalfFormat, provider, out ulong bits);
             result = BitConverter.UInt16BitsToHalf((ushort)bits);
             return parsed;
         }

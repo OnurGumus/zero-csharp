@@ -115,6 +115,10 @@ SAMPLES=(
     Parsing
     Cultures
     Dates
+    Casing
+    CustomFormats
+    Locales
+    Sorting
     Keys
     Tensors
     TensorsAvx
@@ -184,6 +188,10 @@ DOS_SAMPLES=(
     Parsing
     Cultures
     Dates
+    Casing
+    CustomFormats
+    Locales
+    Sorting
     Keys
     Tensors
     TensorTypes
@@ -254,6 +262,9 @@ ARM_SAMPLES=(
     Parsing
     Cultures
     Dates
+    Casing
+    CustomFormats
+    Locales
     Keys
     Tensors
     TensorTypes
@@ -261,7 +272,8 @@ ARM_SAMPLES=(
     Blink
 )
 # Arena, Collections, Files, Strings, Queries, Threads, Fibers, Patterns,
-# Scratch, Links and Unicode need more (Arena, for one, allocates a 16 KB
+# Scratch, Links, Unicode, Cultures and Locales (each culture's names and
+# formats are decoded onto the heap) need more (Arena, for one, allocates a 16 KB
 # array; Fibers runs three fibers of 5 KB at once). Links passes, but with
 # less than 2 KB to spare, so a small change elsewhere would break it.
 R4_SAMPLES=(
@@ -283,8 +295,9 @@ R4_SAMPLES=(
     Records
     Shapes
     Refs
-    Cultures
     Dates
+    Casing
+    CustomFormats
     "${SMALL_SAMPLES[@]}"
     Blink
 )

@@ -1,0 +1,4 @@
+<Project>
+  <!-- Keeps the repository's Directory.Build.props (zero mode, zerocore) away:
+       this tool runs on .NET itself, to read .NET's Unicode data. -->
+</Project>

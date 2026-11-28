@@ -172,6 +172,86 @@ static class Program
         return ok ? new string(big, 0, n) : "failed";
     }
 
+
+    // A writable DateTimeFormatInfo set up the same way on both sides (bad
+    // values too, comparing the exceptions).
+    static readonly string[] PatternChoices =
+    {
+        "dd.MM.yyyy", "yyyy-MM-dd", "d MMMM yyyy", "dddd d MMMM", "HH.mm", "h:mm tt", "H:mm:ss", "tt hh:mm", "MMM yyyy",
+        "yyyy'r.' MMMM", "dd MMMM yyyy HH:mm:ss", "d/M/yy", "MMMM d, yyyy", "%d", "HH:mm:ss.fff zzz",
+    };
+    static readonly string[] SeparatorChoices = { "/", ".", "-", ":", " ", "h", "", "::" };
+    static readonly string[] DesignatorChoices = { "AM", "PM", "a.m.", "\u00F6\u00F6", "", "vorm.", "x" };
+
+    static (Z.DateTimeFormatInfo, S.Globalization.DateTimeFormatInfo, string) DateInfo()
+    {
+        var z = new Z.DateTimeFormatInfo();
+        var s = new S.Globalization.DateTimeFormatInfo();
+        var log = new StringBuilder();
+        int settings = R.Next(0, 8);
+        for (int k = 0; k < settings; k++)
+        {
+            bool bad = R.Next(10) == 0;
+            string text = bad ? null : PatternChoices[R.Next(PatternChoices.Length)];
+            string label;
+            string result;
+            switch (R.Next(13))
+            {
+                case 0: label = "ShortDatePattern=" + text; result = Both(() => z.ShortDatePattern = text, () => s.ShortDatePattern = text); break;
+                case 1: label = "LongDatePattern=" + text; result = Both(() => z.LongDatePattern = text, () => s.LongDatePattern = text); break;
+                case 2: label = "ShortTimePattern=" + text; result = Both(() => z.ShortTimePattern = text, () => s.ShortTimePattern = text); break;
+                case 3: label = "LongTimePattern=" + text; result = Both(() => z.LongTimePattern = text, () => s.LongTimePattern = text); break;
+                case 4: label = "FullDateTimePattern=" + text; result = Both(() => z.FullDateTimePattern = text, () => s.FullDateTimePattern = text); break;
+                case 5: label = "MonthDayPattern=" + text; result = Both(() => z.MonthDayPattern = text, () => s.MonthDayPattern = text); break;
+                case 6: label = "YearMonthPattern=" + text; result = Both(() => z.YearMonthPattern = text, () => s.YearMonthPattern = text); break;
+                case 7: { string v = bad ? null : SeparatorChoices[R.Next(SeparatorChoices.Length)]; label = "DateSeparator=" + v; result = Both(() => z.DateSeparator = v, () => s.DateSeparator = v); break; }
+                case 8: { string v = bad ? null : SeparatorChoices[R.Next(SeparatorChoices.Length)]; label = "TimeSeparator=" + v; result = Both(() => z.TimeSeparator = v, () => s.TimeSeparator = v); break; }
+                case 9: { string v = bad ? null : DesignatorChoices[R.Next(DesignatorChoices.Length)]; label = "AMDesignator=" + v; result = Both(() => z.AMDesignator = v, () => s.AMDesignator = v); break; }
+                case 10: { string v = bad ? null : DesignatorChoices[R.Next(DesignatorChoices.Length)]; label = "PMDesignator=" + v; result = Both(() => z.PMDesignator = v, () => s.PMDesignator = v); break; }
+                case 11:
+                {
+                    string[] v = bad ? new string[6] : new[] { "So", "Mo", "Di", "Mi", "Do", "Fr", "Sa" };
+                    if (R.Next(2) == 0)
+                    {
+                        label = "AbbreviatedDayNames"; result = Both(() => z.AbbreviatedDayNames = v, () => s.AbbreviatedDayNames = v);
+                    }
+                    else
+                    {
+                        label = "DayNames"; result = Both(() => z.DayNames = v, () => s.DayNames = v);
+                    }
+                    break;
+                }
+                default:
+                {
+                    string[] v = bad ? new[] { "a" } : new[] { "Ocak", "\u015Eubat", "Mart", "Nisan", "May\u0131s", "Haziran", "Temmuz", "A\u011Fustos", "Eyl\u00FCl", "Ekim", "Kas\u0131m", "Aral\u0131k", "" };
+                    string[] genitive = new[] { "ocaka", "\u015Fubata", "marta", "nisana", "may\u0131sa", "hazirana", "temmuza", "a\u011Fustosa", "eyl\u00FCle", "ekime", "kas\u0131ma", "aral\u0131ka", "" };
+                    switch (R.Next(3))
+                    {
+                        case 0: label = "MonthNames"; result = Both(() => z.MonthNames = v, () => s.MonthNames = v); break;
+                        case 1: label = "AbbreviatedMonthNames"; result = Both(() => z.AbbreviatedMonthNames = v, () => s.AbbreviatedMonthNames = v); break;
+                        default: label = "MonthGenitiveNames"; result = Both(() => z.MonthGenitiveNames = genitive, () => s.MonthGenitiveNames = genitive); break;
+                    }
+                    break;
+                }
+            }
+            checks++;
+            if (result != "same")
+            {
+                failures++;
+                if (shown++ < 200)
+                    Console.WriteLine($"FAIL DateTimeFormatInfo setter [{label}]\n  {result}");
+            }
+            log.Append(label).Append("; ");
+        }
+        return (z, s, log.ToString());
+    }
+
+    static string Both(Action zero, Action net)
+    {
+        string a = Run(() => { zero(); return "ok"; }), b = Run(() => { net(); return "ok"; });
+        return a == b ? "same" : $"zero {a} | .NET {b}";
+    }
+
     public static int Main(string[] args)
     {
         int iterations = args.Length > 0 ? int.Parse(args[0]) : 100_000;
@@ -199,6 +279,9 @@ static class Program
         Same("Now - UtcNow", "", () => ((int)Math.Round((Z.DateTime.Now - Z.DateTime.UtcNow).TotalMinutes)).ToString(), () => ((int)Math.Round((S.DateTime.Now - S.DateTime.UtcNow).TotalMinutes)).ToString());
         Same("UtcNow", "", () => (Z.DateTime.UtcNow.Ticks / 10_000_000 / 10).ToString(), () => (S.DateTime.UtcNow.Ticks / 10_000_000 / 10).ToString());
 
+        Z.DateTimeFormatInfo zdi = null;
+        S.Globalization.DateTimeFormatInfo sdi = null;
+        string dconfig = "";
         for (int it = 0; it < iterations; it++)
         {
             var (z, s) = Pair();
@@ -359,6 +442,21 @@ static class Program
             Same("TimeOnly.ToString(format)", input + " \"" + f + "\"", () => zt.ToString(f), () => st.ToString(f));
             Same("TimeOnly.TryFormat", input + " \"" + f + "\"", () => Text(b => (zt.TryFormat(b, out int n, f), n)), () => Text(b => (st.TryFormat(b, out int n, f), n)));
 
+
+            // With a DateTimeFormatInfo of your own.
+            if (it % 4 == 0)
+            {
+                if (it % 200 == 0 || zdi == null)
+                    (zdi, sdi, dconfig) = DateInfo();
+                string df = DateFormat();
+                Same("ToString(format, info)", input + " \"" + df + "\" " + dconfig, () => z.ToString(df, zdi), () => s.ToString(df, sdi));
+                Same("offset ToString(format, info)", oi + " \"" + df + "\" " + dconfig, () => zo.ToString(df, zdi), () => so.ToString(df, sdi));
+                Same("DateOnly ToString(format, info)", input + " \"" + df + "\" " + dconfig, () => zd.ToString(df, zdi), () => sd.ToString(df, sdi));
+                Same("TimeOnly ToString(format, info)", input + " \"" + df + "\" " + dconfig, () => zt.ToString(df, zdi), () => st.ToString(df, sdi));
+                char gc2 = "dDfFgGmMtTyY"[R.Next(12)];
+                if (it % 40 == 0)
+                    Same("GetDateTimeFormats(c, info)", input + " " + gc2 + " " + dconfig, () => string.Join("|", z.GetDateTimeFormats(gc2, zdi)), () => string.Join("|", s.GetDateTimeFormats(gc2, sdi)));
+            }
             // TimeSpan.
             long tt2 = AnyLong();
             var zs = new Z.TimeSpan(tt2);
@@ -416,5 +514,13 @@ namespace ZeroTest
     {
         [System.Runtime.InteropServices.DllImport("libc")]
         internal static extern int clock_gettime(int clock, long* timespec);
+    }
+
+    // What the copied files ask of CultureInfo: the invariant culture.
+    public class CultureInfo : IFormatProvider
+    {
+        public static CultureInfo CurrentCulture { get; } = new CultureInfo();
+        public DateTimeFormatInfo DateTimeFormat => DateTimeFormatInfo.InvariantInfo;
+        public object GetFormat(Type formatType) => null;
     }
 }

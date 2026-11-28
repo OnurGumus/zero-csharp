@@ -173,9 +173,17 @@ namespace System
 
         // Case
 
-        public static char ToUpper(char c) => ToUpperInvariant(c);
+        // By the current culture's casing, as in .NET (invariant unless one is set).
+        public static char ToUpper(char c) => (char)System.Globalization.TextCasing.Change(c, true, System.Globalization.TextCasing.CurrentMode);
 
-        public static char ToLower(char c) => ToLowerInvariant(c);
+        // By the culture's casing (Turkish maps i up to İ).
+        public static char ToUpper(char c, System.Globalization.CultureInfo culture)
+            => (culture ?? throw new ArgumentNullException("culture")).TextInfo.ToUpper(c);
+
+        public static char ToLower(char c, System.Globalization.CultureInfo culture)
+            => (culture ?? throw new ArgumentNullException("culture")).TextInfo.ToLower(c);
+
+        public static char ToLower(char c) => (char)System.Globalization.TextCasing.Change(c, false, System.Globalization.TextCasing.CurrentMode);
 
         public static char ToUpperInvariant(char c)
             => c < 0x80 ? (IsAsciiLetterLower(c) ? (char)(c - 0x20) : c) : UnicodeData.ToUpper(c);

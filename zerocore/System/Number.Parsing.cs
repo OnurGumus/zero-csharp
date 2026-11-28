@@ -75,10 +75,11 @@ namespace System
 
         // Parse for an integer type of `bits` bits (`maxDigits` decimal digits):
         // the value's bits, which the caller truncates to its type.
-        internal static ulong ParseInteger(ReadOnlySpan<char> s, NumberStyles style, bool signed, int bits, int maxDigits, string overflowMessage)
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        internal static ulong ParseInteger(ReadOnlySpan<char> s, NumberStyles style, bool signed, int bits, int maxDigits, string overflowMessage, IFormatProvider provider)
         {
             ValidateIntegerStyle(style);
-            int status = ParseIntegerCore(s, style, signed, bits, maxDigits, out ulong raw);
+            int status = ParseIntegerCore(s, style, signed, bits, maxDigits, InfoFor(provider), out ulong raw);
             if (status == NotANumber)
                 throw BadNumber(s);
             if (status == OutOfRange)
@@ -86,16 +87,17 @@ namespace System
             return raw;
         }
 
-        internal static bool TryParseInteger(ReadOnlySpan<char> s, NumberStyles style, bool signed, int bits, int maxDigits, out ulong raw)
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        internal static bool TryParseInteger(ReadOnlySpan<char> s, NumberStyles style, bool signed, int bits, int maxDigits, IFormatProvider provider, out ulong raw)
         {
             ValidateIntegerStyle(style);
-            if (ParseIntegerCore(s, style, signed, bits, maxDigits, out raw) == Parsed)
+            if (ParseIntegerCore(s, style, signed, bits, maxDigits, InfoFor(provider), out raw) == Parsed)
                 return true;
             raw = 0;
             return false;
         }
 
-        private static int ParseIntegerCore(ReadOnlySpan<char> s, NumberStyles style, bool signed, int bits, int maxDigits, out ulong raw)
+        private static int ParseIntegerCore(ReadOnlySpan<char> s, NumberStyles style, bool signed, int bits, int maxDigits, NumberFormatInfo info, out ulong raw)
         {
             raw = 0;
             if ((style & NumberStyles.AllowHexSpecifier) != 0)
@@ -108,7 +110,7 @@ namespace System
             n.Digits = digits;
             n.Capacity = maxDigits;
             n.Integer = true;
-            if (!Scan(s, style, ref n))
+            if (!(info == null ? Scan(s, style, ref n) : s_culture.Scan(s, style, ref n, info)))
                 return NotANumber;
 
             // The digits, then Scale - Count zeros; nothing may follow the point.
@@ -188,7 +190,7 @@ namespace System
 
         // The significant digits as .NET's NumberBuffer keeps them: no leading
         // zeros, no trailing ones, and the value is 0.D1D2D3... * 10^Scale.
-        private struct NumberText
+        internal struct NumberText
         {
             public byte* Digits;
             public int Capacity;
@@ -401,32 +403,34 @@ namespace System
             Precision = 11, ExponentBits = 5, MaxDigits = 22, MaxScale = 5, MinScale = -8, NaN = 0xFE00UL,
         };
 
-        internal static ulong ParseFloat(ReadOnlySpan<char> s, NumberStyles style, FloatFormat format)
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        internal static ulong ParseFloat(ReadOnlySpan<char> s, NumberStyles style, FloatFormat format, IFormatProvider provider)
         {
             ValidateFloatStyle(style);
-            if (!ParseFloatCore(s, style, format, out ulong bits))
+            if (!ParseFloatCore(s, style, format, InfoFor(provider), out ulong bits))
                 throw BadNumber(s);
             return bits;
         }
 
-        internal static bool TryParseFloat(ReadOnlySpan<char> s, NumberStyles style, FloatFormat format, out ulong bits)
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        internal static bool TryParseFloat(ReadOnlySpan<char> s, NumberStyles style, FloatFormat format, IFormatProvider provider, out ulong bits)
         {
             ValidateFloatStyle(style);
-            return ParseFloatCore(s, style, format, out bits);
+            return ParseFloatCore(s, style, format, InfoFor(provider), out bits);
         }
 
-        private static bool ParseFloatCore(ReadOnlySpan<char> s, NumberStyles style, FloatFormat format, out ulong bits)
+        private static bool ParseFloatCore(ReadOnlySpan<char> s, NumberStyles style, FloatFormat format, NumberFormatInfo info, out ulong bits)
         {
             byte* digits = stackalloc byte[format.MaxDigits];
             NumberText n = default;
             n.Digits = digits;
             n.Capacity = format.MaxDigits;
-            if (Scan(s, style, ref n))
+            if (info == null ? Scan(s, style, ref n) : s_culture.Scan(s, style, ref n, info))
             {
                 bits = ToFloat(ref n, format);
                 return true;
             }
-            return ParseSymbol(s, format, out bits);
+            return info == null ? ParseSymbol(s, format, out bits) : s_culture.ParseSymbol(s, format, info, out bits);
         }
 
         // "Infinity", "-Infinity", "NaN", "+Infinity", "+NaN" and "-NaN", in

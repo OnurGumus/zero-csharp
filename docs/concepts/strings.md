@@ -13,8 +13,8 @@ you chose**.
 
 ## What the core library's string has
 
-zerocore's `string` has `Length`, an indexer, `==`, `!=`, `+`, `Equals`, `IsNullOrEmpty` and `switch` on
-strings, and nothing else. String literals, static string fields and static string arrays work. `a + b`
+zerocore's `string` has `Length`, an indexer, `==`, `!=`, `+`, `Equals`, `IsNullOrEmpty`, `switch` on
+strings, and .NET's casing and comparing (see [Change case and compare](#change-case-and-compare)). String literals, static string fields and static string arrays work. `a + b`
 works too, but it allocates with `calloc` and is never freed, like every allocation the core library
 makes. Use it for strings built once; in a loop, use the arena versions below.
 
@@ -299,8 +299,8 @@ check "categories"
      && Char.IsWhiteSpace ' ')
 ```
 
-There is only the invariant culture (see [Cultures](#cultures)), so `ToUpper` and `ToLower` are `ToUpperInvariant` and `ToLowerInvariant`: each
-char maps to one char, as in .NET's invariant mode. The tables are linked only into programs that use
+`char.ToUpper` and `ToLower` follow the current culture (see [Cultures](#cultures)), which is the
+invariant one unless you set it: each char maps to one char, as in .NET. The tables are linked only into programs that use
 them: categories take about 16 KB, casing 1.6 KB and numeric values 3 KB. `IsAsciiDigit`, `IsAsciiLetter`
 and the other ASCII methods, `IsWhiteSpace` and `IsControl` are plain comparisons and need none, which
 matters on a Commodore 64. `CharUnicodeInfo` (in `System.Globalization`) answers for code points above
@@ -364,16 +364,93 @@ There are no `Encoder` or `Decoder` objects, no fallback objects and no other co
 `new UTF8Encoding(false, throwOnInvalidBytes: true)` ends the program at invalid input, which is what
 an exception does here.
 
+## Change case and compare
+
+Comparing text people typed usually has to ignore case: a file called `README.md` or `readme.MD`, an
+HTTP header written `Content-Type` or `content-type`. .NET does that with `ToUpper`, `ToLower` and the
+`StringComparison` overloads, and they are all here, with .NET's results:
+
+<!-- sample: samples/Casing.cs casing -->
+```csharp
+Check("ToUpper", "Grüße, Ελλάδα!".ToUpper() == "GRÜßE, ΕΛΛΆΔΑ!");
+Check("ToLower", "ÇAĞRI".ToLowerInvariant() == "çağri");
+Check("one char to one: ß stays", "ß".ToUpperInvariant() == "ß");
+Check("surrogate pairs", "𐐨".ToUpperInvariant() == "𐐀");
+string done = "ALREADY";
+Check("unchanged is the same string",
+    ReferenceEquals(done.ToUpperInvariant(), done));
+```
+
+Casing maps one character to one, surrogate pairs included, as .NET does in invariant mode, so `ß`
+stays `ß` instead of becoming `SS`. A string that doesn't change comes back as itself; one that does
+is a new string, which like every string the core library makes is never freed. `TextInfo.ToTitleCase`
+follows .NET's rules, which keep acronyms and don't start a word after an apostrophe:
+
+<!-- sample: samples/Casing.cs title -->
+```csharp
+Check("title case", text.ToTitleCase("the lord of the rings")
+    == "The Lord Of The Rings");
+Check("acronyms stay",
+    text.ToTitleCase("NASA and the ESA") == "NASA And The ESA");
+Check("apostrophes", text.ToTitleCase("it's o'neil") == "It's O'neil");
+```
+
+`Equals`, `Compare`, `StartsWith`, `EndsWith`, `Contains`, `IndexOf`, `LastIndexOf` and
+`GetHashCode` take a `StringComparison`, and `CompareInfo` takes `CompareOptions`:
+
+<!-- sample: samples/Casing.cs compare -->
+```csharp
+Check("Equals ignoring case", string.Equals("README.md", "readme.MD",
+    StringComparison.OrdinalIgnoreCase));
+Check("StartsWith", "Content-Type: text/html"
+    .StartsWith("content-type", StringComparison.OrdinalIgnoreCase));
+Check("IndexOf", "Hello World"
+    .IndexOf("WORLD", StringComparison.OrdinalIgnoreCase) == 6);
+Check("Contains",
+    "Zero C#".Contains("c#", StringComparison.CurrentCultureIgnoreCase));
+Check("Compare ignoring case", string.Compare("apple", "APPLE",
+    StringComparison.InvariantCultureIgnoreCase) == 0);
+// The culture compares by character code, as .NET's invariant mode.
+Check("capitals first", string.Compare("Banana", "apple") < 0);
+```
+
+```text
+  StringComparison                   compares
+  ---------------------------------  ----------------------------------------
+  Ordinal                            UTF-16 code units
+  OrdinalIgnoreCase                  their upper cases
+  CurrentCulture, InvariantCulture   the same as Ordinal, as in .NET's
+                                     invariant mode ("Banana" before "apple")
+  ...IgnoreCase                      the same as OrdinalIgnoreCase
+```
+
+To change case without allocating, `MemoryExtensions.ToUpperInvariant` and its siblings write into a
+span you pass, and the span overloads compare in place:
+
+<!-- sample: samples/Casing.cs spans -->
+```csharp
+Span<char> buffer = stackalloc char[32];
+ReadOnlySpan<char> word = "straße";
+int length = word.ToUpperInvariant(buffer);
+Check("into a buffer", buffer.Slice(0, length).SequenceEqual("STRAßE"));
+Check("too small", word.ToUpperInvariant(buffer.Slice(0, 3)) == -1);
+Check("span comparison",
+    word.Equals("STRASSE", StringComparison.OrdinalIgnoreCase) == false
+    && word.StartsWith("STR", StringComparison.OrdinalIgnoreCase));
+```
+
+`System.Text.Rune` reads, writes, cases and classifies a whole code point. `scripts/text-check`
+compares all of this with .NET's over every code point and millions of strings.
+
 ## Cultures
 
 A program that formats a number for a person and the same number for a file has to know which rules
 each one uses: in German, 1234.5 is written `1.234,5`. .NET handles this with cultures, and code
-that must not depend on where it runs passes `CultureInfo.InvariantCulture` everywhere. Carrying
-every culture's data would cost far more than most zero-mode programs are, so zero mode does what
-.NET does with `InvariantGlobalization` set: **there is one culture, the invariant one**.
+that must not depend on where it runs passes `CultureInfo.InvariantCulture` everywhere. Zero mode has
+both: the invariant culture, which costs nothing, and about 80 common cultures built from .NET's own
+data, which a program carries only if it asks for one by name.
 
-`CultureInfo` and `NumberFormatInfo` are there, so code written that way compiles unchanged and gets
-.NET's invariant results. `CurrentCulture` is the invariant culture too:
+The invariant culture works as in .NET, and `CurrentCulture` starts as the invariant culture:
 
 <!-- sample: samples/Cultures.cs invariant -->
 ```csharp
@@ -390,35 +467,221 @@ Check("its numbers",
     && invariant.NumberFormat.NumberGroupSeparator == ",");
 ```
 
-Asking for any other culture throws `CultureNotFoundException`, with the message .NET gives in that
-mode, so the program stops at the line that wanted German rules instead of quietly getting English
-ones:
+### Built-in cultures
+
+`new CultureInfo("de-DE")` and `CultureInfo.GetCultureInfo("de-DE")` give the culture's numbers,
+dates, names and casing, as .NET gives them with ICU:
+
+<!-- sample: samples/Locales.cs numbers -->
+```csharp
+var german = CultureInfo.GetCultureInfo("de-DE");
+var hindi = CultureInfo.GetCultureInfo("hi-IN");
+Is("German", 1234567.891.ToString("N2", german), "1.234.567,89");
+Is("German euros", 1234.5m.ToString("C", german), "1.234,50 €");
+Is("Indian grouping", 12345678.ToString("N0", hindi), "1,23,45,678");
+Check("parse German", double.Parse("1.234,5", german) == 1234.5);
+```
+
+<!-- sample: samples/Locales.cs dates -->
+```csharp
+Is("German date", day.ToString("D", german), "Donnerstag, 5. März 2026");
+Is("Japanese date", day.ToString("D", japanese), "2026年3月5日 木曜日");
+Is("French short", day.ToString("d", french), "05/03/2026");
+var american = CultureInfo.GetCultureInfo("en-US");
+Is("US", day.ToString("g", american), "3/5/2026 2:07\u202FPM");
+```
+
+The table has about 80 cultures: English, German, French, Spanish, Italian, Portuguese, Dutch, the
+Nordic languages, Polish, Czech, Slovak, Hungarian, Romanian, Bulgarian, Greek, Turkish,
+Azerbaijani, Russian, Ukrainian, Hebrew, Arabic (Egypt), Hindi, Japanese, Korean, Chinese,
+Indonesian, Vietnamese and Malay, in their main countries, and their neutral cultures (`de`,
+`zh-Hans`). `CultureInfo.GetCultures` lists them. A name that isn't in the table throws
+`CultureNotFoundException`:
 
 <!-- sample: samples/Cultures.cs other -->
 ```csharp
-string message = Thrown(() => new CultureInfo("de-DE"));
-Check("another culture throws", message == InvariantOnly
-    + " (Parameter 'name')\nde-DE is an invalid culture identifier.");
+CultureInfo german = new CultureInfo("de-DE");
+Check("a culture from the table", german.EnglishName == "German (Germany)"
+    && 1234.5.ToString("N1", german) == "1.234,5");
+string message = Thrown(() => new CultureInfo("@@"));
+Check("a name it doesn't know throws", message == "Culture is not supported."
+    + " (Parameter 'name')\n@@ is an invalid culture identifier.");
+```
+
+Turkish and Azerbaijani have their own casing: the dotted and dotless i are separate letters, so
+`i` becomes `İ`. Code that lowercases a keyword with the current culture breaks in Turkey for that
+reason, which is why `ToUpperInvariant` exists:
+
+<!-- sample: samples/Locales.cs turkish -->
+```csharp
+var turkish = CultureInfo.GetCultureInfo("tr-TR");
+Is("Turkish upper case", "istanbul".ToUpper(turkish), "İSTANBUL");
+Is("Turkish lower case", "ISPARTA".ToLower(turkish), "ısparta");
+Is("invariant upper case", "istanbul".ToUpperInvariant(), "ISTANBUL");
+```
+
+Making a culture current makes it the default for `ToString()`, `Parse`, `ToUpper()` and
+`string.Compare`, on that thread:
+
+<!-- sample: samples/Locales.cs current -->
+```csharp
+CultureInfo.CurrentCulture = turkish;
+Is("ToUpper() follows the current culture", "i".ToUpper(), "İ");
+Is("so does char.ToUpper", char.ToUpper('i').ToString(), "İ");
+Is("and number text", 1.5.ToString(), "1,5");
+Check("and string.Compare", string.Compare("ılık", "ilaç") < 0);
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 ```
 
 ```text
   what you write                      what zero mode does
   ----------------------------------  ---------------------------------------
   CultureInfo.InvariantCulture        the invariant culture
-  CultureInfo.CurrentCulture          the invariant culture
-  new CultureInfo("") / (127)         an invariant culture (writable copy)
-  new CultureInfo("de-DE")            CultureNotFoundException, as .NET's
-  x.ToString(provider)                invariant, whatever the provider
-  string.CompareTo, Sort()            by character code, as .NET's invariant
-                                      mode does
+  CultureInfo.CurrentCulture          the invariant culture, until you set it
+                                      (not the system's, as .NET would)
+  new CultureInfo("de-DE")            German, from the table (writable)
+  CultureInfo.GetCultureInfo("de-DE") German, read-only, the same object
+                                      each time
+  new CultureInfo("sw-KE")            CultureNotFoundException: not in the
+                                      table (.NET with ICU knows it)
+  x.ToString(provider)                the provider's formats
+  "i".ToUpper(turkish)                "İ"
+  string.Compare(a, b, turkish)       Turkish order: ı before i
+  string.Compare(a, b, invariant)     by character code (.NET's invariant
+                                      mode)
 ```
 
-`CurrentCulture` and `CurrentUICulture` can be set, to an invariant culture since there is no
-other, and each is one setting for the whole program rather than one per thread.
-`NumberFormatInfo` is read-only and has no public constructor, so code that sets its own decimal
-separator doesn't compile, rather than compiling and being ignored. `DateTimeFormatInfo` is the same
-for dates (see [Work with dates and times](../how-to/work-with-dates-and-times.html)). `TextInfo` and
-`CompareInfo` aren't there yet.
+Only the Gregorian calendar exists, so cultures whose default calendar is another one (Saudi Arabia,
+Thailand, Iran) aren't in the table. `scripts/cultures-check/check-cultures.sh` compares every
+culture in the table with .NET's, and `scripts/gen-cultures` regenerates it.
+
+### Sorting in a language's order
+
+Sorting by character code puts every capital before every small letter (`"Zebra"` before
+`"apple"`), and every accented letter after `z`. Each language also has its own alphabet: Turkish
+has a dotless `ı` before `i`, Swedish puts `ö` after `z` where German sorts it with `o`, Czech puts
+`ch` after `h`, and Chinese sorts by pinyin. A list sorted by code looks wrong to all of them.
+
+A culture from the table compares in its own order: `string.Compare(a, b, culture)`, its
+`CompareInfo`, and, once you make it current, `string.Compare(a, b)`, `CompareTo`, `StartsWith` and
+`IndexOf`:
+
+<!-- sample: samples/Sorting.cs sorting -->
+```csharp
+string[] words = { "ılık", "ilaç", "çay", "cami", "ısı", "İzmir" };
+Is("Turkish", Sorted("tr-TR", words), "cami çay ılık ısı ilaç İzmir");
+Is("English", Sorted("en-US", words), "cami çay ilaç İzmir ılık ısı");
+Is("Swedish", Sorted("sv-SE", "öl", "zon", "ost"), "ost zon öl");
+Is("German", Sorted("de-DE", "öl", "zon", "ost"), "öl ost zon");
+Is("pinyin", Sorted("zh-CN", "中国", "北京", "上海"), "北京 上海 中国");
+```
+
+The order comes in levels, as in Unicode's collation algorithm, which .NET uses through ICU. Texts
+are compared by their letters first; only if those are the same do the accents decide, and only
+if those are the same too, the case:
+
+```text
+  French:  cote < Cote < coté < côte < Côte
+
+           letters    accents    case
+  cote     c o t e    . . . .    small
+  Cote     c o t e    . . . .    capital    same letters and accents:
+  coté     c o t e    . . . ´               the case decides
+  côte     c o t e    . ^ . .    small      an accent nearer the start
+  Côte     c o t e    . ^ . .    capital    weighs more: côte > coté
+
+  French (Canada) reads the accents from the end: coté > côte
+```
+
+The options leave levels out: `IgnoreNonSpace` the accents, `IgnoreCase` the case, and
+`IgnoreSymbols` the spaces, punctuation and symbols. Ignoring case follows the language too:
+
+<!-- sample: samples/Sorting.cs ignorecase -->
+```csharp
+var ignoreCase = CompareOptions.IgnoreCase;
+Check("Turkish İ is i, ignoring case",
+    string.Compare("İSTANBUL", "istanbul", turkish, ignoreCase) == 0);
+Check("but not in English",
+    string.Compare("İSTANBUL", "istanbul", american, ignoreCase) != 0);
+var loose = CompareOptions.IgnoreNonSpace | CompareOptions.IgnoreCase;
+Check("accents ignored",
+    french.CompareInfo.IndexOf("Un résumé", "RESUME", loose) == 3);
+```
+
+The order is .NET's with ICU, for every character Unicode assigns: each culture's own letters
+(contractions such as Czech `ch` and Danish `aa`), accents compared from the end in French
+(Canada), upper case first in Danish, ideographs by pinyin in Chinese, by strokes in Chinese
+(Taiwan and Hong Kong), in Japan's order in Japanese, and with the Hangul syllable of their reading
+in Korean. The tables come from `scripts/gen-cultures`, which reads them from .NET's own comparisons,
+and `scripts/collation-check/check-collation.sh` compares millions of random texts in every culture
+with .NET's: comparing, `IsPrefix`, `IsSuffix`, `IndexOf` and `LastIndexOf`.
+
+```text
+  what costs what
+  ------------------------------------  ----------------------------------
+  a program that never compares with    nothing: the tables aren't linked
+  a culture from the table
+  one that does                         about 740 KB of tables, read in
+                                        place; the ideograph orders are
+                                        unpacked (up to 0.5 MB) the first
+                                        time ideographs are compared
+```
+
+What differs from .NET: the invariant culture still compares by character code, as in .NET's
+invariant mode (with ICU, .NET sorts it in the root order), so programs that don't use cultures
+stay small. `NumericOrdering` and the kana and width options are ignored. Unassigned and private-use
+characters sort after all the others. And a few rare runs of combining marks in unusual orders, and
+a few Japanese compatibility characters under `IgnoreCase`, compare differently (the check finds
+about one text in 300,000).
+
+### Formats of your own
+
+Any culture's formats can also be your own. A `NumberFormatInfo` you make starts as a copy of the
+invariant one, and every property can be set: separators, signs, group sizes, the currency and
+percent symbols and patterns. `ToString`, `TryFormat` and `Parse` given it use them,
+with .NET's results:
+
+<!-- sample: samples/CustomFormats.cs numbers -->
+```csharp
+var turkish = new NumberFormatInfo
+{
+    NumberDecimalSeparator = ",",
+    NumberGroupSeparator = ".",
+    CurrencySymbol = "₺",
+    CurrencyDecimalSeparator = ",",
+    CurrencyGroupSeparator = ".",
+    CurrencyPositivePattern = 2,
+    CurrencyNegativePattern = 1,
+};
+Is("N", 1234567.891.ToString("N2", turkish), "1.234.567,89");
+Is("C", 1234.5m.ToString("C", turkish), "₺ 1.234,50");
+Is("negative C", (-5m).ToString("C", turkish), "-₺5,00");
+Check("Parse", double.Parse("1.234,5", NumberStyles.Number, turkish) == 1234.5);
+```
+
+A culture you make with `new CultureInfo("")` or `Clone()` has writable formats of its own (a
+`DateTimeFormatInfo` for dates too), and once it is `CurrentCulture`, `ToString()` and `Parse`
+without a provider follow it. As in .NET, `CurrentCulture` belongs to each thread; fibers on one
+thread share it.
+
+<!-- sample: samples/CustomFormats.cs culture -->
+```csharp
+CultureInfo mine = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+mine.NumberFormat.NumberDecimalSeparator = ",";
+mine.DateTimeFormat.ShortDatePattern = "dd.MM.yyyy";
+CultureInfo.CurrentCulture = mine;
+Is("ToString follows the current culture", 3.25.ToString(), "3,25");
+Is("so does a date", new DateTime(2026, 11, 28).ToString("d"), "28.11.2026");
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+Is("and back", 3.25.ToString(), "3.25");
+```
+
+A program that never makes a writable `NumberFormatInfo` or `DateTimeFormatInfo` doesn't carry the
+code that reads them: making one is what links it. `Console.WriteLine($"{n}")` with an integer and no
+format writes the digits itself, with `-`, whatever the current culture; give it a format
+(`{n:D}`) or call `n.ToString()` for the culture's negative sign.
+`scripts/culture-check/check-culture.sh` compares formats of your own with .NET's over millions of
+values.
 
 ## What allocates
 
