@@ -98,6 +98,24 @@ namespace System.Text
             return this;
         }
 
+        // count chars of value from startIndex, with .NET's checks.
+        public StringBuilder Append(string value, int startIndex, int count)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(startIndex);
+            ArgumentOutOfRangeException.ThrowIfNegative(count);
+            if (value == null)
+            {
+                if (startIndex == 0 && count == 0)
+                    return this;
+                throw new ArgumentNullException("value");
+            }
+            if (count > value.Length - startIndex)
+                throw new ArgumentOutOfRangeException("count", "Index and count must refer to a location within the string.");
+            for (int i = 0; i < count; i++)
+                Append(value[startIndex + i]);
+            return this;
+        }
+
         public StringBuilder Append(char value, int repeatCount)
         {
             ArgumentOutOfRangeException.ThrowIfNegative(repeatCount);

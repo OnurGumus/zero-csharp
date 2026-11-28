@@ -100,8 +100,8 @@ that needs the runtime: no allocation, strings, `double` or calls into other met
 - Classes, structs, interfaces (with default methods), virtual calls, generics, and static abstract
   interface members
 - `Span<T>`, arrays, `stackalloc`, pointers and function pointers
-- Strings with `==`, `+` and `switch`, numbers' `ToString(format)`, `Parse` and `TryParse`; `lib/` adds
-  arena strings and span operations
+- Strings with `==`, `+` and `switch`, casing and `StringComparison`, numbers' `ToString(format)`,
+  `Parse` and `TryParse`; `lib/` adds arena strings and span operations
 - `CultureInfo` and `NumberFormatInfo` with the invariant culture, as .NET has them with
   `InvariantGlobalization` set
 - Casts (`is`, `as`, `(T)x`), boxing, records, anonymous types, tuples
